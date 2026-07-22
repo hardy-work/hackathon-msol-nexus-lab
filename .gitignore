@@ -1,0 +1,10 @@
+# Secrets / machine-specific config — never commit
+.mcp.json
+.claude/settings.local.json
+
+# Python
+vexa-mcp/.venv/
+vexa-mcp/.env
+**/__pycache__/
+
+.DS_Store
