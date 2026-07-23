@@ -73,7 +73,13 @@ one before doing anything else.
 5. **Fetch the transcript.** Once the bot is no longer active, call
    `get_transcript(platform, native_meeting_id)`. If it comes back empty,
    wait 30s and retry once — the final transcript can lag slightly behind
-   the bot leaving.
+   the bot leaving. Delegate steps 6-7 (dedup/noise-filter/context-correct,
+   and drafting the summary prose) to a sub-agent using the **Haiku**
+   model rather than doing them inline yourself — give it the raw segments
+   plus steps 6-7's exact instructions below, and have it return the
+   filtered transcript and the drafted summary together. This matters even
+   for short transcripts (Haiku is the intended model for this analysis
+   work), not just to manage context size on long ones.
 
 6. **Filter ASR noise.** ASR transcription can still hallucinate on silence
    or background noise. Before writing
@@ -99,6 +105,18 @@ one before doing anything else.
    When in doubt, keep the segment — this filter is for obvious noise,
    not for editorializing real content.
 
+   Separately from dropping noise, **correct** (don't drop) segments where
+   a technical term or English loanword was clearly mis-transcribed
+   phonetically — e.g. "lock time" transcribed instead of "log time", or
+   "tạo tab" instead of "tạo task" — when the surrounding context makes the
+   intended word unambiguous (a Jira-integration discussion saying "tạo
+   tab...hay là agile" almost certainly meant "tạo task"). Keep a list of
+   every correction made (original → corrected, with timestamp) and print
+   it as a note near the top of the summary, the same way you'd disclose
+   any other edit to the source material — don't silently rewrite the
+   transcript. When you're not confident, leave the original text as-is
+   rather than guessing.
+
 7. **Summarize.** From the filtered, speaker-labeled transcript, write a
    summary with this structure:
 
@@ -116,6 +134,8 @@ one before doing anything else.
 
    ## Action items
    - [ ] <span style="color:green"><owner> — <task> (<due date if mentioned>)</span>
+
+   _<any step 6 corrections: "original" → "corrected" (timestamp), one per line — omit this note entirely if there were none>_
 
    ## Full transcript (from get_transcript, noise filtered)
    **[<start time> - <end time>] <speaker> (<language>):**
