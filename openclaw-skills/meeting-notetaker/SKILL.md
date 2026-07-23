@@ -59,6 +59,17 @@ one before doing anything else.
    Stop polling once the bot is no longer active, or after a hard cap of
    ~4 hours (then stop it yourself and tell the user the meeting ran long).
 
+   On each poll where the bot is still `active`, also call `get_transcript`
+   and compare the segment count/last segment timestamp to the previous
+   poll. Vexa's bot does not reliably notice when it's alone in an empty
+   room — if **3 consecutive polls (~6 minutes)** show no new segments,
+   treat that as everyone having left: call `stop_meeting` yourself, treat
+   the meeting as ended, and proceed to steps 5-7 as normal. Then, before
+   step 9's delivery, ask the user to confirm they still want the
+   summary sent (the "meeting ended" call is a heuristic, not a certainty
+   — a long silent stretch during a real, ongoing meeting is possible) —
+   send it only after they say yes.
+
 5. **Fetch the transcript.** Once the bot is no longer active, call
    `get_transcript(platform, native_meeting_id)`. If it comes back empty,
    wait 30s and retry once — the final transcript can lag slightly behind
@@ -97,19 +108,24 @@ one before doing anything else.
    **Attendees:** <distinct speaker labels found in the transcript>
 
    ## Key points
-   - ...
+   - **<key point 1>**
+   - **<key point 2>**
 
    ## Decisions
    - ...
 
    ## Action items
-   - [ ] <owner> — <task> (<due date if mentioned>)
+   - [ ] <span style="color:green"><owner> — <task> (<due date if mentioned>)</span>
 
    ## Full transcript (from get_transcript, noise filtered)
    **[<start time> - <end time>] <speaker> (<language>):**
    <segment text>
    ```
 
+   Bold every "Key points" bullet in full (`**...**`) and color every
+   "Action items" bullet's owner/task/date text green via
+   `<span style="color:green">...</span>` — keep the `- [ ]` checkbox
+   syntax itself outside the span so it still renders as a checkbox.
    Only include a "Decisions" or "Action items" bullet if the transcript
    actually contains one — don't invent items to fill the template. The
    "Full transcript" section lists every remaining segment in order after
@@ -124,10 +140,14 @@ one before doing anything else.
    it already left).
 
 9. **Deliver.** Save the summary to
-   `{baseDir}/notes/<YYYY-MM-DD>-<native_meeting_id>.md`, and reply to the
-   user in the same chat channel they messaged you from with the summary
-   text (not just a "done" — they shouldn't have to open the file to see
-   what happened in the meeting).
+   `{baseDir}/notes/<YYYY-MM-DD>-<native_meeting_id>.md`. If the meeting
+   ended normally (bot left, or you stopped it on the user's explicit
+   request), reply immediately in the same chat channel they messaged you
+   from with the summary text (not just a "done" — they shouldn't have to
+   open the file to see what happened in the meeting). If the meeting was
+   ended by the step 4 empty-room heuristic, ask first — e.g. "Cuộc họp có
+   vẻ đã kết thúc (không có ai nói suốt 6 phút) — gửi kết quả tổng hợp cho
+   bạn nhé?" — and only send the summary after they confirm.
 
 ## Edge cases
 
@@ -138,6 +158,9 @@ one before doing anything else.
   note in the summary that the meeting was cut short.
 - **Multiple meetings requested in parallel:** track each by its own
   `(platform, native_meeting_id)` pair; don't mix transcripts across polls.
+- **Everyone else leaves the meeting:** see step 4's silence heuristic —
+  auto-stop the bot, but confirm with the user before delivering (step 9)
+  since it's a heuristic, not a certainty.
 
 ## Known limitation: transcription accuracy
 
