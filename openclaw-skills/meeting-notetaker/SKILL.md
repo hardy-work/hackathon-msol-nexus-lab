@@ -43,7 +43,7 @@ one before doing anything else.
      lower than if they can confirm it later.
 
 2. **Join.** Extract the Google Meet or Zoom URL from the user's message and
-   call `join_meeting(meeting_url=<url>, bot_name="Meeting Notetaker", language=<code>)` —
+   call `join_meeting(meeting_url=<url>, bot_name="NexusBot", language=<code>)` —
    include `language` only if step 1 confirmed exactly one language; omit
    it otherwise. Keep the `platform` and `native_meeting_id` from the
    response — you need them for every later call.

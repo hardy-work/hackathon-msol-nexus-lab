@@ -52,7 +52,7 @@ def join_meeting(
     meeting_url: str = "",
     platform: str = "",
     native_meeting_id: str = "",
-    bot_name: str = "Vexa",
+    bot_name: str = "NexusBot",
     language: str = "",
 ) -> dict:
     """Send a bot into a Google Meet or Zoom call to start live transcription.
