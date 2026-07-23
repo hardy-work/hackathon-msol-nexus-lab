@@ -33,13 +33,11 @@ one before doing anything else.
    how you join (step 2) and how you filter noise later (step 6):
    - **One language confirmed:** pin it at join time for much better
      accuracy.
-   - **Multiple languages confirmed (code-switching expected):** do NOT
-     pin a single language — forcing Whisper to one language actively
-     degrades transcription of the others, since it will try to force
-     their audio into that language phonetically instead of transcribing
-     it correctly. Record the full set of expected languages instead; it
-     feeds step 6's noise filter so real content in a confirmed second
-     language isn't mistaken for hallucination.
+   - **Multiple languages confirmed (code-switching expected):** don't
+     force a single language when more than one is expected — record the
+     full set of expected languages instead. It feeds step 6's noise
+     filter so real content in a confirmed second language isn't mistaken
+     for hallucination.
    - **User doesn't know / can't say:** proceed without pinning a
      language (auto-detect per segment) and tell them accuracy will be
      lower than if they can confirm it later.
@@ -66,8 +64,8 @@ one before doing anything else.
    wait 30s and retry once — the final transcript can lag slightly behind
    the bot leaving.
 
-6. **Filter ASR noise.** Whisper-based transcription (especially the free
-   hosted tier) hallucinates on silence/background noise. Before writing
+6. **Filter ASR noise.** ASR transcription can still hallucinate on silence
+   or background noise. Before writing
    the summary or the full transcript, drop any segment that matches any
    of these — they get excluded from the note entirely, not just the
    summary (the original recording is still recoverable via
@@ -143,19 +141,14 @@ one before doing anything else.
 
 ## Known limitation: transcription accuracy
 
-Testing on real Vietnamese technical meetings (mixed Vietnamese + English
-jargon — "button", "popup", "setting", task IDs) found the underlying
-Vexa/Whisper transcript itself mistranscribes a meaningful fraction of
-domain terms and numbers, independent of anything this skill does at
-summarization time — pinning `language` at join time (step 2, for
-single-language meetings) helps, but doesn't eliminate it. Multilingual
-meetings (step 1) are inherently lower-accuracy than single-language ones
-since no language can be pinned — say so explicitly when handing off the
-note. When telling the user about a completed note, don't
-imply the summary is fully accurate — say the key points are best-effort
-and point them at the full transcript for anything they need to rely on
-precisely (task IDs, exact names, decisions with consequences). If a user
-needs materially better accuracy, the real fix is upgrading the STT
-backend (a larger self-hosted Whisper model on a GPU box, per
-`deploy/transcription` in the Vexa repo) rather than trying to fix it
-after the fact in this skill.
+Transcription runs through [`soniox-bridge`](soniox-bridge/) (Soniox's
+real-time API), which replaced an earlier self-hosted Whisper attempt after
+it repeatedly crashed the host under CPU/memory load — Soniox needs no
+local model and tested cleanly on real English and Vietnamese speech. Even
+so, when telling the user about a completed note, don't imply the summary
+is fully accurate — say the key points are best-effort and point them at
+the full transcript for anything they need to rely on precisely (task IDs,
+exact names, decisions with consequences). See
+[`soniox-bridge/README.md`](soniox-bridge/README.md#known-limitations) for
+the specific gaps (single dominant language per chunk, no diarization from
+the STT call itself, approximate confidence mapping).

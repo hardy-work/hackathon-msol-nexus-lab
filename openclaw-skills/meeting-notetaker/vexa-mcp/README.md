@@ -27,8 +27,8 @@ Add to `.mcp.json` (or OpenClaw's MCP config):
 {
   "mcpServers": {
     "vexa-bridge": {
-      "command": "/Users/hardy/Desktop/Hackathon/vexa-mcp/.venv/bin/python",
-      "args": ["/Users/hardy/Desktop/Hackathon/vexa-mcp/server.py"],
+      "command": "<ABSOLUTE_PATH_TO_REPO>/openclaw-skills/meeting-notetaker/vexa-mcp/.venv/bin/python",
+      "args": ["<ABSOLUTE_PATH_TO_REPO>/openclaw-skills/meeting-notetaker/vexa-mcp/server.py"],
       "env": {
         "VEXA_BASE_URL": "http://<vexa-host>:18056",
         "VEXA_API_KEY": "vxa_..."
