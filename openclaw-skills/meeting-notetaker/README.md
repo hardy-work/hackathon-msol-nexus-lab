@@ -1,8 +1,13 @@
 # meeting-notetaker (OpenClaw skill)
 
-Depends on the `vexa-bridge` MCP server in [../../vexa-mcp](../../vexa-mcp) —
-register that first (see its README) so the `join_meeting` / `get_transcript`
-/ `bot_status` / `stop_meeting` tools exist in your OpenClaw workspace.
+Everything this skill needs lives in this one folder:
+
+- [`vexa-mcp/`](vexa-mcp/) — MCP server bridging Vexa's bot API (`join_meeting`,
+  `get_transcript`, `bot_status`, `stop_meeting`, `list_meetings`). Register
+  this first (see its README) so those tools exist in your OpenClaw workspace.
+- [`soniox-bridge/`](soniox-bridge/) — transcription backend Vexa calls into
+  (replaces self-hosted Whisper; see its README for why and how to deploy).
+- `notes/` — generated meeting summaries.
 
 ## Install
 

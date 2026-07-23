@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "vexa-bridge": {
-      "command": "<ABSOLUTE_PATH_TO_REPO>/vexa-mcp/.venv/bin/python",
-      "args": ["<ABSOLUTE_PATH_TO_REPO>/vexa-mcp/server.py"],
+      "command": "<ABSOLUTE_PATH_TO_REPO>/openclaw-skills/meeting-notetaker/vexa-mcp/.venv/bin/python",
+      "args": ["<ABSOLUTE_PATH_TO_REPO>/openclaw-skills/meeting-notetaker/vexa-mcp/server.py"],
       "env": {
         "VEXA_BASE_URL": "http://192.168.4.15:18056",
         "VEXA_API_KEY": "<YOUR_VEXA_API_KEY>"
