@@ -1,0 +1,12 @@
+services:
+  soniox-bridge:
+    build: .
+    ports:
+      - "${BRIDGE_PORT:-8083}:8000"
+    environment:
+      - SONIOX_API_KEY=${SONIOX_API_KEY}
+      - API_TOKEN=${API_TOKEN}
+      - SONIOX_MODEL=${SONIOX_MODEL:-stt-rt-v5}
+      - SONIOX_WS_URL=${SONIOX_WS_URL:-wss://stt-rt.soniox.com/transcribe-websocket}
+      - SONIOX_TIMEOUT_S=${SONIOX_TIMEOUT_S:-22}
+    restart: unless-stopped
