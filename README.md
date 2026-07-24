@@ -26,6 +26,23 @@ servers / backend services it depends on.
   `JIRA_BASE_URL`, `JIRA_PROJECT_KEY`, `JIRA_BOARD_ID` (see
   `.env.example` in the same folder).
 
+- [`openclaw-skills/daily-report/`](openclaw-skills/daily-report/) — reminds
+  the team to report task status in Slack, collects reports, answers
+  questions, and pushes reports to Google Sheets and/or Jira (reusing
+  `jira-task`) after confirmation. Connects to Slack via OpenClaw's official
+  Slack plugin (no custom bot code needed). Contains:
+  - `SKILL.md` — instructions the agent follows for reminders, report
+    collection, and pushing data.
+  - `sheets-bridge/` — MCP server bridging the Google Sheets API via a
+    service account.
+
+  Needs a `.env` in this folder with `SLACK_REPORT_CHANNEL`,
+  `REMINDER_TIME`, `REMINDER_TIMEZONE`, `REMINDER_WEEKDAYS_ONLY` (see
+  `.env.example`), plus `sheets-bridge/.env` and the `jira-task/.env` vars
+  above for the Jira-linked path. See
+  [`openclaw-skills/daily-report/README.md`](openclaw-skills/daily-report/README.md)
+  for full setup including the OpenClaw Slack plugin.
+
 Assumes a Vexa instance is already running and reachable (see the machine at
 `192.168.4.15:18056` on the LAN, or your own self-hosted instance — see
 [Vexa's README](https://github.com/Vexa-ai/vexa) to deploy one).

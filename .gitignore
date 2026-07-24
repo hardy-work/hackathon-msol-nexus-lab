@@ -1,6 +1,9 @@
 # Secrets / machine-specific config — never commit
 .mcp.json
 .claude/settings.local.json
+.env
+.env.bak
+!**/.env.example
 
 # Python
 vexa-mcp/.venv/
