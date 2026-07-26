@@ -7,6 +7,13 @@
         "VEXA_BASE_URL": "http://192.168.4.15:18056",
         "VEXA_API_KEY": "<YOUR_VEXA_API_KEY>"
       }
+    },
+    "gsheet-mcp": {
+      "command": "<ABSOLUTE_PATH_TO_REPO>/openclaw-skills/sheet-pm-tracker/gsheet-mcp/.venv/bin/python",
+      "args": ["<ABSOLUTE_PATH_TO_REPO>/openclaw-skills/sheet-pm-tracker/gsheet-mcp/server.py"],
+      "env": {
+        "GSHEET_SPREADSHEET_ID": "<YOUR_GOOGLE_SHEET_ID>"
+      }
     }
   }
 }
