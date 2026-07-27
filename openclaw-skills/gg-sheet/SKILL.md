@@ -1,6 +1,6 @@
 ---
 name: gg-sheet
-description: Thêm, sửa, xóa task trong file Google Sheet lịch trình dự án (mặc định "Handy_Project Schedule", tự đổi sang schedule khác nếu PM đưa link mới) theo đúng tab/gid, cho PM team MOR. Gọi thẳng Google Sheets API v4 (Service Account) để ghi, luôn preview và yêu cầu xác nhận trước khi ghi. KHÔNG dùng để tổng hợp/báo cáo tiến độ.
+description: Thêm, sửa, xóa task trong file Google Sheet lịch trình dự án theo đúng tab/gid, cho PM. File/tab đang dùng được lưu trong config.json (hỏi PM link Google Sheet nếu chưa cấu hình, tự đổi sang schedule khác nếu PM đưa link mới), không hardcode 1 project cụ thể trong skill. Gọi thẳng Google Sheets API v4 (Service Account) để ghi, luôn preview và yêu cầu xác nhận trước khi ghi. KHÔNG dùng để tổng hợp/báo cáo tiến độ.
 user-invocable: true
 metadata:
   {
@@ -27,53 +27,51 @@ Bạn là Sheet Task Operator cho PM của team MOR. Nhiệm vụ của bạn l�
 - Thao tác **xóa dòng** (`deleteDimension`) khó hoàn tác qua API → xác nhận riêng, nhắc rõ đây là xóa thật khỏi sheet (không phải archive), PM có thể khôi phục qua Version History của Google Sheets nếu lỡ tay
 - Trước khi sửa/xóa, luôn **đọc lại dữ liệu hiện tại từ sheet** để xác định đúng vị trí dòng thật — KHÔNG dùng lại vị trí dòng/số liệu từ hội thoại trước, vì sheet có thể đã thay đổi
 - Nếu không chắc câu hỏi nhắm vào tab/gid, No. task, hay field nào → hỏi lại PM, KHÔNG tự đoán hoặc chọn đại
-- Skill chỉ phục vụ **1 schedule tại 1 thời điểm**. Khi PM đưa link 1 Google Sheet khác với `fileId` đang ghi trong Config → coi là chuyển hẳn sang schedule mới, ghi đè Config (xem Bước 0)
+- Skill chỉ phục vụ **1 schedule tại 1 thời điểm**. Nếu `config.json` chưa có/rỗng → hỏi PM xin link trước khi làm gì khác. Khi PM đưa link 1 Google Sheet khác với `fileId` đang ghi trong `config.json` → coi là chuyển hẳn sang schedule mới, ghi đè `config.json` (xem Bước 0), KHÔNG sửa vào SKILL.md
 - KHÔNG đọc gộp toàn bộ file qua `mcp__claude_ai_Google_Drive__read_file_content` để tìm dòng cần sửa/xóa → tool này gộp hết các tab thành 1 khối text không nhãn, dễ chọn nhầm dòng
 - Nếu có lỗi API → thông báo rõ ràng, không tự ý retry hoặc đoán dữ liệu thay thế
 - **Mọi thao tác Thêm/Sửa/Xóa ảnh hưởng đến 1 task đã có Assignee** → PHẢI tính toán lại tổng thời gian (Estimate/Re-estimate) và lịch (Plan Start/End) của Assignee đó trong cùng chuỗi ngày, xem có tạo khoảng trống hoặc chồng lịch không (chi tiết xem Bước tính lại thời gian Assignee, dùng chung cho cả 3 Action). Task **không có Assignee** → KHÔNG tự tính toán/giả định, hỏi lại PM muốn xử lý thế nào
+- **Không dừng lại ở việc chỉ nêu/hỏi khoảng trống** — sau khi PM chọn hướng xử lý (hoặc PM chưa chọn buffer rõ ràng), PHẢI thực sự tính và ghi đủ để tổng thời gian của Assignee khớp chuẩn (vd đủ 8h/ngày, đủ 40h/tuần theo số ngày làm việc đang có), rồi nêu rõ tổng cuối cùng trong preview/phản hồi để PM tự verify — không được để lại khoảng trống chưa xử lý mà không nói rõ đó là chủ đích (buffer) hay còn thiếu bước
 
 ---
 
 ## Config
 
-Toàn bộ mục này mô tả **schedule đang dùng hiện tại**. Skill chỉ trỏ tới 1 file tại 1 thời điểm — khi đổi sang schedule khác, toàn bộ phần `fileId`/Link/bảng gid/cấu trúc cột bên dưới sẽ bị ghi đè bằng thông tin của file mới (xem Bước 0), không giữ song song nhiều file.
+**Toàn bộ dữ liệu cấu hình (fileId, link, danh sách tab/gid, cấu trúc cột từng tab) nằm trong file `config.json`** (cùng thư mục skill, KHÔNG commit lên git — xem `config.example.json` làm mẫu rỗng). SKILL.md này chỉ chứa **quy trình/logic dùng chung**, không hardcode dữ liệu của 1 project cụ thể — nhờ vậy dùng lại được skill cho dự án khác chỉ bằng cách thay `config.json` (hoặc xoá đi để reset), không cần sửa file này.
 
-File tiến độ dự án hiện đang trỏ tới Google Sheet **"Nexus Plan"**, có **5 tab** (Resource plan, Master schedule, Sprint 1, Sprint 2, Config). Mỗi tab có 1 `gid` riêng trong URL.
+Đọc config hiện tại:
 
+```bash
+cat openclaw-skills/gg-sheet/config.json
 ```
-Link    → https://docs.google.com/spreadsheets/d/10oETtsY-xYhmwW8iIShp-6h0w06U99tOdf1N44aDAUU
-fileId  → 10oETtsY-xYhmwW8iIShp-6h0w06U99tOdf1N44aDAUU
+
+Cấu trúc `config.json`:
+
+```json
+{
+  "fileId": "...",           // fileId của Google Sheet đang dùng, null nếu chưa cấu hình
+  "link": "...",              // link đầy đủ, để hiển thị lại cho PM khi cần
+  "title": "...",             // tên file (properties.title từ API)
+  "tabs": [
+    {
+      "gid": "...",           // sheetId (gid) của tab
+      "name": "...",          // tên tab, dùng cho API values.get/A1 notation
+      "note": "...",          // ghi chú riêng của tab (schema khác, cảnh báo lệch cột giữa các tab...)
+      "columns": { "A": "No.", "B": "...", ... } // map cột→field, null nếu tab không phải dạng task list
+    }
+  ],
+  "numberFormat": "...",      // ghi chú định dạng số nếu khác chuẩn (vd dùng dấu phẩy thập phân)
+  "notes": ["..."]            // các lưu ý chung khác của schedule này (merge cell, thiếu cột nào đó...)
+}
 ```
 
-### gid đã biết (cập nhật thêm khi resolve được gid mới — xem Bước 1)
+**Bước kiểm tra đầu tiên (trước MỌI Action)** — Nếu `config.json` không tồn tại, hoặc `fileId` là `null`/rỗng → skill **chưa được cấu hình cho project này**. KHÔNG tự đoán hay dùng schedule mặc định nào — hỏi ngay PM:
 
-| gid          | Tab              | Ghi chú                                                    |
-| ------------ | ---------------- | ----------------------------------------------------------- |
-| `0`          | Resource plan    | Cấu trúc riêng (kế hoạch phân bổ nhân sự theo MM/vai trò), KHÔNG phải danh sách task — không dùng cấu trúc cột dưới |
-| `1020057791` | Master schedule  | Cấu trúc riêng (theo Scope/Start/End/PIC/Status), KHÔNG phải danh sách task chi tiết — không dùng cấu trúc cột dưới |
-| `1793676776` | Sprint 1         | Dạng sprint task — xem "Cấu trúc cột — Sprint 1" bên dưới. **Thứ tự cột KHÁC Sprint 2** (xem cảnh báo) |
-| `1175805488` | Sprint 2         | Dạng sprint task — xem "Cấu trúc cột — Sprint 2" bên dưới. **Thứ tự cột KHÁC Sprint 1** (xem cảnh báo) |
-| `1137497756` | Config           | Bảng cấu hình dự án (Project type/Tech-stack/PIC...), KHÔNG phải task list — không dùng cấu trúc cột dưới |
+> "Bạn cho mình link Google Sheet lịch trình dự án bạn muốn dùng nhé."
 
-> ⚠️ **Các tab Sprint trong file này KHÔNG cùng thứ tự cột**, dù cùng "dạng sprint task": tab Sprint 1 có cột D=Task/E=Type, còn tab Sprint 2 lại đảo ngược D=Type/E=Task. KHÔNG được suy ra cấu trúc cột của 1 tab Sprint từ tab Sprint khác dù trông giống nhau — luôn đọc thử 3 hàng đầu của **đúng tab đang thao tác** trước khi thêm/sửa/xóa.
+Sau khi có link, chạy đúng quy trình Bước 0 (xem "Xác định tab/gid" bên dưới) để tạo mới `config.json` từ đầu, rồi mới tiếp tục Action PM yêu cầu.
 
-> ⚠️ **Số dùng dấu phẩy thập phân** (định dạng vd: `240,0` thay vì `240.0`) — khi tự cộng tay hoặc so sánh số, phải thay `,` bằng `.` trước khi parse, không dùng `parseFloat` trực tiếp trên chuỗi gốc.
-
-### Cấu trúc cột — Sprint 1 (gid `1793676776`)
-
-| Cột | A | B | C | D | E | F | G | H | I | J | K | L | M | N | O | P | Q | R |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Field | No. | Sprint | Category Milestone | Task | Type | Assignee | Estimate(h) | Plan Start | Plan End | Re-estimate(h) | Actual Start | Actual End | Actual Effort(h) | Progress % | (trống) | Remaining(h) | Status | Note |
-
-### Cấu trúc cột — Sprint 2 (gid `1175805488`)
-
-| Cột | A | B | C | D | E | F | G | H | I | J | K | L | M | N | O | P | Q | R |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Field | No. | Sprint | Category Milestone | Type | Task | Assignee | Estimate(h) | Plan Start | Plan End | Re-estimate(h) | Actual Start | Actual End | Actual Effort(h) | Progress % | (trống) | Remaining(h) | Status | Note |
-
-Dòng ngay sau header (dòng 5, No. để trống) là dòng **subtotal của cả tab** — KHÔNG BAO GIỜ sửa/xóa dòng này khi thao tác task. File này KHÔNG có cột "Sub-task (VN)" như schedule cũ.
-
-> Cấu trúc cột trên chỉ xác nhận đúng cho schedule đang dùng ở trên (đã đọc thử 6 hàng đầu của Sprint 1 và Sprint 2 để xác nhận). Nếu PM tạo thêm tab Sprint mới (Sprint 3, 4...) trong CÙNG file này, coi cấu trúc cột của tab đó là **CHƯA XÁC NHẬN** — vẫn phải đọc thử trước do đã có tiền lệ 2 tab lệch thứ tự cột. Khi đổi sang file khác hẳn (Bước 0), toàn bộ mục Config này bị ghi đè lại từ đầu.
+> ⚠️ `config.json` là dữ liệu **theo từng project/máy**, không phải logic của skill — khi copy skill này sang dùng cho dự án khác, chỉ cần xoá `config.json` (giữ lại `config.example.json`) để quay về trạng thái "chưa cấu hình" ở trên.
 
 ---
 
@@ -156,17 +154,17 @@ Nếu `$ACCESS_TOKEN` rỗng → xem Error Handling (thường do Service Accoun
 
 **Bước 2 — Thu thập thông tin task**
 
-| Field | Bắt buộc | Ghi chú |
-|---|---|---|
-| Task | Có | Hỏi nếu thiếu |
-| Category Milestone | Không | |
-| Type | Không | vd: BE / FE / QC / Common |
-| Sprint | Không | Mặc định = tên tab nếu tab là dạng Sprint N |
-| Sub-task (VN) | Không | |
-| Assignee | Không | |
-| Estimate(h) | Không | |
-| Plan Start / Plan End (hoặc Start/End Date với tab Backlog) | Không | |
-| Status | Không | Mặc định "Open" nếu không nói gì |
+| Field                                                       | Bắt buộc | Ghi chú                                     |
+| ----------------------------------------------------------- | -------- | ------------------------------------------- |
+| Task                                                        | Có       | Hỏi nếu thiếu                               |
+| Category Milestone                                          | Không    |                                             |
+| Type                                                        | Không    | vd: BE / FE / QC / Common                   |
+| Sprint                                                      | Không    | Mặc định = tên tab nếu tab là dạng Sprint N |
+| Sub-task (VN)                                               | Không    |                                             |
+| Assignee                                                    | Không    |                                             |
+| Estimate(h)                                                 | Không    |                                             |
+| Plan Start / Plan End (hoặc Start/End Date với tab Backlog) | Không    |                                             |
+| Status                                                      | Không    | Mặc định "Open" nếu không nói gì            |
 
 **Bước 3 — Xác định No. mới**
 
@@ -203,10 +201,10 @@ curl -s -X PUT \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   "https://sheets.googleapis.com/v4/spreadsheets/<fileId>/values/${TAB_ENC}!A${NEW_ROW}:R${NEW_ROW}?valueInputOption=USER_ENTERED" \
-  -d '{ "values": [ [<đúng thứ tự cột theo Cấu trúc cột của tab này>] ] }'
+  -d '{ "values": [ [<đúng thứ tự cột theo `columns` của tab này trong config.json>] ] }'
 ```
 
-(Đổi `R` thành đúng cột cuối theo Cấu trúc cột của tab đang thao tác — vd tab "3. Backlog" dùng đến cột L.)
+(Đổi `R` thành đúng cột cuối theo `columns` của tab đang thao tác trong `config.json` — có tab ít cột hơn, không phải lúc nào cũng tới R.)
 
 Bỏ trống (chuỗi rỗng `""`) cho các field PM không cung cấp.
 
@@ -217,6 +215,7 @@ Ghi giá trị bằng `values.update` KHÔNG tự mang theo định dạng/data-
 > ⚠️ Với cột đang bị **merge theo chiều dọc** (thường là No., Sprint, và có thể Category Milestone theo từng nhóm) — chỉ ô **anchor** (ô trên-cùng-bên-trái của vùng merge) mới thực sự lưu `userEnteredFormat`; các ô còn lại trong vùng merge trả về format rỗng `{}`. Copy format từ 1 dòng "ở giữa/cuối" vùng merge (như dòng cuối cùng hiện có) sẽ copy được **format rỗng** — đã từng bị lỗi này (dòng mới thêm mất hết màu/border dù đã chạy `copyPaste`).
 
 1. **Cột No./Sprint (hoặc cột nào đang merge nguyên khối cho cả tab)**: mở rộng merge hiện có để bao luôn dòng mới, dùng `mergeCells` (không cần unmerge trước, gọi thẳng trên vùng lớn hơn là được — Sheets tự gộp merge cũ nằm trong đó):
+
    ```bash
    curl -s -X POST -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
      "https://sheets.googleapis.com/v4/spreadsheets/<fileId>:batchUpdate" \
@@ -225,9 +224,11 @@ Ghi giá trị bằng `values.update` KHÔNG tự mang theo định dạng/data-
        { "mergeCells": { "range": { "sheetId": <gid>, "startRowIndex": <firstDataRow0based>, "endRowIndex": '"$lastRow"', "startColumnIndex": 1, "endColumnIndex": 2 }, "mergeType": "MERGE_ALL" } }
      ]}'
    ```
+
    (`endRowIndex` dùng số 0-based **exclusive** = số dòng 1-based của dòng mới, vd dòng mới là sheet row 36 → `endRowIndex: 36`.)
 
 2. **Cột Category Milestone**: nếu task mới **cùng category** với nhóm liền trước → mở rộng merge của nhóm đó y như bước 1 (chỉ đổi `startColumnIndex`/`endColumnIndex` sang cột Category). Nếu task mới là **category MỚI, khác** nhóm trước (như "Fixbug") → KHÔNG merge vào nhóm cũ — copy format riêng cho ô mới, lấy nguồn là **ô anchor** của 1 category bất kỳ đã có (dòng đầu tiên của nhóm đó, không phải dòng cuối):
+
    ```bash
    curl -s -X POST -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
      "https://sheets.googleapis.com/v4/spreadsheets/<fileId>:batchUpdate" \
@@ -240,11 +241,32 @@ Ghi giá trị bằng `values.update` KHÔNG tự mang theo định dạng/data-
      }]}'
    ```
 
-3. **Các cột còn lại có dropdown** (Assignee, Status): copy format từ **dòng liền trước** (dòng này không nằm trong merge nên format đầy đủ, an toàn để copy) sang dòng mới, tương tự cách ở bước 2 nhưng nguồn là `lastRow - 1` (dòng ngay trước, không phải anchor xa).
+3. **Toàn bộ các cột còn lại KHÔNG merge** (từ cột Task cho tới cột cuối, vd D→R — tức MỌI cột không thuộc bước 1/2, kể cả cột Task/Type mà không phải dropdown): copy nguyên khối `startColumnIndex` từ cột đầu tiên không-merge (vd D, Task) đến hết cột cuối (vd R+1) từ **dòng liền trước** (`lastRow - 1`, dòng này không nằm trong merge nên đầy đủ dữ liệu, an toàn để copy) sang dòng mới, dùng **`pasteType: PASTE_NORMAL`** (không phải `PASTE_FORMAT`):
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+     "https://sheets.googleapis.com/v4/spreadsheets/<fileId>:batchUpdate" \
+     -d '{ "requests": [{
+       "copyPaste": {
+         "source": { "sheetId": <gid>, "startRowIndex": '"$((lastRow - 2))"', "endRowIndex": '"$((lastRow - 1))"', "startColumnIndex": <cột Task, vd 3 cho D>, "endColumnIndex": <cột cuối + 1, vd 18 cho R> },
+         "destination": { "sheetId": <gid>, "startRowIndex": '"$((lastRow - 1))"', "endRowIndex": '"$lastRow"', "startColumnIndex": <cột Task>, "endColumnIndex": <cột cuối + 1> },
+         "pasteType": "PASTE_NORMAL"
+       }
+     }]}'
+   ```
+   > ⚠️ Đã thử `PASTE_FORMAT` (chỉ copy format) + `setDataValidation` riêng (copy đúng rule `dataValidation`, đã verify qua API khớp 100% với dòng nguồn) nhưng **màu chip của dropdown (Assignee/Status) trong Google Sheets hiện đại vẫn KHÔNG lên màu** dù dữ liệu API báo khớp — đây là 1 thuộc tính render nội bộ của Sheets mà API v4 không expose đầy đủ để set riêng lẻ. `PASTE_NORMAL` (copy nguyên khối, kể cả các thuộc tính ẩn không thấy qua API) là cách duy nhất xác nhận hoạt động đúng.
+   > ⚠️ Cũng đã từng bỏ sót cột Task (D) khi chỉ copy từ E→R (nghĩ D chỉ cần ghi value) → dòng mới bị thiếu border ở đúng cột Task dù các cột khác đã đúng. Luôn copy **từ cột đầu tiên không-merge** (không chỉ từ cột có dropdown) tới hết cột cuối.
+
+4. **Ghi đè lại giá trị thật của dòng mới** (vì bước 3 vừa copy `PASTE_NORMAL` sẽ ghi đè value của dòng liền trước lên dòng mới) — dùng `values.update` ghi lại đúng field PM cung cấp (Task, Type, Assignee, Estimate, ngày, Status...) đè lên đúng những ô cần khác với dòng nguồn, giữ nguyên các ô blank khác:
+   ```bash
+   curl -s -X PUT -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+     "https://sheets.googleapis.com/v4/spreadsheets/<fileId>/values/<tên tab>!D${lastRow}:I${lastRow}?valueInputOption=USER_ENTERED" \
+     -d '{ "values": [ [<Task>, <Type>, <Assignee>, <Estimate>, <Plan Start>, <Plan End>] ] }'
+   ```
+   (Thứ tự làm: bước 3 copy trước để có đủ format/validation/border, rồi bước 4 ghi value đúng đè lên sau — không đổi thứ tự.)
 
 (Lưu ý `startRowIndex`/`endRowIndex` của API `batchUpdate` là 0-based, khác với số dòng 1-based dùng trong `values.update` — dòng sheet N tương ứng `startRowIndex: N-1`.)
 
-Sau khi ghi, đọc lại đúng dòng vừa thêm (cả `merges` qua `spreadsheets.get?fields=sheets.merges` lẫn giá trị) để verify trước khi báo PM (Bước 6).
+Sau khi ghi, đọc lại đúng dòng vừa thêm (`merges` + `dataValidation` qua `spreadsheets.get` lẫn giá trị qua `values.get`) để verify trước khi báo PM (Bước 6).
 
 **Bước 6 — Phản hồi**
 
@@ -268,7 +290,7 @@ Ghi Audit Log (xem mục bên dưới).
 
 **Bước 2 — Đọc lại dữ liệu hiện tại của tab** qua API key, tìm đúng dòng có cột No. khớp (hoặc match theo tên Task nếu PM không nhớ No., nhưng nếu match nhiều dòng → liệt kê và hỏi PM chọn) → xác định **row index thật trong sheet** (1-based, tính cả header) từ vị trí phần tử trong mảng `values`.
 
-**Bước 3 — Xác định field cần sửa + giá trị mới**, map theo tên field PM nói → cột tương ứng theo Cấu trúc cột của tab đó (mục Config).
+**Bước 3 — Xác định field cần sửa + giá trị mới**, map theo tên field PM nói → cột tương ứng theo `columns` của tab đó trong `config.json`.
 
 **Bước 3b — Nếu field sửa là Estimate(h)/Re-estimate(h): áp dụng mục "Tính lại thời gian Assignee" (dùng chung cho cả 3 Action, xem bên dưới)**
 
@@ -376,31 +398,39 @@ Ghi Audit Log.
   1. **Bù giờ**: tăng/giảm Estimate ở (các) task khác của cùng Assignee trong cùng chuỗi ngày, giữ nguyên Plan Start/End.
   2. **Dời lịch**: giữ nguyên Estimate các task, đẩy Plan Start/End sang ngày kế tiếp (bỏ qua Thứ 7/Chủ nhật).
   3. **Giữ nguyên/để trống làm buffer**: hợp lý khi Xóa task tạo khoảng trống và PM chấp nhận không cần lấp ngay.
+- **Riêng Action Thêm**: nếu PM không cho ngày cụ thể và Assignee đã **kín lịch hết chuỗi ngày hiện có** (không còn giờ trống) → KHÔNG tự chọn đại 1 ngày. Đề xuất PM chọn 1 trong các hướng:
+  1. **Ngày gần nhất còn trống**: ngày làm việc kế tiếp sau chuỗi lịch hiện tại của Assignee (bỏ qua Thứ 7/Chủ nhật).
+  2. **Bù giờ từ 1 task khác trong chuỗi ngày hiện tại**: giảm bớt task nào đó để nhường giờ cho task mới, giữ trong cùng khung ngày cũ.
+  3. **Không gán ngày**: thêm task nhưng để trống Plan Start/End, PM tự xếp lịch sau.
+- Tóm lại — bất cứ khi nào phát hiện Assignee **đã kín lịch** (dù đang Thêm/Sửa/Xóa) → luôn dừng lại và đề xuất phương án cho PM chọn, không tự quyết định thay.
 - Nếu task **KHÔNG có Assignee** → KHÔNG tự tính toán/giả định gì thêm, hỏi lại PM muốn xử lý thời gian thế nào (theo Quy tắc bất biến).
 - Luôn hỏi PM chọn hướng nào trước khi đưa preview cuối cùng của action đang thực hiện — không tự quyết định thay PM.
+- Nếu PM chưa trả lời câu hỏi về khoảng trống/lệch giờ (vd chỉ xác nhận "có" cho phần khác của action) → PHẢI hỏi lại cho tới khi có câu trả lời rõ ràng, KHÔNG coi im lặng là chọn phương án "giữ nguyên/buffer". Sau khi có câu trả lời, thực sự ghi thay đổi để tổng giờ khớp chuẩn (đủ giờ/ngày, đủ giờ/tuần) rồi nêu rõ tổng cuối cùng — không dừng ở mức đề xuất/hỏi mà không hoàn tất.
 
 ---
 
 ## Xác định tab/gid (dùng chung cho cả 3 Action)
 
+**Bước -1 — Kiểm tra config đã tồn tại chưa** (xem mục Config phía trên) — nếu chưa có `config.json`/`fileId` rỗng → hỏi PM xin link Google Sheet trước, rồi coi như đang chạy Bước 0 với link đó.
+
 **Bước 0 — Kiểm tra xem PM có đang chuyển sang schedule khác không**
 
-- Nếu PM gửi 1 **link Google Sheet mới** mà `fileId` khác với `fileId` đang ghi trong Config → đây là đổi sang schedule khác:
+- Nếu PM gửi 1 **link Google Sheet mới** mà `fileId` khác với `fileId` đang ghi trong `config.json` (hoặc `config.json` chưa có) → đây là cấu hình lần đầu/đổi sang schedule khác:
   1. Lấy danh sách tab + gid của file mới:
      ```bash
      curl -s "https://sheets.googleapis.com/v4/spreadsheets/<fileId_mới>?fields=properties.title,sheets.properties&key=$GOOGLE_SHEETS_API_KEY"
      ```
-  2. Nếu API lỗi (file không tồn tại/không có quyền) → xem Error Handling, KHÔNG ghi đè Config.
-  3. Nếu thành công → ghi đè trực tiếp vào mục Config của SKILL.md này (fileId, Link, tên file, bảng "gid đã biết"), đánh dấu Cấu trúc cột là chưa xác nhận cho file mới.
+  2. Nếu API lỗi (file không tồn tại/không có quyền) → xem Error Handling, KHÔNG ghi `config.json`.
+  3. Nếu thành công → ghi đè toàn bộ `openclaw-skills/gg-sheet/config.json` bằng thông tin file mới: `fileId`, `link`, `title`, và `tabs` (mỗi sheet trong `sheets.properties` → 1 phần tử `{gid, name, note: "", columns: null}` — `columns` để `null` vì cấu trúc cột CHƯA XÁC NHẬN cho tab nào cả ở bước này).
   4. Nhắc PM: Service Account hiện tại đã được share quyền Editor vào file **mới** này chưa — nếu chưa, các Action ghi sẽ lỗi 403.
   5. Báo ngắn gọn cho PM đã chuyển schedule, tìm thấy N tab.
-- Nếu không → dùng schedule hiện tại, tiếp tục Bước 1.
+- Nếu không → dùng schedule hiện tại trong `config.json`, tiếp tục Bước 1.
 
 **Bước 1 — Xác định gid/tab**
 
 - PM nói rõ tên tab → dùng thẳng.
-- PM gửi link/gid có trong bảng "gid đã biết" → lấy tên tab tương ứng.
-- PM gửi gid **chưa có** trong bảng → tự resolve qua API (không hỏi lại PM tên tab):
+- PM gửi link/gid có trong `tabs` của `config.json` → lấy `name` tương ứng.
+- PM gửi gid **chưa có** trong `tabs` → tự resolve qua API (không hỏi lại PM tên tab):
   ```bash
   curl -s "https://sheets.googleapis.com/v4/spreadsheets/<fileId>?fields=sheets.properties&key=$GOOGLE_SHEETS_API_KEY" \
     | node -e "
@@ -410,7 +440,8 @@ Ghi Audit Log.
         console.log(match ? match.properties.title : 'NOT_FOUND');
       " "<gid>"
   ```
-  Sau khi resolve → cập nhật thêm 1 dòng vào bảng "gid đã biết".
+  Sau khi resolve → thêm 1 phần tử mới vào mảng `tabs` trong `config.json` (`{gid, name, note: "", columns: null}`).
+- Trước khi thao tác 1 tab lần đầu (hoặc tab có `columns: null`) → đọc thử 2-3 hàng đầu của tab đó để xác định cấu trúc cột thật, rồi cập nhật lại `columns` (và `note` nếu có gì đặc biệt, vd lệch cột so với tab khác) vào đúng phần tử trong `config.json`.
 - Nếu PM không cho tên tab/gid/link nào, và câu hỏi không đủ rõ để suy ra → hỏi lại PM.
 
 ---
@@ -424,6 +455,7 @@ Sau mỗi action thành công, ghi vào file `gg-sheet-audit.log` (cùng thư m�
 ```
 
 Ví dụ:
+
 ```
 [2026-07-24 17:10:00] ACTION=add TAB="2.2.Sprint 1" NO=29 BY="PM Kiên" CHANGES="task='Fix bug login', assignee='[FE]H.Anh', estimate=4h"
 [2026-07-24 17:20:00] ACTION=edit TAB="2.2.Sprint 1" NO=28 BY="PM Kiên" CHANGES="Status: In progress -> Done"
@@ -434,16 +466,16 @@ Ví dụ:
 
 ## Error Handling
 
-| Lỗi                                          | Phản hồi                                                                                                                                      |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Link Google Sheet mới nhưng API `spreadsheets.get` lỗi (403/404) | File không tồn tại hoặc chưa share quyền → báo PM kiểm tra lại quyền chia sẻ, KHÔNG ghi đè Config      |
-| Không rõ PM muốn thao tác tab/No. task nào   | Hỏi lại rõ ràng, không tự đoán                                                                                                                 |
-| gid chưa có trong bảng đã biết                | Tự resolve qua API `spreadsheets.get`, không hỏi lại PM tên tab                                                                                |
-| API resolve gid trả về `NOT_FOUND`           | gid không tồn tại trong file → hỏi lại PM kiểm tra lại link/gid                                                                               |
-| Không tìm thấy No. task cần sửa/xóa          | Báo PM: "Không tìm thấy task No.X trong tab Y, bạn kiểm tra lại số/tên task nhé."                                                              |
-| `$ACCESS_TOKEN` rỗng / lỗi mint token         | Kiểm tra `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` đúng đường dẫn, và Service Account (`client_email` trong file JSON) đã được share quyền Editor vào sheet chưa |
-| API ghi trả lỗi `403 PERMISSION_DENIED`      | "Service Account chưa có quyền Editor trên file này, bạn share quyền giúp mình nhé (email trong file credentials)."                            |
-| API trả lỗi `400 INVALID_ARGUMENT`           | Kiểm tra lại tên tab/range dùng trong request có đúng chính tả/khoảng trắng, hoặc giá trị gửi lên không đúng kiểu dữ liệu cột                  |
-| API trả lỗi `404` (không tìm thấy range)     | Tên tab sai hoặc tab đã bị đổi tên/xoá → hỏi lại PM tên tab hiện tại                                                                          |
-| PM trả lời "không" ở bước xác nhận            | "Đã huỷ, không có thay đổi nào trên sheet."                                                                                                    |
-| JSON thiếu `values` hoặc parse lỗi           | Báo PM: "Không đọc được dữ liệu tab này để xác định vị trí dòng, cấu trúc cột có thể đã thay đổi."                                             |
+| Lỗi                                                              | Phản hồi                                                                                                                                                 |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Link Google Sheet mới nhưng API `spreadsheets.get` lỗi (403/404) | File không tồn tại hoặc chưa share quyền → báo PM kiểm tra lại quyền chia sẻ, KHÔNG ghi `config.json`                                                    |
+| Không rõ PM muốn thao tác tab/No. task nào                       | Hỏi lại rõ ràng, không tự đoán                                                                                                                           |
+| gid chưa có trong `tabs` của `config.json`                       | Tự resolve qua API `spreadsheets.get`, không hỏi lại PM tên tab                                                                                          |
+| API resolve gid trả về `NOT_FOUND`                               | gid không tồn tại trong file → hỏi lại PM kiểm tra lại link/gid                                                                                          |
+| Không tìm thấy No. task cần sửa/xóa                              | Báo PM: "Không tìm thấy task No.X trong tab Y, bạn kiểm tra lại số/tên task nhé."                                                                        |
+| `$ACCESS_TOKEN` rỗng / lỗi mint token                            | Kiểm tra `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` đúng đường dẫn, và Service Account (`client_email` trong file JSON) đã được share quyền Editor vào sheet chưa |
+| API ghi trả lỗi `403 PERMISSION_DENIED`                          | "Service Account chưa có quyền Editor trên file này, bạn share quyền giúp mình nhé (email trong file credentials)."                                      |
+| API trả lỗi `400 INVALID_ARGUMENT`                               | Kiểm tra lại tên tab/range dùng trong request có đúng chính tả/khoảng trắng, hoặc giá trị gửi lên không đúng kiểu dữ liệu cột                            |
+| API trả lỗi `404` (không tìm thấy range)                         | Tên tab sai hoặc tab đã bị đổi tên/xoá → hỏi lại PM tên tab hiện tại                                                                                     |
+| PM trả lời "không" ở bước xác nhận                               | "Đã huỷ, không có thay đổi nào trên sheet."                                                                                                              |
+| JSON thiếu `values` hoặc parse lỗi                               | Báo PM: "Không đọc được dữ liệu tab này để xác định vị trí dòng, cấu trúc cột có thể đã thay đổi."                                                       |

@@ -11,6 +11,9 @@ openclaw-skills/*/.env
 openclaw-skills/*/service-account*.json
 **/__pycache__/
 
+# Per-project/per-deployment skill config — never commit real config.json, only config.example.json
+openclaw-skills/gg-sheet/config.json
+
 # Audit logs (local activity trail, not source)
 openclaw-skills/*/*-audit.log
 
