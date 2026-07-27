@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build + (re)deploy live-translate as a launchd service on macOS.
 # Idempotent — safe to re-run on every deploy. Run it on the gateway host:
-#   bash openclaw-skills/meeting-notetaker/live-translate/deploy/deploy.sh
+#   bash <app_dir>/deploy/deploy.sh
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -13,30 +13,57 @@ UID_NUM="$(id -u)"
 
 echo "==> live-translate deploy ($APP_DIR)"
 
-# --- 1. Python venv (need >= 3.10 for claude-agent-sdk / the subscription path) ---
-pick_python() {
-  local c
-  for c in python3.13 python3.12 python3.11 python3.10; do
-    command -v "$c" >/dev/null 2>&1 && { echo "$c"; return 0; }
-  done
-  if command -v python3 >/dev/null 2>&1 \
-     && python3 -c 'import sys; sys.exit(0 if sys.version_info[:2] >= (3,10) else 1)'; then
-    echo python3; return 0
-  fi
-  return 1
-}
-if ! PYBIN="$(pick_python)"; then
-  echo "ERROR: need Python >= 3.10 (claude-agent-sdk, the default subscription backend)."
-  echo "       Install one — e.g.  brew install python@3.12  — or set"
-  echo "       TRANSLATE_BACKEND=api in .env and re-run. Found: $(python3 -V 2>&1 || echo none)"
-  exit 1
+# Make `claude` / node reachable the same way run.sh does, so backend detection
+# and the frontend build behave like the running service will.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
+if [ -d "$HOME/.nvm/versions/node" ]; then
+  _node="$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | sort -V | tail -1 || true)"
+  [ -n "$_node" ] && export PATH="$_node:$PATH"
 fi
-echo "==> python: $PYBIN ($("$PYBIN" -V 2>&1))"
+
+# --- 1. Pick Python; note whether it's >= 3.10 (needed by claude-agent-sdk) ---
+PYBIN=""; HAS_PY310=false
+for c in python3.13 python3.12 python3.11 python3.10; do
+  if command -v "$c" >/dev/null 2>&1; then PYBIN="$c"; HAS_PY310=true; break; fi
+done
+if [ -z "$PYBIN" ]; then
+  command -v python3 >/dev/null 2>&1 || { echo "ERROR: no python3 found."; exit 1; }
+  PYBIN=python3
+  python3 -c 'import sys; sys.exit(0 if sys.version_info[:2] >= (3,10) else 1)' && HAS_PY310=true
+fi
+echo "==> python: $PYBIN ($("$PYBIN" -V 2>&1)); >=3.10: $HAS_PY310"
+
+# --- 2. Decide translation backend (respect an existing .env choice) ---
+existing_backend="$(sed -n 's/^TRANSLATE_BACKEND=//p' .env 2>/dev/null | head -1 || true)"
+BACKEND="${existing_backend:-subscription}"
+if [ "$BACKEND" = "subscription" ] && [ "$HAS_PY310" != true ]; then
+  # claude-agent-sdk needs >=3.10; fall back to a backend that runs on 3.9.
+  if command -v claude >/dev/null 2>&1; then
+    BACKEND="cli"
+    echo "!! Python < 3.10: subscription (SDK) unavailable -> using 'cli' backend"
+    echo "   (spawns the logged-in \`claude\` CLI per call, ~6s; still subscription)."
+  elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    BACKEND="api"
+    echo "!! Python < 3.10: using 'api' backend (ANTHROPIC_API_KEY present)."
+  else
+    echo "ERROR: Python < 3.10 and no \`claude\` CLI / ANTHROPIC_API_KEY."
+    echo "       Install Python >= 3.10, log in with Claude Code, or set an API key."
+    exit 1
+  fi
+fi
+echo "==> translation backend: $BACKEND"
+
+# --- 3. venv + deps (base + backend extra) ---
 [ -d .venv ] || "$PYBIN" -m venv .venv
 ./.venv/bin/pip install -q --upgrade pip
 ./.venv/bin/pip install -q -r requirements.txt
+case "$BACKEND" in
+  subscription) ./.venv/bin/pip install -q "claude-agent-sdk>=0.2" ;;
+  api)          ./.venv/bin/pip install -q "anthropic>=0.40" ;;
+  cli)          : ;;  # no python deps; uses the claude CLI
+esac
 
-# --- 2. Frontend build (node/npm usually via nvm on this host) ---
+# --- 4. Frontend build (node/npm via nvm) ---
 if ! command -v npm >/dev/null 2>&1 && [ -s "$HOME/.nvm/nvm.sh" ]; then
   # shellcheck disable=SC1091
   . "$HOME/.nvm/nvm.sh"; nvm use default >/dev/null 2>&1 || true
@@ -46,14 +73,16 @@ echo "==> building frontend (npm $(npm -v))"
 ( cd web && { npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund; } )
 ( cd web && npm run build )
 
-# --- 3. .env ---
-if [ ! -f .env ]; then
-  cp .env.example .env
-  echo "!! created .env from .env.example — fill VEXA_BASE_URL / VEXA_API_KEY /"
-  echo "   WEB_PUBLIC_URL, then re-run this script."
+# --- 5. .env (create if missing, then pin the resolved backend) ---
+[ -f .env ] || { cp .env.example .env; echo "!! created .env from .env.example — fill VEXA_* / WEB_PUBLIC_URL"; }
+if grep -q '^TRANSLATE_BACKEND=' .env; then
+  # portable in-place edit (BSD/GNU sed both need a backup suffix)
+  sed -i.bak "s|^TRANSLATE_BACKEND=.*|TRANSLATE_BACKEND=$BACKEND|" .env && rm -f .env.bak
+else
+  printf '\nTRANSLATE_BACKEND=%s\n' "$BACKEND" >> .env
 fi
 
-# --- 4. launchd service ---
+# --- 6. launchd service ---
 mkdir -p logs "$HOME/Library/LaunchAgents"
 chmod +x deploy/run.sh
 sed "s|__APP_DIR__|$APP_DIR|g" "$PLIST_SRC" > "$PLIST_DST"
@@ -63,7 +92,7 @@ launchctl bootstrap "gui/$UID_NUM" "$PLIST_DST"
 launchctl kickstart -k "gui/$UID_NUM/$LABEL"
 echo "==> service $LABEL (re)started"
 
-# --- 5. health check ---
+# --- 7. health check ---
 PORT="$(sed -n 's/^PORT=//p' .env 2>/dev/null | head -1)"; PORT="${PORT:-8080}"
 sleep 2
 if curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1; then
