@@ -1,0 +1,33 @@
+{
+  "source": null,
+  "read": {
+    "fileId": null,
+    "sprintTabs": [],
+    "statusDoneValues": ["Done"],
+    "jiraProjectKey": null,
+    "jiraBoardId": null
+  },
+  "output": {
+    "riskTabGid": null,
+    "riskTabName": null,
+    "issueTabGid": null,
+    "issueTabName": null,
+    "nextActionTabGid": null,
+    "nextActionTabName": null,
+    "riskIssueType": null,
+    "issueIssueType": null
+  },
+  "thresholds": {
+    "overdueGraceDays": 0,
+    "stalledDays": 3,
+    "estimateVarianceRatio": 1.5,
+    "workHoursPerDay": 8,
+    "highScoreThreshold": 6,
+    "unassignedNearDeadlineDays": 2,
+    "velocityDropMarginPct": 15
+  },
+  "notify": {
+    "channel": null,
+    "pmContact": null
+  }
+}
