@@ -46,11 +46,23 @@ one before doing anything else.
    call `join_meeting(meeting_url=<url>, bot_name="NexusBot", language=<code>)` —
    include `language` only if step 1 confirmed exactly one language; omit
    it otherwise. Keep the `platform` and `native_meeting_id` from the
-   response — you need them for every later call.
+   response — you need them for every later call. The response also includes a
+   `share_link` field when the live-translate web app is configured (env
+   `WEB_PUBLIC_URL` on the vexa-bridge server) — this is the URL to the
+   realtime transcript + translation room for this meeting.
 
-3. **Notify.** Tell the user the bot is joining and that they (or someone in
-   the call) may need to admit it from the waiting room / lobby. Let them
-   know you'll send the summary once the meeting ends.
+3. **Notify + share the live link.** Reply in the same Slack thread the user
+   messaged you from:
+   - Tell them the bot is joining and that someone in the call may need to
+     admit it from the waiting room / lobby.
+   - If the join response has a non-empty `share_link`, **post that link in
+     the thread now** so everyone can watch the transcript + live translation
+     together while the meeting is happening — e.g. "🎙️ NexusBot đang vào
+     phòng họp. Xem transcript + bản dịch trực tiếp tại: <share_link>". The
+     target language is fixed by the link (not switchable by viewers), by
+     design. If `share_link` is empty, skip this part (the web app just isn't
+     configured) and don't fabricate a URL.
+   - Let them know you'll also send the full summary once the meeting ends.
 
 4. **Wait for the meeting to end.** Vexa has no end-of-meeting webhook, so
    poll instead: every ~2 minutes, call `bot_status()` and check whether this
