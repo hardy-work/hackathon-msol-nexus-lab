@@ -9,6 +9,8 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Pull latest main and symlink new skills
+        env:
+          GIT_SSH_COMMAND: "ssh -i /Users/mor_minhhieu/.ssh/hackathon_msol_nexus_lab_deploy -o IdentitiesOnly=yes"
         run: |
           set -euo pipefail
           cd "$HOME/repos/hackathon-msol-nexus-lab"
