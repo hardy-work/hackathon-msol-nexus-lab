@@ -83,15 +83,23 @@ async def _transcribe_via_soniox(audio_bytes: bytes, language: Optional[str]) ->
         "api_key": SONIOX_API_KEY,
         "model": SONIOX_MODEL,
         "audio_format": "auto",
-        "enable_language_identification": True,
     }
     if language:
+        # Language is known -> pin it and skip language identification. LID adds
+        # per-request processing latency; when Vexa already tells us the meeting
+        # language, it's pure overhead (and hurts accuracy on short chunks).
         config["language_hints"] = [language]
+    else:
+        config["enable_language_identification"] = True
 
     final_tokens: list[dict] = []
     finished = False
 
-    async with websockets.connect(SONIOX_WS_URL, open_timeout=10) as ws:
+    t0 = time.monotonic()
+    # Disable per-message compression: chunks are small and the deflate
+    # negotiation/CPU only adds handshake latency here.
+    async with websockets.connect(SONIOX_WS_URL, open_timeout=10, compression=None) as ws:
+        t_conn = time.monotonic()
         await ws.send(json.dumps(config))
 
         # Send the whole buffer in bounded chunks (kinder to the socket than one giant frame).
@@ -99,6 +107,7 @@ async def _transcribe_via_soniox(audio_bytes: bytes, language: Optional[str]) ->
         for i in range(0, len(audio_bytes), chunk_size):
             await ws.send(audio_bytes[i : i + chunk_size])
         await ws.send("")  # end-of-audio signal
+        t_sent = time.monotonic()
 
         deadline = time.monotonic() + SONIOX_TIMEOUT_S
         while not finished:
@@ -115,6 +124,11 @@ async def _transcribe_via_soniox(audio_bytes: bytes, language: Optional[str]) ->
                     final_tokens.append(token)
             finished = bool(msg.get("finished"))
 
+    t_done = time.monotonic()
+    logger.info(
+        "soniox timing: connect=%.2fs send=%.2fs finalize=%.2fs total=%.2fs (lid=%s)",
+        t_conn - t0, t_sent - t_conn, t_done - t_sent, t_done - t0, not bool(language),
+    )
     return _tokens_to_whisper_response(final_tokens, language)
 
 
