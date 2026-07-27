@@ -51,18 +51,26 @@ one before doing anything else.
    `WEB_PUBLIC_URL` on the vexa-bridge server) — this is the URL to the
    realtime transcript + translation room for this meeting.
 
-3. **Notify + share the live link.** Reply in the same Slack thread the user
-   messaged you from:
-   - Tell them the bot is joining and that someone in the call may need to
-     admit it from the waiting room / lobby.
-   - If the join response has a non-empty `share_link`, **post that link in
-     the thread now** so everyone can watch the transcript + live translation
-     together while the meeting is happening — e.g. "🎙️ NexusBot đang vào
-     phòng họp. Xem transcript + bản dịch trực tiếp tại: <share_link>". The
-     target language is fixed by the link (not switchable by viewers), by
-     design. If `share_link` is empty, skip this part (the web app just isn't
-     configured) and don't fabricate a URL.
-   - Let them know you'll also send the full summary once the meeting ends.
+3. **Post the live-view link — REQUIRED. This is the whole point of the skill;
+   never skip or paraphrase it away.** The `join_meeting` response contains a
+   `share_link` field, e.g.
+   `http://192.168.4.15:8080/meet/google_meet/abc-defg-hij?lang=vi`. Your reply
+   in the Slack thread **MUST contain that exact `share_link` URL as its own
+   clickable link.** It is the live transcript + translation page for everyone
+   to watch together. It is a **different URL from the Google Meet link**, and
+   the Meet link is **NOT** an acceptable substitute — a reply that shows only
+   the Meet URL is a failure. Reply in this shape (replace `<share_link>` with
+   the real value from the response):
+
+   ```
+   🎙️ NexusBot đang vào phòng họp (có thể cần admit nó khỏi phòng chờ).
+   📺 Xem transcript + bản dịch trực tiếp (tiếng Việt): <share_link>
+   ```
+
+   The target language is fixed by the link (viewers can't change it), by
+   design. Also let them know you'll send the full summary when the meeting
+   ends. Only if `share_link` is genuinely empty/missing (web app not
+   configured) may you omit it and say so — never fabricate a URL.
 
 4. **Wait for the meeting to end.** Vexa has no end-of-meeting webhook, so
    poll instead: every ~2 minutes, call `bot_status()` and check whether this
