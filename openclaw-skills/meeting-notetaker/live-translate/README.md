@@ -52,6 +52,36 @@ npm run build           # backend serves web/dist automatically
 npm run dev
 ```
 
+## Deploy on the gateway (macOS / launchd)
+
+The gateway host is a Mac (services run under `launchd`, not systemd/docker).
+`deploy/deploy.sh` builds and installs the app as a launchd user agent — run it
+on that host:
+
+```bash
+bash openclaw-skills/meeting-notetaker/live-translate/deploy/deploy.sh
+```
+
+It picks a Python ≥ 3.10, creates the venv + installs deps, sources `nvm` and
+builds the frontend, renders `deploy/ai.openclaw.live-translate.plist` into
+`~/Library/LaunchAgents/`, then (re)starts the `ai.openclaw.live-translate`
+service and health-checks it. Env/secrets come from `.env` (loaded by
+`deploy/run.sh`), never from the committed plist. Logs: `logs/live-translate.*`.
+
+Service controls:
+
+```bash
+launchctl kickstart -k gui/$(id -u)/ai.openclaw.live-translate   # restart
+launchctl bootout   gui/$(id -u)/ai.openclaw.live-translate      # stop/unload
+```
+
+**Slack link (one-time, manual — edits gateway config):** the link is produced
+by the vexa-bridge MCP server, whose env lives in
+`~/.openclaw-hackathon/openclaw.json`, *not* this app's `.env`. Add
+`"WEB_PUBLIC_URL"` and `"LIVE_TRANSLATE_LANG"` to that server's `env`, then
+`launchctl kickstart -k gui/$(id -u)/ai.openclaw.hackathon` to restart the
+gateway. `deploy.sh` prints this reminder at the end.
+
 Then open `http://<host>:8080/meet/<platform>/<native_meeting_id>?lang=vi`
 — e.g. `/meet/google_meet/abc-defg-hij?lang=vi`. The room home page (`/`) also
 accepts a raw Meet/Zoom link.

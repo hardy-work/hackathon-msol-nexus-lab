@@ -8,7 +8,7 @@ jobs:
   sync:
     runs-on: self-hosted
     steps:
-      - name: Pull latest main and symlink new skills
+      - name: Pull latest main and copy skills into the gateway workspace
         run: |
           set -euo pipefail
           cd "$HOME/repos/hackathon-msol-nexus-lab"
@@ -16,13 +16,22 @@ jobs:
           git checkout main
           git pull --ff-only origin main
 
-          workspace_skills="$HOME/.openclaw-hackathon/workspace-hackathon/skills"
+          # The gateway loads skills from its workspace skills root
+          # (agents.defaults.workspace = ~/.openclaw/workspace-hackathon).
+          # OpenClaw REFUSES to load a skill that is a symlink pointing outside
+          # that root ("Skipping escaped skill path ... reason=symlink-escape"),
+          # so we COPY real directories in instead of symlinking. rsync keeps it
+          # idempotent and also updates skills that already exist.
+          workspace_skills="$HOME/.openclaw/workspace-hackathon/skills"
           mkdir -p "$workspace_skills"
           for d in openclaw-skills/*/; do
             name="$(basename "$d")"
-            target="$workspace_skills/$name"
-            if [ ! -e "$target" ]; then
-              ln -s "$(pwd)/$d" "$target"
-              echo "linked new skill: $name"
-            fi
+            rsync -a \
+              --exclude '.venv/' \
+              --exclude '__pycache__/' \
+              --exclude 'node_modules/' \
+              --exclude '.git/' \
+              --exclude 'web/dist/' \
+              "$d" "$workspace_skills/$name/"
+            echo "synced skill: $name"
           done
