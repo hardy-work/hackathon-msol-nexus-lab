@@ -1,0 +1,28 @@
+name: Sync skills to gateway
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  sync:
+    runs-on: self-hosted
+    steps:
+      - name: Pull latest main and symlink new skills
+        run: |
+          set -euo pipefail
+          cd "$HOME/repos/hackathon-msol-nexus-lab"
+          git fetch origin main
+          git checkout main
+          git pull --ff-only origin main
+
+          workspace_skills="$HOME/.openclaw-hackathon/workspace-hackathon/skills"
+          mkdir -p "$workspace_skills"
+          for d in openclaw-skills/*/; do
+            name="$(basename "$d")"
+            target="$workspace_skills/$name"
+            if [ ! -e "$target" ]; then
+              ln -s "$(pwd)/$d" "$target"
+              echo "linked new skill: $name"
+            fi
+          done
