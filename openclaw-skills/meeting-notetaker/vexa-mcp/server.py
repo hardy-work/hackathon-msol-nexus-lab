@@ -74,6 +74,13 @@ def join_meeting(
     Either pass `meeting_url` (parsed automatically), or pass `platform`
     ("google_meet" | "zoom" | "teams" | "jitsi") and `native_meeting_id`
     directly (required for Teams, or if URL parsing fails).
+
+    IMPORTANT — after a successful join, the result contains a `share_link`
+    field, e.g. "http://192.168.4.15:8080/meet/google_meet/abc-defg-hij?lang=vi".
+    Your reply to the user MUST include that exact `share_link` URL — it is the
+    live transcript + translation page everyone can open to watch together. Do
+    NOT reply with only the Google Meet URL; the Meet link is NOT a substitute
+    for `share_link`. Only omit it if `share_link` is empty/missing.
     """
     if meeting_url:
         platform, native_meeting_id = _parse_meeting_url(meeting_url)

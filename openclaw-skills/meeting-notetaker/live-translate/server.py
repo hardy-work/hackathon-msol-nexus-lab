@@ -143,6 +143,11 @@ class Room:
         sub = Subscriber(lang=lang)
         self.subscribers.add(sub)
         if self._task is None or self._task.done():
+            # Reset any stale "ended" state from a previous cycle so a room that
+            # is being re-viewed (e.g. same meeting id, or after a lull) polls
+            # fresh and only re-ends if the bot is genuinely gone.
+            self._ended = False
+            self._empty_polls = 0
             self._task = asyncio.create_task(self._poll_loop())
         # A viewer may pick a language nothing has been translated into yet (or
         # join after capture) — backfill immediately instead of waiting for the
@@ -249,9 +254,11 @@ class Room:
         # viewer just requested. Runs in the background so polling never stalls.
         self._schedule_missing()
 
-        # End detection mirrors the skill's heuristic: if the bot has left, or
-        # the transcript has been silent for a long stretch, treat as ended.
-        if await self._bot_gone() or self._empty_polls >= max(4, int(240 / POLL_INTERVAL_S)):
+        # End ONLY when the bot has actually left the meeting. (We used to also
+        # end after a long silent stretch, but soniox transcription is bursty and
+        # quiet meetings are normal, so that caused rooms to end mid-meeting and
+        # stop pushing updates until a manual reload.)
+        if await self._bot_gone():
             self._ended = True
 
     def _schedule_missing(self, langs: Optional[set[str]] = None) -> None:
@@ -294,17 +301,25 @@ class Room:
             data = resp.json()
         except Exception:
             return False  # don't end on a transient status hiccup
-        bots = data.get("bots", data) if isinstance(data, dict) else data
+        # Vexa's /bots/status returns {"running_bots": [...], "running": [...],
+        # "count": N} — NOT a "bots" key. Read the right list.
+        if isinstance(data, dict):
+            bots = data.get("running_bots") or data.get("running") or data.get("bots") or []
+        elif isinstance(data, list):
+            bots = data
+        else:
+            return False
         if not isinstance(bots, list):
             return False
         for bot in bots:
             if not isinstance(bot, dict):
                 continue
             if str(bot.get("native_meeting_id")) == self.native_id and str(bot.get("platform")) == self.platform:
-                status = str(bot.get("status", "")).lower()
-                return status not in ("active", "running", "joining", "up_and_running")
-        # Not in the list at all -> bot is gone. But if the list was empty and
-        # we've never seen content, keep waiting rather than ending immediately.
+                # Still listed as running (joining / awaiting_admission / active /
+                # etc.) -> the bot is alive, the meeting is NOT over.
+                return False
+        # Absent from the running list -> genuinely gone. Only treat as ended if
+        # we've actually captured content (don't end before it's admitted).
         return bool(self._segments)
 
 
