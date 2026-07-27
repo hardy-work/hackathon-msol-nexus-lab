@@ -87,7 +87,14 @@ mkdir -p logs "$HOME/Library/LaunchAgents"
 chmod +x deploy/run.sh
 sed "s|__APP_DIR__|$APP_DIR|g" "$PLIST_SRC" > "$PLIST_DST"
 echo "==> installed $PLIST_DST"
-launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true   # ignore "not loaded"
+# Unload first (so a changed plist is picked up), then WAIT until it's really
+# gone — bootstrapping while a bootout is still settling throws
+# "Bootstrap failed: 5: Input/output error".
+launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true
+for _ in $(seq 1 10); do
+  launchctl print "gui/$UID_NUM/$LABEL" >/dev/null 2>&1 || break
+  sleep 0.5
+done
 launchctl bootstrap "gui/$UID_NUM" "$PLIST_DST"
 launchctl kickstart -k "gui/$UID_NUM/$LABEL"
 echo "==> service $LABEL (re)started"
