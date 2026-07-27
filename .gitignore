@@ -5,6 +5,10 @@
 # Python
 vexa-mcp/.venv/
 vexa-mcp/.env
+
+# Skill secrets — never commit real .env files, only .env.example
+openclaw-skills/*/.env
+openclaw-skills/*/service-account*.json
 **/__pycache__/
 
 .DS_Store
