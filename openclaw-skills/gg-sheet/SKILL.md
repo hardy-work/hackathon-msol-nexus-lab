@@ -67,7 +67,7 @@ Cấu trúc `config.json`:
 
 **Bước kiểm tra đầu tiên (trước MỌI Action)** — Nếu `config.json` không tồn tại, hoặc `fileId` là `null`/rỗng → skill **chưa được cấu hình cho project này**. KHÔNG tự đoán hay dùng schedule mặc định nào — hỏi ngay PM:
 
-> "Bạn cho mình link Google Sheet lịch trình dự án bạn muốn dùng nhé."
+> "Bạn cho mình link Google Sheet lịch trình dự án bạn muốn dùng nhé, mình sẽ cấu hình rồi thêm task cho bạn."
 
 Sau khi có link, chạy đúng quy trình Bước 0 (xem "Xác định tab/gid" bên dưới) để tạo mới `config.json` từ đầu, rồi mới tiếp tục Action PM yêu cầu.
 
