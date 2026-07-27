@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import websockets
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 
@@ -36,6 +36,10 @@ SONIOX_MODEL = os.getenv("SONIOX_MODEL", "stt-rt-v5")
 SONIOX_TIMEOUT_S = float(os.getenv("SONIOX_TIMEOUT_S", "22"))
 # Our own inbound auth, same dual scheme Vexa's reference service supports.
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
+# B1 low-latency interim push (opt-in). When set, each transcript is forwarded to
+# the live-translate app for a fast "interim" line. Unset -> reverts to normal.
+LIVE_INGEST_URL = os.getenv("LIVE_INGEST_URL", "").strip().rstrip("/")
+LIVE_INGEST_TOKEN = os.getenv("LIVE_INGEST_TOKEN", "").strip()
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -217,8 +221,33 @@ async def root():
     }
 
 
+def _push_interim(text: str, language: Optional[str]) -> None:
+    """Fire-and-forget: forward the raw transcript to the live-translate app so
+    it can show a low-latency 'interim' line, skipping Vexa's confirm layer.
+    Opt-in via LIVE_INGEST_URL; failures are swallowed so this never affects the
+    transcription response. Sync + stdlib urllib (no extra dep); Starlette runs
+    this in a threadpool as a background task, so it won't block the event loop."""
+    if not LIVE_INGEST_URL or not text.strip():
+        return
+    try:
+        import json as _json
+        import urllib.request
+
+        body = _json.dumps({"text": text, "language": language or ""}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{LIVE_INGEST_URL}/api/ingest", data=body, method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        if LIVE_INGEST_TOKEN:
+            req.add_header("X-Ingest-Token", LIVE_INGEST_TOKEN)
+        urllib.request.urlopen(req, timeout=4.0).close()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("interim push failed (ignored): %s", e)
+
+
 @app.post("/v1/audio/transcriptions")
 async def transcribe_audio(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     model: str = Form(...),
     language: Optional[str] = Form(None),
@@ -247,6 +276,10 @@ async def transcribe_audio(
         f"transcribed {len(audio_bytes)} bytes in {time.time() - start:.2f}s - "
         f"language={result['language']}, segments={len(result['segments'])}"
     )
+    # After the response is sent to Vexa, forward the raw text to live-translate
+    # for the low-latency interim line (no-op unless LIVE_INGEST_URL is set).
+    if LIVE_INGEST_URL and result.get("text"):
+        background_tasks.add_task(_push_interim, result["text"], language)
     return result
 
 

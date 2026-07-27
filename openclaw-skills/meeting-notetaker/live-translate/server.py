@@ -355,6 +355,61 @@ async def healthz() -> dict:
     return {"status": "ok", "vexa": VEXA_BASE_URL, "backend": os.getenv("TRANSLATE_BACKEND", "subscription")}
 
 
+# --------------------------------------------------------------------------- #
+# Interim ingest (B1): soniox-bridge pushes its RAW transcript here, bypassing #
+# Vexa's confirm layer, for a low-latency "live" line. Feature is opt-in — the #
+# bridge only pushes when its LIVE_INGEST_URL env is set, so unsetting that     #
+# reverts to the confirmed-only behavior with no code changes.                 #
+# --------------------------------------------------------------------------- #
+
+INGEST_TOKEN = os.getenv("INGEST_TOKEN", "").strip()
+_active_cache: dict = {"room": None, "at": 0.0}
+
+
+async def _current_active_room() -> Optional[tuple[str, str]]:
+    """Return (platform, native_id) if EXACTLY one bot is running (so we can
+    route an id-less ingest to it), else None. Cached ~2s so frequent ingests
+    don't hammer Vexa."""
+    loop = asyncio.get_event_loop()
+    now = loop.time()
+    if now - _active_cache["at"] < 2.0:
+        return _active_cache["room"]
+    room = _active_cache["room"]
+    try:
+        resp = await _vexa.get("/bots/status")
+        resp.raise_for_status()
+        data = resp.json()
+        bots = data.get("running_bots") or data.get("running") or []
+        running = [b for b in bots if isinstance(b, dict)]
+        room = (
+            (str(running[0].get("platform")), str(running[0].get("native_meeting_id")))
+            if len(running) == 1
+            else None
+        )
+    except Exception:  # noqa: BLE001 - keep last known on a transient hiccup
+        pass
+    _active_cache["room"] = room
+    _active_cache["at"] = now
+    return room
+
+
+@app.post("/api/ingest")
+async def ingest(payload: dict, request: Request) -> dict:
+    """Receive a raw interim transcript from soniox-bridge and broadcast it as a
+    fast 'interim' line to whichever single meeting is currently live."""
+    if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+        return {"ok": False, "error": "unauthorized"}
+    text = (payload.get("text") or "").strip()
+    if not text:
+        return {"ok": True, "skipped": "empty"}
+    target = await _current_active_room()
+    if not target:
+        return {"ok": True, "skipped": "no-single-active-meeting"}
+    platform, native_id = target
+    get_room(platform, native_id)._broadcast({"type": "interim", "text": text})
+    return {"ok": True, "room": f"{platform}/{native_id}"}
+
+
 @app.get("/api/rooms/{platform}/{native_id}")
 async def room_info(platform: str, native_id: str) -> JSONResponse:
     """Lightweight metadata for a room, incl. whether the bot is still live."""

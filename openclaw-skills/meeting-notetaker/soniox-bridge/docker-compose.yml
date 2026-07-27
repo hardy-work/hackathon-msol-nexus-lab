@@ -9,4 +9,7 @@ services:
       - SONIOX_MODEL=${SONIOX_MODEL:-stt-rt-v5}
       - SONIOX_WS_URL=${SONIOX_WS_URL:-wss://stt-rt.soniox.com/transcribe-websocket}
       - SONIOX_TIMEOUT_S=${SONIOX_TIMEOUT_S:-22}
+      # B1 low-latency interim push (opt-in). Empty -> disabled (reverts).
+      - LIVE_INGEST_URL=${LIVE_INGEST_URL:-}
+      - LIVE_INGEST_TOKEN=${LIVE_INGEST_TOKEN:-}
     restart: unless-stopped

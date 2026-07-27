@@ -152,6 +152,27 @@ body {
 .cell.translated { background: var(--panel-2); }
 .cell.pending { color: var(--pending); font-style: italic; }
 
+.interim-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  font-size: 15px;
+  color: var(--muted);
+}
+.interim-badge {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-2);
+  background: var(--panel-2);
+  padding: 3px 8px;
+  border-radius: 20px;
+}
+.interim-text { font-style: italic; color: var(--text); opacity: 0.75; }
+
 @media (max-width: 720px) {
   .cols-head, .turn-cols { grid-template-columns: 1fr; gap: 8px; }
   .cols-head { display: none; }
