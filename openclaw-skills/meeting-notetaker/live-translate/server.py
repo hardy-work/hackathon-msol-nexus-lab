@@ -29,6 +29,7 @@ import asyncio
 import json
 import logging
 import os
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import AsyncIterator, Optional
@@ -323,14 +324,15 @@ def get_room(platform: str, native_id: str) -> Room:
 # HTTP app                                                                     #
 # --------------------------------------------------------------------------- #
 
-app = FastAPI(title="Live Translate", version="1.0.0")
-
-
-@app.on_event("startup")
-async def _warm_translator() -> None:
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
     # Pay the persistent-session connect cost now, in the background, so the
     # first real translation of a meeting isn't stalled waiting for it.
     asyncio.create_task(_translator.warm())
+    yield
+
+
+app = FastAPI(title="Live Translate", version="1.0.0", lifespan=_lifespan)
 
 
 @app.get("/healthz")

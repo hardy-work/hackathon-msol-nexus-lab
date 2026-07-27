@@ -92,13 +92,17 @@ launchctl bootstrap "gui/$UID_NUM" "$PLIST_DST"
 launchctl kickstart -k "gui/$UID_NUM/$LABEL"
 echo "==> service $LABEL (re)started"
 
-# --- 7. health check ---
+# --- 7. health check (retry: startup + first warm-up can take a few seconds) ---
 PORT="$(sed -n 's/^PORT=//p' .env 2>/dev/null | head -1)"; PORT="${PORT:-8080}"
-sleep 2
-if curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1; then
+ok=false
+for _ in $(seq 1 15); do
+  if curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1; then ok=true; break; fi
+  sleep 1
+done
+if $ok; then
   echo "==> healthy at http://127.0.0.1:$PORT/healthz"
 else
-  echo "!! not answering on :$PORT yet — tail logs/live-translate.err.log"
+  echo "!! not answering on :$PORT after 15s — tail logs/live-translate.err.log"
 fi
 
 cat <<NOTE
