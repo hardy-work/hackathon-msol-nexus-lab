@@ -89,6 +89,8 @@ GOOGLE_SHEETS_API_KEY → API key trong Google Cloud Console đã bật "Google 
 curl -s "https://sheets.googleapis.com/v4/spreadsheets/<fileId>/values/<TAB_ENC>?key=$GOOGLE_SHEETS_API_KEY"
 ```
 
+> ⚡ **Tối ưu token**: KHÔNG đọc nguyên cả tab (A:R) nếu chỉ cần vài cột. Dùng `values.get` với range đúng cột cần (vd `<TAB_ENC>!A:A` để tìm No. lớn nhất), hoặc `values:batchGet?ranges=<TAB_ENC>!A:A&ranges=<TAB_ENC>!D:D&ranges=...` để lấy nhiều cột rời rạc trong **1 lệnh** thay vì đọc cả dải liên tục ở giữa không dùng tới. Response nhỏ hơn nhiều → tốn ít token hơn khi đưa vào context.
+
 ### Ghi dữ liệu (Service Account)
 
 Ghi (thêm/sửa/xóa) bắt buộc phải dùng OAuth2 — API key KHÔNG ghi được. Dùng Service Account đã được share quyền **Editor** vào sheet:
@@ -97,48 +99,15 @@ Ghi (thêm/sửa/xóa) bắt buộc phải dùng OAuth2 — API key KHÔNG ghi �
 GOOGLE_SERVICE_ACCOUNT_KEY_FILE → đường dẫn tới file JSON credentials của Service Account (gitignored, không commit)
 ```
 
-Trước mỗi lượt thêm/sửa/xóa, lấy access token mới (JWT tự ký bằng Node `crypto` sẵn có, không cần cài thêm package):
+Trước mỗi lượt thêm/sửa/xóa, lấy access token mới bằng script có sẵn (JWT tự ký, không cần cài package):
 
 ```bash
-ACCESS_TOKEN=$(node -e "
-const fs = require('fs');
-const crypto = require('crypto');
-const https = require('https');
-
-const key = JSON.parse(fs.readFileSync(process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE, 'utf8'));
-const now = Math.floor(Date.now() / 1000);
-const b64url = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
-const header = { alg: 'RS256', typ: 'JWT' };
-const claims = {
-  iss: key.client_email,
-  scope: 'https://www.googleapis.com/auth/spreadsheets',
-  aud: 'https://oauth2.googleapis.com/token',
-  iat: now,
-  exp: now + 3600,
-};
-const unsigned = \`\${b64url(header)}.\${b64url(claims)}\`;
-const signature = crypto.createSign('RSA-SHA256').update(unsigned).sign(key.private_key, 'base64url');
-const jwt = \`\${unsigned}.\${signature}\`;
-
-const body = 'grant_type=' + encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') + '&assertion=' + jwt;
-const req = https.request('https://oauth2.googleapis.com/token', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) },
-}, (res) => {
-  let data = '';
-  res.on('data', (c) => (data += c));
-  res.on('end', () => {
-    const json = JSON.parse(data);
-    if (json.access_token) console.log(json.access_token);
-    else { console.error(data); process.exit(1); }
-  });
-});
-req.write(body);
-req.end();
-")
+ACCESS_TOKEN=$(bash openclaw-skills/gg-sheet/scripts/get-token.sh)
 ```
 
 Nếu `$ACCESS_TOKEN` rỗng → xem Error Handling (thường do Service Account chưa được share quyền Editor vào sheet, hoặc `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` sai đường dẫn).
+
+> ⚡ **Tối ưu tốc độ**: chỉ mint `ACCESS_TOKEN` **1 lần cho cả action**, dùng lại cho mọi lệnh ghi trong action đó — không mint lại giữa các bước (mỗi lần mint tốn 1 round-trip tới `oauth2.googleapis.com`). Việc mint token (dùng Service Account) độc lập với bước đọc dữ liệu (dùng API key) nên có thể chạy 2 lệnh này song song trong cùng 1 lời gọi Bash (`... & PID=$!; ...; wait $PID`) thay vì tuần tự, để giảm thời gian chờ trước khi ghi.
 
 ---
 
@@ -168,7 +137,9 @@ Nếu `$ACCESS_TOKEN` rỗng → xem Error Handling (thường do Service Accoun
 
 **Bước 3 — Xác định No. mới**
 
-Đọc dữ liệu hiện tại của tab qua API key, tìm giá trị lớn nhất ở cột No. trong các dòng task thật (bỏ qua dòng subtotal/category-subtotal) → No. mới = max + 1.
+Chỉ đọc cột No. (`<TAB_ENC>!A:A`, không đọc cả A:R) qua API key, tìm giá trị lớn nhất trong các dòng task thật (bỏ qua dòng subtotal/category-subtotal) → No. mới = max + 1, `lastRow` = số dòng cuối có No.
+
+Nếu Bước 3b hoặc 5.1 cần thêm dữ liệu (Category/Assignee/Estimate/Plan Start-End của dòng liền trước hoặc của Assignee) → đọc bổ sung đúng cột cần bằng `values:batchGet` (nhiều `ranges` trong 1 lệnh), không đọc lại cả tab.
 
 **Bước 3b — Nếu task mới có Assignee: áp dụng mục "Tính lại thời gian Assignee" (dùng chung cho cả 3 Action, xem bên dưới)** — task mới có thể chen vào ngày Assignee đã kín giờ.
 
@@ -189,84 +160,23 @@ Sắp thêm task mới vào tab <tên tab>:
 Xác nhận thêm? (có / không)
 ```
 
-**Bước 5 — Thực thi (sau khi PM xác nhận)**
+**Bước 5 — Thực thi (sau khi PM xác nhận)** — gộp toàn bộ thao tác format + giá trị còn **2 lệnh API** (thay vì ghi rồi ghi đè nhiều lần): trước tiên copy format/merge cho dòng mới (chưa có giá trị thật), sau đó ghi giá trị thật đúng 1 lần duy nhất. KHÔNG ghi giá trị thô trước rồi copy format đè lên sau — copy format (`PASTE_NORMAL`) sẽ xoá mất giá trị vừa ghi, gây ra 1 lượt ghi thừa.
 
-> ⚠️ **KHÔNG dùng `values:append`** để thêm task. Endpoint này tự đoán "vùng bảng" dựa trên cột nào có dữ liệu liền mạch nhất (thường là Status vì cột này hiếm khi trống) — đã từng bị ghi lệch nguyên 1 dòng sang tận cột S→AG thay vì A→R do cột No./Sprint/Category hay bị trống (merged cell). Luôn tính chính xác dòng trống tiếp theo rồi ghi bằng `values.update` (PUT) với range tường minh:
+> ⚠️ **KHÔNG dùng `values:append`** — endpoint này tự đoán "vùng bảng" theo cột liền mạch nhất (thường Status), từng ghi lệch nguyên dòng sang S→AG vì No./Sprint/Category hay trống (merged cell). Luôn tính đúng dòng trống tiếp theo (`NEW_ROW = lastRow + 1`, `lastRow` lấy từ Bước 3) rồi ghi bằng range tường minh.
+
+**5.1 — Copy format/merge cho dòng mới**: đọc **[format-copy.md](format-copy.md)** (cùng thư mục skill) và làm theo — chỉ cần đọc file này khi đang ở Action 1, không tải vào context cho Action 2/3. Gộp toàn bộ thao tác merge/copy thành **1 lệnh `batchUpdate` duy nhất**.
+
+**5.2 — Ghi giá trị thật, đúng 1 lần** (vì 5.1 vừa copy `PASTE_NORMAL` mang value của dòng cũ vào D→R, cần ghi đè lại đúng field PM cung cấp; cột Category nếu là nhóm mới cũng ghi trong cùng lệnh này để gộp call):
 
 ```bash
-TAB_ENC=$(node -e "console.log(encodeURIComponent(process.argv[1]))" "<tên tab>")
-# lastRow lấy từ số dòng của mảng `values` đã đọc ở Bước 3 (Bước 3 đã đọc để tìm No. lớn nhất)
-NEW_ROW=$((lastRow + 1))
-curl -s -X PUT \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  "https://sheets.googleapis.com/v4/spreadsheets/<fileId>/values/${TAB_ENC}!A${NEW_ROW}:R${NEW_ROW}?valueInputOption=USER_ENTERED" \
-  -d '{ "values": [ [<đúng thứ tự cột theo `columns` của tab này trong config.json>] ] }'
+curl -s -X PUT -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+  "https://sheets.googleapis.com/v4/spreadsheets/<fileId>/values/<tên tab>!C${lastRow}:I${lastRow}?valueInputOption=USER_ENTERED" \
+  -d '{ "values": [ [<Category nếu nhóm mới, else "">, <Task>, <Type>, <Assignee>, <Estimate>, <Plan Start>, <Plan End>] ] }'
 ```
 
-(Đổi `R` thành đúng cột cuối theo `columns` của tab đang thao tác trong `config.json` — có tab ít cột hơn, không phải lúc nào cũng tới R.)
+(Đổi range/thứ tự cột theo `columns` thật của tab trong `config.json`. Field PM không cung cấp → `""`. Không cần ghi No./Sprint — hiển thị theo giá trị ở ô anchor của vùng merge.)
 
-Bỏ trống (chuỗi rỗng `""`) cho các field PM không cung cấp.
-
-**Bước 5b — Copy định dạng cho dòng mới** (dropdown Assignee/Status, màu, và merge cell của No./Sprint/Category Milestone)
-
-Ghi giá trị bằng `values.update` KHÔNG tự mang theo định dạng/data-validation/merge của các dòng task khác (dòng mới sẽ trắng trơn, mất dropdown, mất màu). Có 2 việc cần làm, KHÔNG chỉ copy format đơn giản:
-
-> ⚠️ Với cột đang bị **merge theo chiều dọc** (thường là No., Sprint, và có thể Category Milestone theo từng nhóm) — chỉ ô **anchor** (ô trên-cùng-bên-trái của vùng merge) mới thực sự lưu `userEnteredFormat`; các ô còn lại trong vùng merge trả về format rỗng `{}`. Copy format từ 1 dòng "ở giữa/cuối" vùng merge (như dòng cuối cùng hiện có) sẽ copy được **format rỗng** — đã từng bị lỗi này (dòng mới thêm mất hết màu/border dù đã chạy `copyPaste`).
-
-1. **Cột No./Sprint (hoặc cột nào đang merge nguyên khối cho cả tab)**: mở rộng merge hiện có để bao luôn dòng mới, dùng `mergeCells` (không cần unmerge trước, gọi thẳng trên vùng lớn hơn là được — Sheets tự gộp merge cũ nằm trong đó):
-
-   ```bash
-   curl -s -X POST -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
-     "https://sheets.googleapis.com/v4/spreadsheets/<fileId>:batchUpdate" \
-     -d '{ "requests": [
-       { "mergeCells": { "range": { "sheetId": <gid>, "startRowIndex": <firstDataRow0based>, "endRowIndex": '"$lastRow"', "startColumnIndex": 0, "endColumnIndex": 1 }, "mergeType": "MERGE_ALL" } },
-       { "mergeCells": { "range": { "sheetId": <gid>, "startRowIndex": <firstDataRow0based>, "endRowIndex": '"$lastRow"', "startColumnIndex": 1, "endColumnIndex": 2 }, "mergeType": "MERGE_ALL" } }
-     ]}'
-   ```
-
-   (`endRowIndex` dùng số 0-based **exclusive** = số dòng 1-based của dòng mới, vd dòng mới là sheet row 36 → `endRowIndex: 36`.)
-
-2. **Cột Category Milestone**: nếu task mới **cùng category** với nhóm liền trước → mở rộng merge của nhóm đó y như bước 1 (chỉ đổi `startColumnIndex`/`endColumnIndex` sang cột Category). Nếu task mới là **category MỚI, khác** nhóm trước (như "Fixbug") → KHÔNG merge vào nhóm cũ — copy format riêng cho ô mới, lấy nguồn là **ô anchor** của 1 category bất kỳ đã có (dòng đầu tiên của nhóm đó, không phải dòng cuối):
-
-   ```bash
-   curl -s -X POST -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
-     "https://sheets.googleapis.com/v4/spreadsheets/<fileId>:batchUpdate" \
-     -d '{ "requests": [{
-       "copyPaste": {
-         "source": { "sheetId": <gid>, "startRowIndex": <anchorRow0based>, "endRowIndex": '"$((anchorRow0based + 1))"', "startColumnIndex": <colIndex>, "endColumnIndex": '"$((colIndex + 1))"' },
-         "destination": { "sheetId": <gid>, "startRowIndex": '"$((lastRow - 1))"', "endRowIndex": '"$lastRow"', "startColumnIndex": <colIndex>, "endColumnIndex": '"$((colIndex + 1))"' },
-         "pasteType": "PASTE_FORMAT"
-       }
-     }]}'
-   ```
-
-3. **Toàn bộ các cột còn lại KHÔNG merge** (từ cột Task cho tới cột cuối, vd D→R — tức MỌI cột không thuộc bước 1/2, kể cả cột Task/Type mà không phải dropdown): copy nguyên khối `startColumnIndex` từ cột đầu tiên không-merge (vd D, Task) đến hết cột cuối (vd R+1) từ **dòng liền trước** (`lastRow - 1`, dòng này không nằm trong merge nên đầy đủ dữ liệu, an toàn để copy) sang dòng mới, dùng **`pasteType: PASTE_NORMAL`** (không phải `PASTE_FORMAT`):
-   ```bash
-   curl -s -X POST -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
-     "https://sheets.googleapis.com/v4/spreadsheets/<fileId>:batchUpdate" \
-     -d '{ "requests": [{
-       "copyPaste": {
-         "source": { "sheetId": <gid>, "startRowIndex": '"$((lastRow - 2))"', "endRowIndex": '"$((lastRow - 1))"', "startColumnIndex": <cột Task, vd 3 cho D>, "endColumnIndex": <cột cuối + 1, vd 18 cho R> },
-         "destination": { "sheetId": <gid>, "startRowIndex": '"$((lastRow - 1))"', "endRowIndex": '"$lastRow"', "startColumnIndex": <cột Task>, "endColumnIndex": <cột cuối + 1> },
-         "pasteType": "PASTE_NORMAL"
-       }
-     }]}'
-   ```
-   > ⚠️ Đã thử `PASTE_FORMAT` (chỉ copy format) + `setDataValidation` riêng (copy đúng rule `dataValidation`, đã verify qua API khớp 100% với dòng nguồn) nhưng **màu chip của dropdown (Assignee/Status) trong Google Sheets hiện đại vẫn KHÔNG lên màu** dù dữ liệu API báo khớp — đây là 1 thuộc tính render nội bộ của Sheets mà API v4 không expose đầy đủ để set riêng lẻ. `PASTE_NORMAL` (copy nguyên khối, kể cả các thuộc tính ẩn không thấy qua API) là cách duy nhất xác nhận hoạt động đúng.
-   > ⚠️ Cũng đã từng bỏ sót cột Task (D) khi chỉ copy từ E→R (nghĩ D chỉ cần ghi value) → dòng mới bị thiếu border ở đúng cột Task dù các cột khác đã đúng. Luôn copy **từ cột đầu tiên không-merge** (không chỉ từ cột có dropdown) tới hết cột cuối.
-
-4. **Ghi đè lại giá trị thật của dòng mới** (vì bước 3 vừa copy `PASTE_NORMAL` sẽ ghi đè value của dòng liền trước lên dòng mới) — dùng `values.update` ghi lại đúng field PM cung cấp (Task, Type, Assignee, Estimate, ngày, Status...) đè lên đúng những ô cần khác với dòng nguồn, giữ nguyên các ô blank khác:
-   ```bash
-   curl -s -X PUT -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
-     "https://sheets.googleapis.com/v4/spreadsheets/<fileId>/values/<tên tab>!D${lastRow}:I${lastRow}?valueInputOption=USER_ENTERED" \
-     -d '{ "values": [ [<Task>, <Type>, <Assignee>, <Estimate>, <Plan Start>, <Plan End>] ] }'
-   ```
-   (Thứ tự làm: bước 3 copy trước để có đủ format/validation/border, rồi bước 4 ghi value đúng đè lên sau — không đổi thứ tự.)
-
-(Lưu ý `startRowIndex`/`endRowIndex` của API `batchUpdate` là 0-based, khác với số dòng 1-based dùng trong `values.update` — dòng sheet N tương ứng `startRowIndex: N-1`.)
-
-Sau khi ghi, đọc lại đúng dòng vừa thêm (`merges` + `dataValidation` qua `spreadsheets.get` lẫn giá trị qua `values.get`) để verify trước khi báo PM (Bước 6).
+Ghi xong → verify bằng **1 lệnh** `spreadsheets.get` (dùng `ranges` giới hạn đúng dòng mới + `fields=sheets(merges,data.rowData.values(userEnteredValue,dataValidation))`) để lấy đồng thời merges, giá trị và dataValidation, thay vì gọi riêng `spreadsheets.get` và `values.get`.
 
 **Bước 6 — Phản hồi**
 
@@ -288,7 +198,7 @@ Ghi Audit Log (xem mục bên dưới).
 
 **Bước 1 — Xác định tab** + **No. task cần sửa** (hỏi lại nếu PM không nói rõ No. hoặc tên task)
 
-**Bước 2 — Đọc lại dữ liệu hiện tại của tab** qua API key, tìm đúng dòng có cột No. khớp (hoặc match theo tên Task nếu PM không nhớ No., nhưng nếu match nhiều dòng → liệt kê và hỏi PM chọn) → xác định **row index thật trong sheet** (1-based, tính cả header) từ vị trí phần tử trong mảng `values`.
+**Bước 2 — Đọc lại dữ liệu hiện tại của tab** qua API key. Dùng `values:batchGet` chỉ lấy cột No. + Task + đúng cột field PM muốn sửa (không đọc cả A:R), tìm dòng có No. khớp (hoặc match theo tên Task nếu PM không nhớ No. — match nhiều dòng thì liệt kê hỏi PM chọn) → xác định **row index thật trong sheet** (1-based, tính cả header) từ vị trí phần tử trong mảng `values`, đồng thời lấy luôn giá trị cũ của field cần sửa để đưa vào preview.
 
 **Bước 3 — Xác định field cần sửa + giá trị mới**, map theo tên field PM nói → cột tương ứng theo `columns` của tab đó trong `config.json`.
 
@@ -343,7 +253,7 @@ Ghi Audit Log.
 
 **Bước 1 — Xác định tab** + **No. task cần xóa**
 
-**Bước 2 — Đọc lại dữ liệu hiện tại của tab** qua API key, tìm đúng dòng, xác định **row index 0-based** trong sheet thật (dùng cho `deleteDimension`, khác với row 1-based dùng ở Action 2) và lấy `gid` (sheetId) của tab từ bảng "gid đã biết".
+**Bước 2 — Đọc lại dữ liệu hiện tại của tab** qua API key. Dùng `values:batchGet` chỉ lấy cột No. + Task + Assignee + Status (đủ cho preview cảnh báo xóa, không đọc cả A:R), tìm đúng dòng, xác định **row index 0-based** trong sheet thật (dùng cho `deleteDimension`, khác với row 1-based dùng ở Action 2) và lấy `gid` (sheetId) của tab từ bảng "gid đã biết".
 
 **Bước 2b — Nếu task sắp xóa có Assignee: áp dụng mục "Tính lại thời gian Assignee" (dùng chung cho cả 3 Action, xem bên dưới)** — xóa task để lại khoảng trống trong lịch của Assignee đó, hỏi PM muốn xử lý khoảng trống này thế nào (giữ làm buffer, hay dồn/khôi phục lịch task khác).
 
@@ -466,16 +376,16 @@ Ví dụ:
 
 ## Error Handling
 
-| Lỗi                                                              | Phản hồi                                                                                                                                                 |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Link Google Sheet mới nhưng API `spreadsheets.get` lỗi (403/404) | File không tồn tại hoặc chưa share quyền → báo PM kiểm tra lại quyền chia sẻ, KHÔNG ghi `config.json`                                                    |
-| Không rõ PM muốn thao tác tab/No. task nào                       | Hỏi lại rõ ràng, không tự đoán                                                                                                                           |
-| gid chưa có trong `tabs` của `config.json`                       | Tự resolve qua API `spreadsheets.get`, không hỏi lại PM tên tab                                                                                          |
-| API resolve gid trả về `NOT_FOUND`                               | gid không tồn tại trong file → hỏi lại PM kiểm tra lại link/gid                                                                                          |
-| Không tìm thấy No. task cần sửa/xóa                              | Báo PM: "Không tìm thấy task No.X trong tab Y, bạn kiểm tra lại số/tên task nhé."                                                                        |
-| `$ACCESS_TOKEN` rỗng / lỗi mint token                            | Kiểm tra `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` đúng đường dẫn, và Service Account (`client_email` trong file JSON) đã được share quyền Editor vào sheet chưa |
-| API ghi trả lỗi `403 PERMISSION_DENIED`                          | "Service Account chưa có quyền Editor trên file này, bạn share quyền giúp mình nhé (email trong file credentials)."                                      |
-| API trả lỗi `400 INVALID_ARGUMENT`                               | Kiểm tra lại tên tab/range dùng trong request có đúng chính tả/khoảng trắng, hoặc giá trị gửi lên không đúng kiểu dữ liệu cột                            |
-| API trả lỗi `404` (không tìm thấy range)                         | Tên tab sai hoặc tab đã bị đổi tên/xoá → hỏi lại PM tên tab hiện tại                                                                                     |
-| PM trả lời "không" ở bước xác nhận                               | "Đã huỷ, không có thay đổi nào trên sheet."                                                                                                              |
-| JSON thiếu `values` hoặc parse lỗi                               | Báo PM: "Không đọc được dữ liệu tab này để xác định vị trí dòng, cấu trúc cột có thể đã thay đổi."                                                       |
+| Lỗi                                                                               | Phản hồi                                                                                                                                                 |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Link Google Sheet mới nhưng API `spreadsheets.get` lỗi (403/404)                  | File không tồn tại hoặc chưa share quyền → báo PM kiểm tra lại quyền chia sẻ, KHÔNG ghi `config.json`                                                    |
+| Không rõ PM muốn thao tác tab/No. task nào                                        | Hỏi lại rõ ràng, không tự đoán                                                                                                                           |
+| gid chưa có trong `tabs` của `config.json`                                        | Tự resolve qua API `spreadsheets.get`, không hỏi lại PM tên tab                                                                                          |
+| API resolve gid trả về `NOT_FOUND`                                                | gid không tồn tại trong file → hỏi lại PM kiểm tra lại link/gid                                                                                          |
+| Không tìm thấy No. task cần sửa/xóa                                               | Báo PM: "Không tìm thấy task No.X trong tab Y, bạn kiểm tra lại số/tên task nhé."                                                                        |
+| `$ACCESS_TOKEN` rỗng / lỗi mint token                                             | Kiểm tra `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` đúng đường dẫn, và Service Account (`client_email` trong file JSON) đã được share quyền Editor vào sheet chưa |
+| API ghi trả lỗi `403 PERMISSION_DENIED`                                           | "Service Account chưa có quyền Editor trên file này, bạn share quyền giúp mình nhé (email trong file credentials)."                                      |
+| API trả lỗi `400 INVALID_ARGUMENT`                                                | Kiểm tra lại tên tab/range dùng trong request có đúng chính tả/khoảng trắng, hoặc giá trị gửi lên không đúng kiểu dữ liệu cột                            |
+| API trả lỗi `404` (không tìm thấy range)                                          | Tên tab sai hoặc tab đã bị đổi tên/xoá → hỏi lại PM tên tab hiện tại                                                                                     |
+| PM trả lời "không" ở bước xác nhận                                                | "Đã huỷ, không có thay đổi nào trên sheet."                                                                                                              |
+| JSON thiếu `values` hoặc parse lỗi                                                | Báo PM: "Không đọc được dữ liệu tab này để xác định vị trí dòng, cấu trúc cột có thể đã thay đổi."                                                       |
