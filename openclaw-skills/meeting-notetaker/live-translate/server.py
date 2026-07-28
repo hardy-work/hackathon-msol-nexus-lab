@@ -136,6 +136,13 @@ class Room:
         self._xlate_tasks: set[asyncio.Task] = set()
         self._ended = False
         self._empty_polls = 0
+        # B-full: when the bot streams a continuous transcript straight to us
+        # (via the bridge's /v1/stream relay), it becomes the authoritative source
+        # for this room and the Vexa confirm-layer poller stops emitting segments
+        # (it would duplicate / lag). Segments then arrive via ingest_final().
+        self.bfull = False
+        self._bfull_idx: dict[str, int] = {}   # seg_id -> stable idx
+        self._bfull_next = 1_000_000           # idx space disjoint from Vexa's
 
     # -- viewer lifecycle --------------------------------------------------- #
 
@@ -231,6 +238,14 @@ class Room:
             logger.info("room %s: poller exited", self.key)
 
     async def _poll_once(self) -> None:
+        # B-full is live for this room -> the bot's continuous stream is the source
+        # of truth; don't also emit Vexa's confirm-layer segments (they'd duplicate
+        # and re-introduce the seam drops we bypassed). Still check for bot-gone.
+        if self.bfull:
+            if await self._bot_gone():
+                self._ended = True
+            return
+
         resp = await _vexa.get(f"/transcripts/{self.platform}/{self.native_id}")
         resp.raise_for_status()
         segments = _parse_segments(resp.json() if resp.content else {})
@@ -293,6 +308,33 @@ class Room:
         finally:
             for seg in segs:
                 pending.discard(seg.idx)
+
+    # -- B-full ingest (bot's continuous stream = authoritative source) ----- #
+
+    def ingest_interim(self, text: str, speaker: Optional[str]) -> None:
+        self._broadcast({"type": "interim", "text": text, "speaker": speaker or ""})
+
+    def ingest_final(
+        self, seg_id: str, speaker: str, language: str, text: str,
+        start: Optional[float], end: Optional[float],
+    ) -> None:
+        """A finalized line from the bot's continuous stream. Treat it as a room
+        segment (translate + broadcast), bypassing Vexa's confirm layer entirely."""
+        self.bfull = True  # from now on the poller won't emit its own segments
+        idx = self._bfull_idx.get(seg_id)
+        if idx is None:
+            idx = self._bfull_next
+            self._bfull_next += 1
+            self._bfull_idx[seg_id] = idx
+        seg = Segment(idx=idx, speaker=speaker or "Speaker", language=(language or "").lower(),
+                      text=text, start=start, end=end)
+        self._seen[idx] = text
+        self._segments[idx] = seg
+        self._broadcast(self._segment_event(seg))
+        # New/updated text -> drop stale translations so it re-translates.
+        for cache in self._translations.values():
+            cache.pop(idx, None)
+        self._schedule_missing()
 
     async def _bot_gone(self) -> bool:
         try:
@@ -395,19 +437,53 @@ async def _current_active_room() -> Optional[tuple[str, str]]:
 
 @app.post("/api/ingest")
 async def ingest(payload: dict, request: Request) -> dict:
-    """Receive a raw interim transcript from soniox-bridge and broadcast it as a
-    fast 'interim' line to whichever single meeting is currently live."""
+    """Ingest a transcript line pushed by soniox-bridge.
+
+    Two shapes are accepted:
+      * B-full stream relay (preferred): a structured line addressed to a specific
+        room by {platform, native_meeting_id}, with kind="interim" | "final". A
+        "final" becomes an authoritative room segment (translated); "interim" is a
+        fast live line. This is the bot's continuous per-speaker stream, which
+        never drops words at turn seams.
+      * B1 legacy: a bare {text} with no room -> routed to the single active
+        meeting as an interim line (kept for backward compatibility).
+    """
     if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
         return {"ok": False, "error": "unauthorized"}
+
     text = (payload.get("text") or "").strip()
+    platform = payload.get("platform")
+    native_id = payload.get("native_meeting_id")
+    kind = payload.get("kind")
+
+    # Structured (B-full) path: addressed to an explicit room.
+    if platform and native_id and kind:
+        room = get_room(str(platform), str(native_id))
+        if kind == "final":
+            if not text:
+                return {"ok": True, "skipped": "empty"}
+            room.ingest_final(
+                seg_id=str(payload.get("seg_id") or f"x:{len(room._segments)}"),
+                speaker=str(payload.get("speaker") or "Speaker"),
+                language=str(payload.get("lang") or ""),
+                text=text,
+                start=payload.get("start"),
+                end=payload.get("end"),
+            )
+        else:  # interim
+            if text:
+                room.ingest_interim(text, payload.get("speaker"))
+        return {"ok": True, "room": room.key}
+
+    # Legacy B1 path: bare interim text -> single active meeting.
     if not text:
         return {"ok": True, "skipped": "empty"}
     target = await _current_active_room()
     if not target:
         return {"ok": True, "skipped": "no-single-active-meeting"}
-    platform, native_id = target
-    get_room(platform, native_id)._broadcast({"type": "interim", "text": text})
-    return {"ok": True, "room": f"{platform}/{native_id}"}
+    p, n = target
+    get_room(p, n)._broadcast({"type": "interim", "text": text})
+    return {"ok": True, "room": f"{p}/{n}"}
 
 
 @app.get("/api/rooms/{platform}/{native_id}")

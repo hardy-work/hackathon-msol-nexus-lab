@@ -21,7 +21,18 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import websockets
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 
@@ -50,6 +61,27 @@ SONIOX_ASYNC_OVER_BYTES = int(os.getenv("SONIOX_ASYNC_OVER_BYTES", "800000"))
 # Hard cap on the whole async round-trip; MUST stay under Vexa's 30s abort.
 SONIOX_ASYNC_TIMEOUT_S = float(os.getenv("SONIOX_ASYNC_TIMEOUT_S", "25"))
 SONIOX_ASYNC_POLL_MS = int(os.getenv("SONIOX_ASYNC_POLL_MS", "400"))
+
+# --- B-full live streaming relay (WS /v1/stream) --------------------------
+# The bot streams raw PCM here over a WebSocket; we keep ONE persistent Soniox
+# realtime stream per speaker channel (never windowed, never confirmed) and push
+# interim/final lines straight to the live-translate app. This bypasses Vexa's
+# segmentation/confirm entirely for the live view, so nothing is dropped at turn
+# seams. Reuses LIVE_INGEST_URL / LIVE_INGEST_TOKEN (same as the B1 push).
+LIVE_STREAM_MODEL = os.getenv("LIVE_STREAM_MODEL", "stt-rt-v5")
+# Split on a gap between two final tokens this large (only at a word boundary).
+STREAM_SEG_GAP_MS = int(os.getenv("STREAM_SEG_GAP_MS", "900"))
+# Wall-clock idle before the ticker force-closes the open segment. Must be well
+# above Soniox's commit latency (~1-1.5s) or the ticker cuts mid-word during a
+# normal stream; a real speaker pause is longer than this.
+STREAM_IDLE_FLUSH_MS = int(os.getenv("STREAM_IDLE_FLUSH_MS", "2500"))
+# Debounce for pushing the evolving interim line.
+STREAM_INTERIM_MS = int(os.getenv("STREAM_INTERIM_MS", "350"))
+# Force-close a very long run-on segment so translation units stay reasonable.
+STREAM_SEG_MAX_CHARS = int(os.getenv("STREAM_SEG_MAX_CHARS", "220"))
+# Don't split off a segment shorter than this on a gap/punctuation — merge it into
+# the next instead (avoids tiny junk fragments like "ad." from a mid-word gap).
+STREAM_SEG_MIN_CHARS = int(os.getenv("STREAM_SEG_MIN_CHARS", "14"))
 # Our own inbound auth, same dual scheme Vexa's reference service supports.
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
 # B1 low-latency interim push (opt-in). When set, each transcript is forwarded to
@@ -399,6 +431,281 @@ async def transcribe_audio(
     if LIVE_INGEST_URL and result.get("text"):
         background_tasks.add_task(_push_interim, result["text"], language)
     return result
+
+
+# --------------------------------------------------------------------------- #
+# B-full live streaming relay: bot --WS(PCM)--> here --> persistent Soniox     #
+# stream --> POST interim/final to live-translate. One Soniox stream per        #
+# speaker channel; never windowed, never confirmed, so long monologues keep     #
+# every word (no turn-seam drops).                                              #
+# --------------------------------------------------------------------------- #
+
+_ingest_http = None  # lazy shared httpx client for ingest POSTs
+
+
+async def _post_ingest(payload: dict) -> None:
+    """POST a structured interim/final line to live-translate. Best-effort:
+    failures are swallowed so the relay never breaks on a transient hiccup."""
+    global _ingest_http
+    if not LIVE_INGEST_URL:
+        return
+    try:
+        import httpx
+
+        if _ingest_http is None:
+            _ingest_http = httpx.AsyncClient(timeout=4.0)
+        headers = {}
+        if LIVE_INGEST_TOKEN:
+            headers["X-Ingest-Token"] = LIVE_INGEST_TOKEN
+        await _ingest_http.post(f"{LIVE_INGEST_URL}/api/ingest", json=payload, headers=headers)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("stream ingest post failed (ignored): %s", e)
+
+
+class _ChannelStream:
+    """One persistent Soniox realtime stream for a single speaker channel."""
+
+    def __init__(self, platform: str, native_id: str, channel: int, language: Optional[str]):
+        self.platform = platform
+        self.native_id = native_id
+        self.channel = channel
+        self.language = language or None
+        self.speaker = "Speaker"
+        self._pcm_q: "asyncio.Queue[Optional[bytes]]" = asyncio.Queue(maxsize=2000)
+        self._ws = None
+        self._tasks: list[asyncio.Task] = []
+        self._open: list[dict] = []   # final tokens of the currently-open segment
+        self._interim_tail = ""       # non-final tokens (live, changing)
+        self._seq = 0
+        self._last_token_at = time.monotonic()
+        self._last_interim_push = 0.0
+        self._closed = False
+        self._flush_lock = asyncio.Lock()
+        self._reader_task: Optional[asyncio.Task] = None
+
+    async def start(self) -> None:
+        self._ws = await websockets.connect(SONIOX_WS_URL, open_timeout=10, compression=None)
+        cfg: dict = {
+            "api_key": SONIOX_API_KEY,
+            "model": LIVE_STREAM_MODEL,
+            "audio_format": "pcm_s16le",
+            "sample_rate": 16000,
+            "num_channels": 1,
+        }
+        if self.language:
+            cfg["language_hints"] = [self.language]
+        else:
+            cfg["enable_language_identification"] = True
+        await self._ws.send(json.dumps(cfg))
+        self._reader_task = asyncio.create_task(self._reader())
+        self._tasks = [
+            asyncio.create_task(self._writer()),
+            self._reader_task,
+            asyncio.create_task(self._ticker()),
+        ]
+
+    def feed(self, pcm: bytes) -> None:
+        try:
+            self._pcm_q.put_nowait(pcm)
+        except asyncio.QueueFull:
+            pass  # drop under backpressure rather than stall the relay
+
+    async def _writer(self) -> None:
+        try:
+            while True:
+                pcm = await self._pcm_q.get()
+                if pcm is None:  # sentinel -> end of audio
+                    await self._ws.send("")
+                    return
+                await self._ws.send(pcm)
+        except Exception:  # noqa: BLE001
+            pass
+
+    async def _reader(self) -> None:
+        try:
+            while True:
+                raw = await self._ws.recv()
+                msg = json.loads(raw)
+                if msg.get("error_code"):
+                    logger.warning("stream soniox error: %s %s", msg.get("error_code"), msg.get("error_message"))
+                    break
+                changed = False
+                tail = ""
+                for tok in msg.get("tokens", []):
+                    if tok.get("is_final"):
+                        await self._append_final(tok)
+                        changed = True
+                    else:
+                        tail += tok.get("text", "")
+                self._interim_tail = tail
+                self._last_token_at = time.monotonic()
+                await self._maybe_push_interim(force=changed)
+                if msg.get("finished"):
+                    break
+        except Exception as e:  # noqa: BLE001
+            logger.debug("stream reader ended: %s", e)
+        finally:
+            await self._flush(final=True)
+
+    async def _append_final(self, tok: dict) -> None:
+        # New segment if there's a real gap since the last final token: close the
+        # open one FIRST (before appending) so the gap becomes the seam — but only
+        # if it's already a worthwhile length, else let this token extend it (avoids
+        # tiny mid-word fragments when Soniox reports a spurious gap).
+        if self._open:
+            gap = (tok.get("start_ms") or 0) - (self._open[-1].get("end_ms") or 0)
+            # Only split at a WORD boundary — Soniox prefixes a new word with a
+            # leading space, so a token without one continues the current word;
+            # splitting there would cut a word in half ("re" | "ad").
+            at_word_boundary = (tok.get("text") or "").startswith((" ", "\n"))
+            if gap > STREAM_SEG_GAP_MS and at_word_boundary and len(self._open_text()) >= STREAM_SEG_MIN_CHARS:
+                await self._flush(reason=f"gap{gap}")
+        self._open.append(tok)
+        text = self._open_text()
+        # Close on sentence punctuation (once long enough) or when it grows too long.
+        if text and text[-1] in ".?!。！？" and len(text) >= STREAM_SEG_MIN_CHARS:
+            await self._flush(reason="punct")
+        elif len(text) > STREAM_SEG_MAX_CHARS:
+            await self._flush(reason="maxlen")
+
+    def _open_text(self) -> str:
+        return "".join(t.get("text", "") for t in self._open).strip()
+
+    async def _ticker(self) -> None:
+        # Close the open segment once speech pauses (so the last sentence before a
+        # silence is committed instead of lingering as interim).
+        try:
+            while not self._closed:
+                await asyncio.sleep(0.3)
+                # Don't idle-flush while a partial (non-final) word is still forming
+                # — that's Soniox mid-word, and flushing there would cut it ("re"|"ad").
+                if (
+                    self._open
+                    and not self._interim_tail.strip()
+                    and (time.monotonic() - self._last_token_at) * 1000 > STREAM_IDLE_FLUSH_MS
+                ):
+                    await self._flush(reason="idle")
+        except Exception:  # noqa: BLE001
+            pass
+
+    async def _maybe_push_interim(self, force: bool = False) -> None:
+        now = time.monotonic()
+        if not force and (now - self._last_interim_push) * 1000 < STREAM_INTERIM_MS:
+            return
+        self._last_interim_push = now
+        line = (self._open_text() + " " + self._interim_tail).strip()
+        if line:
+            await _post_ingest({
+                "platform": self.platform, "native_meeting_id": self.native_id,
+                "kind": "interim", "text": line, "speaker": self.speaker,
+            })
+
+    async def _flush(self, final: bool = False, reason: str = "end") -> None:
+        async with self._flush_lock:
+            if not self._open:
+                return
+            toks, self._open = self._open, []
+        text = "".join(t.get("text", "") for t in toks).strip()
+        if not text:
+            return
+        seg_id = f"{self.channel}:{self._seq}"
+        self._seq += 1
+        logger.info("stream ch%d FLUSH seg=%s reason=%s len=%d: ...%s", self.channel, seg_id, reason, len(text), text[-24:])
+        start = (toks[0].get("start_ms") or 0) / 1000.0
+        end = (toks[-1].get("end_ms") or 0) / 1000.0
+        langs = [t.get("language") for t in toks if t.get("language")]
+        lang = max(set(langs), key=langs.count) if langs else (self.language or "")
+        await _post_ingest({
+            "platform": self.platform, "native_meeting_id": self.native_id,
+            "kind": "final", "seg_id": seg_id, "text": text, "speaker": self.speaker,
+            "lang": lang, "start": start, "end": end,
+        })
+
+    async def close(self) -> None:
+        self._closed = True
+        try:
+            self._pcm_q.put_nowait(None)  # signal writer to send "" (end-of-audio) to Soniox
+        except Exception:  # noqa: BLE001
+            pass
+        # Soniox commits the FINAL tokens only after it sees end-of-audio, in a
+        # trailing burst. WAIT for the reader to drain that burst (it flushes the
+        # remaining segment(s) in its finally) before tearing anything down —
+        # cancelling early here was dropping the tail of every stream.
+        if self._reader_task is not None:
+            try:
+                await asyncio.wait_for(asyncio.shield(self._reader_task), timeout=10)
+            except Exception:  # noqa: BLE001
+                pass
+        for t in self._tasks:
+            t.cancel()
+        try:
+            if self._ws is not None:
+                await self._ws.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@app.websocket("/v1/stream")
+async def stream_relay(ws: WebSocket) -> None:
+    """Bot -> bridge PCM relay. Query: platform, meeting, lang, token.
+    Binary frames = [1-byte channel][s16le PCM]. Text frames = JSON control
+    ({"type":"speaker","channel":N,"name":"..."})."""
+    if API_TOKEN and ws.query_params.get("token") != API_TOKEN:
+        await ws.close(code=1008)
+        return
+    if not SONIOX_API_KEY:
+        await ws.close(code=1011)
+        return
+    platform = ws.query_params.get("platform", "google_meet")
+    native_id = ws.query_params.get("meeting", "")
+    language = (ws.query_params.get("lang") or "").strip() or None
+    await ws.accept()
+    logger.info("stream relay open: %s/%s (lang=%s)", platform, native_id, language or "auto")
+    channels: dict[int, _ChannelStream] = {}
+    pending_speaker: dict[int, str] = {}  # speaker set before the channel's first audio
+
+    async def get_channel(ch: int) -> _ChannelStream:
+        cs = channels.get(ch)
+        if cs is None:
+            cs = _ChannelStream(platform, native_id, ch, language)
+            if ch in pending_speaker:
+                cs.speaker = pending_speaker[ch]
+            channels[ch] = cs
+            await cs.start()
+        return cs
+
+    try:
+        while True:
+            msg = await ws.receive()
+            if msg.get("type") == "websocket.disconnect":
+                break
+            data = msg.get("bytes")
+            if data is not None and len(data) >= 1:
+                ch = data[0]
+                cs = await get_channel(ch)
+                cs.feed(bytes(data[1:]))
+                continue
+            txt = msg.get("text")
+            if txt:
+                try:
+                    ctrl = json.loads(txt)
+                    if ctrl.get("type") == "speaker" and ctrl.get("name"):
+                        ch = int(ctrl.get("channel", 0))
+                        name = str(ctrl["name"])
+                        pending_speaker[ch] = name
+                        cs = channels.get(ch)
+                        if cs is not None:
+                            cs.speaker = name
+                except Exception:  # noqa: BLE001
+                    pass
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:  # noqa: BLE001
+        logger.debug("stream relay error: %s", e)
+    finally:
+        for cs in channels.values():
+            await cs.close()
+        logger.info("stream relay closed: %s/%s", platform, native_id)
 
 
 if __name__ == "__main__":
