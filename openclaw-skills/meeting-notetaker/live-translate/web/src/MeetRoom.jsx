@@ -41,6 +41,8 @@ export default function MeetRoom() {
   const [segments, setSegments] = useState(new Map());
   const [status, setStatus] = useState("connecting");
   const [copied, setCopied] = useState(false);
+  // Fast "live" line pushed by soniox-bridge (B1), ahead of Vexa's confirmed text.
+  const [interim, setInterim] = useState("");
 
   const scrollRef = useRef(null);
   const stickToBottom = useRef(true);
@@ -48,6 +50,7 @@ export default function MeetRoom() {
   // (Re)connect the SSE stream whenever the room or target language changes.
   useEffect(() => {
     setSegments(new Map());
+    setInterim("");
     setStatus("connecting");
     const url = `/api/rooms/${platform}/${encodeURIComponent(nativeId)}/stream?lang=${lang}`;
     const es = new EventSource(url);
@@ -80,8 +83,11 @@ export default function MeetRoom() {
           if (existing) next.set(msg.idx, { ...existing, translated: msg.text });
           return next;
         });
+      } else if (msg.type === "interim") {
+        setInterim(msg.text || "");
       } else if (msg.type === "end") {
         setStatus("ended");
+        setInterim("");
       }
     };
 
@@ -158,6 +164,13 @@ export default function MeetRoom() {
           </div>
         ))}
       </div>
+
+      {interim && status !== "ended" && (
+        <div className="interim-bar" title="Bản nghe nhanh (chưa xác nhận)">
+          <span className="interim-badge">🎤 đang nghe</span>
+          <span className="interim-text">{interim}</span>
+        </div>
+      )}
     </div>
   );
 }
