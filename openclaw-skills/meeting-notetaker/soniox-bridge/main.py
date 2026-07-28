@@ -117,9 +117,16 @@ async def _transcribe_via_soniox(audio_bytes: bytes, language: Optional[str]) ->
         while not finished:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                logger.warning("Soniox response timed out before 'finished'; using tokens received so far")
+                logger.warning("Soniox timed out before 'finished'; returning %d partial tokens", len(final_tokens))
                 break
-            raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
+            try:
+                raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
+            except asyncio.TimeoutError:
+                # CRITICAL: on timeout, return whatever was finalized so far
+                # instead of crashing/returning empty. A long window (continuous
+                # speech) used to lose ALL its text here.
+                logger.warning("Soniox recv timed out; returning %d partial tokens", len(final_tokens))
+                break
             msg = json.loads(raw)
             if msg.get("error_code"):
                 raise HTTPException(status_code=502, detail=f"Soniox error {msg['error_code']}: {msg.get('error_message')}")
