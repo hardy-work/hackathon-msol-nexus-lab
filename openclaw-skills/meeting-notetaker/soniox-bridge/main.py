@@ -34,6 +34,22 @@ SONIOX_MODEL = os.getenv("SONIOX_MODEL", "stt-rt-v5")
 # How long to wait for Soniox to finish a single chunk before giving up.
 # Vexa's own client aborts its HTTP request after 30s, so we must return well before that.
 SONIOX_TIMEOUT_S = float(os.getenv("SONIOX_TIMEOUT_S", "22"))
+
+# --- Async/batch lane (long windows) --------------------------------------
+# The realtime WS can't finalize a very long clip inside Vexa's 30s HTTP abort, so a
+# continuous-speech window loses its tail. Soniox's async/batch *file* API transcribes
+# the whole clip in a few seconds regardless of length, so it never loses the tail.
+# It's a touch slower for SHORT clips (upload+create+poll overhead), so we only route
+# windows LARGER than a threshold to it; short windows stay on the low-latency realtime WS.
+SONIOX_API_BASE = os.getenv("SONIOX_API_BASE", "https://api.soniox.com").rstrip("/")
+SONIOX_ASYNC_MODEL = os.getenv("SONIOX_ASYNC_MODEL", "stt-async-v5")
+# Windows bigger than this (bytes of 16k mono s16le WAV ≈ 32000 B/s) go async.
+# Default ~25s — comfortably past where realtime starts risking the 30s abort.
+# 0 -> everything async; a huge value -> nothing async (pure realtime, i.e. revert).
+SONIOX_ASYNC_OVER_BYTES = int(os.getenv("SONIOX_ASYNC_OVER_BYTES", "800000"))
+# Hard cap on the whole async round-trip; MUST stay under Vexa's 30s abort.
+SONIOX_ASYNC_TIMEOUT_S = float(os.getenv("SONIOX_ASYNC_TIMEOUT_S", "25"))
+SONIOX_ASYNC_POLL_MS = int(os.getenv("SONIOX_ASYNC_POLL_MS", "400"))
 # Our own inbound auth, same dual scheme Vexa's reference service supports.
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
 # B1 low-latency interim push (opt-in). When set, each transcript is forwarded to
@@ -141,6 +157,95 @@ async def _transcribe_via_soniox(audio_bytes: bytes, language: Optional[str]) ->
         t_conn - t0, t_sent - t_conn, t_done - t_sent, t_done - t0, not bool(language),
     )
     return _tokens_to_whisper_response(final_tokens, language)
+
+
+async def _transcribe_via_soniox_async(audio_bytes: bytes, language: Optional[str]) -> dict:
+    """Transcribe one WAV buffer through Soniox's async/batch FILE API (upload → create →
+    poll → fetch → cleanup). Batch finalizes a bounded clip in a few seconds regardless of
+    length, so a long continuous-speech window can't blow past Vexa's 30s HTTP abort and
+    lose its tail — the failure mode the realtime WS has on long monologues.
+
+    Returns the SAME whisper-shaped dict as the realtime path (all async tokens are final,
+    and carry text/start_ms/end_ms/confidence/language just like the realtime ones)."""
+    import httpx
+
+    headers = {"Authorization": f"Bearer {SONIOX_API_KEY}"}
+    create_body: dict = {"model": SONIOX_ASYNC_MODEL}
+    if language:
+        # Known language -> pin it, skip LID (same rationale as the realtime path).
+        create_body["language_hints"] = [language]
+    else:
+        create_body["enable_language_identification"] = True
+
+    t0 = time.monotonic()
+    deadline = t0 + SONIOX_ASYNC_TIMEOUT_S
+    file_id: Optional[str] = None
+    tx_id: Optional[str] = None
+    t_up = t0
+    async with httpx.AsyncClient(timeout=15.0) as http:
+        try:
+            # 1) upload the WAV
+            up = await http.post(
+                f"{SONIOX_API_BASE}/v1/files",
+                headers=headers,
+                files={"file": ("audio.wav", audio_bytes, "audio/wav")},
+            )
+            up.raise_for_status()
+            file_id = up.json()["id"]
+            t_up = time.monotonic()
+
+            # 2) create the transcription job
+            create_body["file_id"] = file_id
+            cr = await http.post(
+                f"{SONIOX_API_BASE}/v1/transcriptions", headers=headers, json=create_body
+            )
+            cr.raise_for_status()
+            tx_id = cr.json()["id"]
+
+            # 3) poll to completion, bounded by the deadline (stay < Vexa's 30s abort)
+            body: dict = {}
+            status = "queued"
+            while status not in ("completed", "error"):
+                if time.monotonic() >= deadline:
+                    logger.warning(
+                        "Soniox async timed out in status=%s after %.1fs (bytes=%d)",
+                        status, time.monotonic() - t0, len(audio_bytes),
+                    )
+                    return _tokens_to_whisper_response([], language)
+                await asyncio.sleep(SONIOX_ASYNC_POLL_MS / 1000.0)
+                st = await http.get(f"{SONIOX_API_BASE}/v1/transcriptions/{tx_id}", headers=headers)
+                st.raise_for_status()
+                body = st.json()
+                status = body.get("status", "")
+            if status == "error":
+                raise HTTPException(
+                    status_code=502, detail=f"Soniox async error: {body.get('error_message')}"
+                )
+
+            # 4) fetch the transcript tokens
+            tr = await http.get(
+                f"{SONIOX_API_BASE}/v1/transcriptions/{tx_id}/transcript", headers=headers
+            )
+            tr.raise_for_status()
+            tokens = tr.json().get("tokens", [])
+        finally:
+            # 5) best-effort cleanup so files/jobs don't accrue on the Soniox account
+            for url in (
+                f"{SONIOX_API_BASE}/v1/transcriptions/{tx_id}" if tx_id else None,
+                f"{SONIOX_API_BASE}/v1/files/{file_id}" if file_id else None,
+            ):
+                if url:
+                    try:
+                        await http.delete(url, headers=headers)
+                    except Exception:  # noqa: BLE001
+                        pass
+
+    t_done = time.monotonic()
+    logger.info(
+        "soniox async: bytes=%d total=%.2fs (upload=%.2fs) tokens=%d (lid=%s)",
+        len(audio_bytes), t_done - t0, t_up - t0, len(tokens), not bool(language),
+    )
+    return _tokens_to_whisper_response(tokens, language)
 
 
 def _tokens_to_whisper_response(tokens: list[dict], language_hint: Optional[str]) -> dict:
@@ -271,16 +376,22 @@ async def transcribe_audio(
 
     audio_bytes = await file.read()
     start = time.time()
+    # Long windows -> async/batch (can't lose the tail); short windows -> realtime (lower latency).
+    use_async = len(audio_bytes) > SONIOX_ASYNC_OVER_BYTES
+    lane = "async" if use_async else "realtime"
     try:
-        result = await _transcribe_via_soniox(audio_bytes, language)
+        if use_async:
+            result = await _transcribe_via_soniox_async(audio_bytes, language)
+        else:
+            result = await _transcribe_via_soniox(audio_bytes, language)
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Soniox transcription failed: {e}", exc_info=True)
+        logger.error(f"Soniox transcription failed ({lane}): {e}", exc_info=True)
         raise HTTPException(status_code=502, detail=f"Soniox transcription failed: {e}")
 
     logger.info(
-        f"transcribed {len(audio_bytes)} bytes in {time.time() - start:.2f}s - "
+        f"transcribed {len(audio_bytes)} bytes via {lane} in {time.time() - start:.2f}s - "
         f"language={result['language']}, segments={len(result['segments'])}"
     )
     # After the response is sent to Vexa, forward the raw text to live-translate

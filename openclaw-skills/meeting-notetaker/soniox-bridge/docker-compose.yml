@@ -9,6 +9,12 @@ services:
       - SONIOX_MODEL=${SONIOX_MODEL:-stt-rt-v5}
       - SONIOX_WS_URL=${SONIOX_WS_URL:-wss://stt-rt.soniox.com/transcribe-websocket}
       - SONIOX_TIMEOUT_S=${SONIOX_TIMEOUT_S:-22}
+      # Async/batch lane for long windows (long-monologue tail-loss fix). Defaults live in
+      # main.py; override here to tune. Set SONIOX_ASYNC_OVER_BYTES huge to revert to pure realtime.
+      - SONIOX_ASYNC_MODEL=${SONIOX_ASYNC_MODEL:-stt-async-v5}
+      - SONIOX_ASYNC_OVER_BYTES=${SONIOX_ASYNC_OVER_BYTES:-800000}
+      - SONIOX_ASYNC_TIMEOUT_S=${SONIOX_ASYNC_TIMEOUT_S:-25}
+      - SONIOX_ASYNC_POLL_MS=${SONIOX_ASYNC_POLL_MS:-400}
       # B1 low-latency interim push (opt-in). Empty -> disabled (reverts).
       - LIVE_INGEST_URL=${LIVE_INGEST_URL:-}
       - LIVE_INGEST_TOKEN=${LIVE_INGEST_TOKEN:-}
