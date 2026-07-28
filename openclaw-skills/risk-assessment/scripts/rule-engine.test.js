@@ -12,6 +12,7 @@ const THRESHOLDS = {
   highScoreThreshold: 6,
   unassignedNearDeadlineDays: 2,
   velocityDropMarginPct: 15,
+  notStartedGraceDays: 0,
 };
 
 const TODAY = '2026-07-27';
@@ -166,4 +167,78 @@ test('score = probability × impact, and highScoreThreshold marks High', () => {
   const tasks = [baseTask({ planEnd: '2026-07-10', isDone: false, detectedFrom: 'Sprint 1, No.1' })];
   const { issues } = runRules({ tasks, thresholds: THRESHOLDS, today: TODAY });
   assert.equal(issues[0].priority, 'Critical');
+});
+
+test('rule 8: task past Plan Start with no actual effort logged → risk', () => {
+  const tasks = [
+    baseTask({ planStart: '2026-07-20', actualHours: null, isDone: false, detectedFrom: 'Sprint 1, No.6' }),
+  ];
+  const { risks } = runRules({ tasks, thresholds: THRESHOLDS, today: TODAY });
+  const blocked = risks.find((r) => r.detectedFrom === 'Sprint 1, No.6');
+  assert.ok(blocked, 'expected a not-started-on-time risk');
+  assert.equal(blocked.category, 'Schedule');
+});
+
+test('rule 8: task past Plan Start but has actual effort logged → no risk', () => {
+  const tasks = [
+    baseTask({ planStart: '2026-07-20', actualHours: 4, isDone: false, detectedFrom: 'Sprint 1, No.7' }),
+  ];
+  const { risks } = runRules({ tasks, thresholds: THRESHOLDS, today: TODAY });
+  assert.equal(risks.filter((r) => r.detectedFrom === 'Sprint 1, No.7').length, 0);
+});
+
+test('rule 8: Plan Start not reached yet → no risk', () => {
+  const tasks = [
+    baseTask({ planStart: '2026-07-28', actualHours: null, isDone: false, detectedFrom: 'Sprint 1, No.8' }),
+  ];
+  const { risks } = runRules({ tasks, thresholds: THRESHOLDS, today: TODAY });
+  assert.equal(risks.filter((r) => r.detectedFrom === 'Sprint 1, No.8').length, 0);
+});
+
+test('rule 8: task already Done → no risk even if past Plan Start with no effort', () => {
+  const tasks = [
+    baseTask({ planStart: '2026-07-20', actualHours: null, isDone: true, detectedFrom: 'Sprint 1, No.9' }),
+  ];
+  const { risks } = runRules({ tasks, thresholds: THRESHOLDS, today: TODAY });
+  assert.equal(risks.filter((r) => r.detectedFrom === 'Sprint 1, No.9').length, 0);
+});
+
+test('rule 9: tasks in "Verify bug" status → bug-trend risk', () => {
+  const tasks = [
+    baseTask({ id: 'B1', status: 'Verify bug', detectedFrom: 'Sprint 1, No.10' }),
+    baseTask({ id: 'B2', status: 'Verify bug', detectedFrom: 'Sprint 1, No.11' }),
+  ];
+  const { risks } = runRules({ tasks, thresholds: THRESHOLDS, today: TODAY });
+  const bugRisk = risks.find((r) => r.category === 'Quality');
+  assert.ok(bugRisk, 'expected a Quality bug-trend risk');
+  assert.match(bugRisk.description, /2 task/);
+});
+
+test('rule 9: no tasks in "Verify bug" status → no bug-trend risk', () => {
+  const tasks = [baseTask({ status: 'Open' })];
+  const { risks } = runRules({ tasks, thresholds: THRESHOLDS, today: TODAY });
+  assert.equal(risks.filter((r) => r.category === 'Quality').length, 0);
+});
+
+test('rule 9: bug count trend — Increasing when count went up vs snapshot', () => {
+  const tasks = [
+    baseTask({ id: 'B1', status: 'Verify bug', detectedFrom: 'Sprint 1, No.10' }),
+    baseTask({ id: 'B2', status: 'Verify bug', detectedFrom: 'Sprint 1, No.11' }),
+    baseTask({ id: 'B3', status: 'Verify bug', detectedFrom: 'Sprint 1, No.12' }),
+  ];
+  const snapshot = {
+    risks: [{ category: 'Quality', detectedFrom: 'Toàn dự án (Verify bug)', score: 3 }],
+  };
+  const { risks } = runRules({ tasks, snapshot, thresholds: THRESHOLDS, today: TODAY });
+  const bugRisk = risks.find((r) => r.category === 'Quality');
+  assert.equal(bugRisk.trend, 'Increasing');
+});
+
+test('rule 9: bug-trend risk resolved when no more "Verify bug" tasks vs snapshot', () => {
+  const tasks = [baseTask({ status: 'Done', isDone: true })];
+  const snapshot = {
+    risks: [{ category: 'Quality', detectedFrom: 'Toàn dự án (Verify bug)', score: 3 }],
+  };
+  const { resolvedRisks } = runRules({ tasks, snapshot, thresholds: THRESHOLDS, today: TODAY });
+  assert.deepEqual(resolvedRisks, ['Toàn dự án (Verify bug)']);
 });

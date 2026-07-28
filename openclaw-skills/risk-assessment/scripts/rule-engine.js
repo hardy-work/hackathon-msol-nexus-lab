@@ -35,6 +35,7 @@ const DEFAULT_THRESHOLDS = {
   highScoreThreshold: 6,
   unassignedNearDeadlineDays: 2,
   velocityDropMarginPct: 15,
+  notStartedGraceDays: 0,
 };
 
 function daysBetween(fromIso, toIso) {
@@ -254,6 +255,55 @@ function ruleVelocityDrop(tasks, today, th) {
   return [];
 }
 
+// --- Rule 8: Task chưa bắt đầu dù đã tới Plan Start (proxy "bị block") → Risk
+function ruleNotStartedOnTime(tasks, today, th) {
+  const out = [];
+  for (const t of tasks) {
+    if (t.isDone || !t.planStart) continue;
+    if (t.actualHours) continue; // đã ghi nhận effort thực tế → coi như đã bắt đầu
+    const daysPastStart = daysBetween(t.planStart, today);
+    if (daysPastStart > th.notStartedGraceDays) {
+      out.push(
+        makeRisk({
+          category: 'Schedule',
+          description: `Task "${t.title}" (${t.assignee || 'chưa gán người'}) đã quá Plan Start ${daysPastStart} ngày nhưng chưa ghi nhận effort thực tế nào — có thể đang bị block.`,
+          detectedFrom: t.detectedFrom,
+          probability: 3,
+          impact: daysPastStart >= 5 ? 3 : daysPastStart >= 2 ? 2 : 1,
+          mitigationOptions: [
+            `Hỏi ${t.assignee || 'người phụ trách'} lý do chưa bắt đầu / đang chờ gì`,
+            `Kiểm tra task có đang phụ thuộc (blocked by) task khác chưa xong không`,
+          ],
+          today,
+        })
+      );
+    }
+  }
+  return out;
+}
+
+// --- Rule 9: Bug trend — đếm task đang ở trạng thái "Verify bug" -------------
+const BUG_STATUS_RE = /^verify bug$/i;
+const BUG_TREND_DETECTED_FROM = 'Toàn dự án (Verify bug)';
+
+function ruleBugTrend(tasks, today, th) {
+  const bugTasks = tasks.filter((t) => BUG_STATUS_RE.test((t.status || '').trim()));
+  if (bugTasks.length === 0) return [];
+  const count = bugTasks.length;
+  const refs = bugTasks.map((t) => t.detectedFrom).join(', ');
+  return [
+    makeRisk({
+      category: 'Quality',
+      description: `Có ${count} task đang ở trạng thái "Verify bug": ${refs}.`,
+      detectedFrom: BUG_TREND_DETECTED_FROM,
+      probability: 3,
+      impact: count >= 6 ? 3 : count >= 3 ? 2 : 1,
+      mitigationOptions: [`Rà soát lại danh sách bug đang chờ verify`, `Ưu tiên fix/verify trước khi nhận task mới`],
+      today,
+    }),
+  ];
+}
+
 // --- Rule 6: Trend — so risk hiện tại với snapshot ngày trước ----------------
 function applyTrend(risks, snapshot) {
   const prevByKey = new Map();
@@ -300,6 +350,8 @@ function runRules({ tasks = [], snapshot = null, thresholds = {}, today = new Da
     ...ruleStalledTask(tasks, today, th),
     ...ruleUnassignedNearDeadline(tasks, today, th),
     ...ruleVelocityDrop(tasks, today, th),
+    ...ruleNotStartedOnTime(tasks, today, th),
+    ...ruleBugTrend(tasks, today, th),
   ];
 
   const { risks, resolvedRisks } = applyTrend(risksRaw, snapshot);
@@ -317,4 +369,6 @@ module.exports = {
   ruleStalledTask,
   ruleUnassignedNearDeadline,
   ruleVelocityDrop,
+  ruleNotStartedOnTime,
+  ruleBugTrend,
 };

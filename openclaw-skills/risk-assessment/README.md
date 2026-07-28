@@ -14,7 +14,7 @@ Chưa cấu hình gì cả — cứ gõ thẳng yêu cầu, skill sẽ tự hỏ
 
 ## Quy trình
 
-1. **Action Scan** (cron hằng ngày hoặc PM gọi tay) — đọc dữ liệu tiến độ, áp 7 rule phát hiện rủi ro, tính Risk Score/Trend, ghi/update draft trong `drafts/`. **Không bao giờ ghi vào Sheet/Jira thật ở bước này.**
+1. **Action Scan** (cron hằng ngày hoặc PM gọi tay) — đọc dữ liệu tiến độ, áp 9 rule phát hiện rủi ro, tính Risk Score/Trend, ghi/update draft trong `drafts/`. **Không bao giờ ghi vào Sheet/Jira thật ở bước này.**
 2. Skill trình bày report dạng tường thuật trong chat (không phải checklist thô).
 3. PM phản hồi tự nhiên → **Action Apply** diễn giải ý PM (toàn bộ/một phần/phương án cụ thể), preview lần cuối, chờ xác nhận, rồi mới ghi thật.
 4. Ghi log lại thao tác sau khi thành công (`risk-assessment-audit.log`).

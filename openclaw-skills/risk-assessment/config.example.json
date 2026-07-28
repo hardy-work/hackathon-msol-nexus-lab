@@ -24,7 +24,8 @@
     "workHoursPerDay": 8,
     "highScoreThreshold": 6,
     "unassignedNearDeadlineDays": 2,
-    "velocityDropMarginPct": 15
+    "velocityDropMarginPct": 15,
+    "notStartedGraceDays": 0
   },
   "notify": {
     "channel": null,
