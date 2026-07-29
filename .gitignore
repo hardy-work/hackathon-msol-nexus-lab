@@ -11,3 +11,9 @@ vexa-mcp/.env
 **/__pycache__/
 
 .DS_Store
+
+# Runtime-generated output — not source, don't commit
+openclaw-skills/daily-report/state/
+openclaw-skills/meeting-notetaker/notes/
+**/jira-audit.log
+%h/
