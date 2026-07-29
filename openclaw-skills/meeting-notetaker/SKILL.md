@@ -25,27 +25,25 @@ one before doing anything else.
 
 ## Steps
 
-1. **Confirm language scope, before joining.** Ask the user what language(s)
-   will be spoken in the meeting — a single language, or a mix (e.g.
-   "Japanese and Vietnamese"). Don't guess from the user's own chat
-   language; the meeting language can be completely different from the
-   language they're messaging you in. This matters because it changes both
-   how you join (step 2) and how you filter noise later (step 6):
-   - **One language confirmed:** pin it at join time for much better
-     accuracy.
-   - **Multiple languages confirmed (code-switching expected):** don't
-     force a single language when more than one is expected — record the
-     full set of expected languages instead. It feeds step 6's noise
-     filter so real content in a confirmed second language isn't mistaken
-     for hallucination.
-   - **User doesn't know / can't say:** proceed without pinning a
-     language (auto-detect per segment) and tell them accuracy will be
-     lower than if they can confirm it later.
+1. **Language: auto-detect by default — never pin the translation target.**
+   The `language` param on join is the **spoken** language of the meeting — NOT
+   the language you translate *into*. **Do NOT set it to the translation/target
+   language** (e.g. `vi`) just because the live view or summary is in
+   Vietnamese. That is the most common mistake here, and pinning the wrong
+   spoken language (e.g. `vi` on an English meeting) makes Vexa's downstream
+   pipeline drop and garble a lot of the speech.
+   - **Default (do this): omit `language`.** The transcriber auto-detects per
+     segment and handles English, Vietnamese, and mixed/code-switching meetings
+     well. This is the safe choice and what you should do unless told otherwise.
+   - **Only pin `language`** if the user EXPLICITLY says the meeting is spoken
+     entirely in one specific language AND asks you to pin it. If they name
+     more than one spoken language, still omit it (auto-detect). Don't guess the
+     spoken language from the user's own chat language.
 
 2. **Join.** Extract the Google Meet or Zoom URL from the user's message and
-   call `join_meeting(meeting_url=<url>, bot_name="NexusBot", language=<code>)` —
-   include `language` only if step 1 confirmed exactly one language; omit
-   it otherwise. Keep the `platform` and `native_meeting_id` from the
+   call `join_meeting(meeting_url=<url>, bot_name="NexusBot")` — **omit
+   `language`** (auto-detect) unless step 1's explicit-pin condition was met.
+   Keep the `platform` and `native_meeting_id` from the
    response — you need them for every later call. The response also includes a
    `share_link` field when the live-translate web app is configured (env
    `WEB_PUBLIC_URL` on the vexa-bridge server) — this is the URL to the
@@ -167,7 +165,28 @@ one before doing anything else.
    `<span style="color:green">...</span>` — keep the `- [ ]` checkbox
    syntax itself outside the span so it still renders as a checkbox.
    Only include a "Decisions" or "Action items" bullet if the transcript
-   actually contains one — don't invent items to fill the template. The
+   actually contains one — don't invent items to fill the template.
+
+   **Pay special attention to the closing of the meeting.** People usually
+   recap the discussion and spell out next-actions in the last stretch of a
+   call — phrases like "tóm lại...", "vậy chốt là...", "việc tiếp theo...",
+   "để mình tổng hợp lại...", "so to summarize...", "action items are...",
+   "let's make sure X does Y by...". Treat the final ~15% of the transcript
+   (and any segment that opens with a recap/next-step cue like the above) as
+   the highest-signal source for both "Key points" and "Action items":
+   - When a closing recap conflicts with something said earlier, trust the
+     recap — it's the speakers' own confirmed conclusion.
+   - Any task or owner assigned during the wrap-up almost always belongs in
+     "Action items", even if it was only mentioned once. Prefer the owner and
+     due date as stated in the recap over an earlier, vaguer mention.
+   - If the meeting ends with an explicit spoken summary, its points should
+     map onto your "Key points"/"Decisions" — don't bury a conclusion the
+     participants themselves highlighted.
+   This is a weighting hint, not a scope limit: still capture key points and
+   action items raised anywhere in the meeting, and still don't invent items
+   that were never actually said.
+
+   The
    "Full transcript" section lists every remaining segment in order after
    step 6's filter — a clean, readable record of the actual conversation,
    not a raw API dump. Also state the confirmed language scope from step 1

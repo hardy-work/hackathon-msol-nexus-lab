@@ -1,6 +1,9 @@
 # Secrets / machine-specific config — never commit
 .mcp.json
 .claude/settings.local.json
+.env
+.env.bak
+!**/.env.example
 
 # Python
 vexa-mcp/.venv/
@@ -8,3 +11,9 @@ vexa-mcp/.env
 **/__pycache__/
 
 .DS_Store
+
+# Runtime-generated output — not source, don't commit
+openclaw-skills/daily-report/state/
+openclaw-skills/meeting-notetaker/notes/
+**/jira-audit.log
+%h/

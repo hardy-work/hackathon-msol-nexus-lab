@@ -31,6 +31,11 @@ logger = logging.getLogger("live-translate.translator")
 CLAUDE_BIN = os.getenv("CLAUDE_BIN", "claude")
 TRANSLATE_MODEL = os.getenv("TRANSLATE_MODEL", "claude-haiku-4-5")
 CLAUDE_TIMEOUT_S = float(os.getenv("TRANSLATE_TIMEOUT_S", "45"))
+# Hard cap on one persistent-session query so a stalled session can't wedge the
+# shared query lock and freeze all translations.
+PERSIST_QUERY_TIMEOUT_S = float(os.getenv("TRANSLATE_QUERY_TIMEOUT_S", "25"))
+# Separate, more generous cap on connecting a fresh session (cold start is slow).
+CONNECT_TIMEOUT_S = float(os.getenv("TRANSLATE_CONNECT_TIMEOUT_S", "90"))
 
 # Friendly names so the prompt reads naturally regardless of the code passed in.
 _LANG_NAMES = {
@@ -178,7 +183,7 @@ class PersistentClaudeTranslator:
             ),
         )
         client = ClaudeSDKClient(options=opts)
-        await client.connect()
+        await asyncio.wait_for(client.connect(), timeout=CONNECT_TIMEOUT_S)
         logger.info("persistent claude session connected (model=%s)", TRANSLATE_MODEL)
         return client
 
@@ -225,15 +230,36 @@ class PersistentClaudeTranslator:
         finally:
             self._recycling = False
 
+    def _drop_client(self) -> None:
+        """Drop a (possibly stuck) session so the next call reconnects fresh.
+        Best-effort disconnect in the background — never awaited under the lock."""
+        old, self._client = self._client, None
+        if old is not None:
+            async def _dc():
+                try:
+                    await asyncio.wait_for(old.disconnect(), timeout=5)
+                except Exception:  # noqa: BLE001
+                    pass
+            asyncio.create_task(_dc())
+
     async def translate(self, texts: list[str], target_lang: str) -> list[str]:
         if not texts:
             return []
         from claude_agent_sdk import AssistantMessage, TextBlock
 
         prompt = _build_prompt(texts, target_lang)
+
         async with self._query_lock:
+            # Connect OUTSIDE the query timeout — a cold reconnect can legitimately
+            # take longer than a query, and _new_client has its own connect cap.
             try:
                 client = await self._ensure_client()
+            except Exception as e:  # noqa: BLE001
+                logger.error("persistent claude connect failed: %s", e)
+                self._drop_client()
+                return texts
+
+            async def _query_collect() -> str:
                 await client.query(prompt)
                 out = ""
                 async for msg in client.receive_response():
@@ -241,9 +267,16 @@ class PersistentClaudeTranslator:
                         for block in msg.content:
                             if isinstance(block, TextBlock):
                                 out += block.text
-            except Exception as e:  # noqa: BLE001 - drop session, fail open, reconnect next call
-                logger.error("persistent claude translate failed: %s", e)
-                self._client = None
+                return out
+
+            try:
+                # HARD timeout: a stalled query must never hold the lock forever
+                # (that would freeze ALL subsequent translations). On timeout/error
+                # drop the session so the next call reconnects fresh.
+                out = await asyncio.wait_for(_query_collect(), timeout=PERSIST_QUERY_TIMEOUT_S)
+            except Exception as e:  # noqa: BLE001 - incl. TimeoutError; fail open
+                logger.error("persistent claude translate failed/timeout: %s", e)
+                self._drop_client()
                 return texts
             self._count += 1
 
