@@ -9,6 +9,7 @@ Config (env vars):
 """
 
 import os
+import re
 
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
@@ -25,12 +26,17 @@ _creds = Credentials.from_service_account_file(CREDENTIALS_JSON, scopes=SCOPES)
 _sheets = build("sheets", "v4", credentials=_creds).spreadsheets()
 
 
+_ROW_RE = re.compile(r"![A-Z]+(\d+)")
+
+
 @mcp.tool()
 def append_report_row(values: list[str], sheet_name: str = "Sheet1") -> dict:
     """Append one row to the end of the sheet.
 
     `values` is the ordered list of cell values for the new row (e.g.
-    [date, reporter, task, status, blockers]).
+    [date, reporter, task, status, blockers]). Returns `row` (1-indexed sheet
+    row number) so the caller can later call `update_report_row` if this
+    report gets edited.
     """
     result = _sheets.values().append(
         spreadsheetId=SPREADSHEET_ID,
@@ -39,7 +45,27 @@ def append_report_row(values: list[str], sheet_name: str = "Sheet1") -> dict:
         insertDataOption="INSERT_ROWS",
         body={"values": [values]},
     ).execute()
-    return {"updatedRange": result.get("updates", {}).get("updatedRange", "")}
+    updated_range = result.get("updates", {}).get("updatedRange", "")
+    row_match = _ROW_RE.search(updated_range)
+    return {
+        "updatedRange": updated_range,
+        "row": int(row_match.group(1)) if row_match else None,
+    }
+
+
+@mcp.tool()
+def update_report_row(row: int, values: list[str], sheet_name: str = "Sheet1") -> dict:
+    """Overwrite an existing row in place (1-indexed row number, as returned
+    by `append_report_row`). Use this when a report message gets edited after
+    it was already pushed, instead of appending a duplicate row.
+    """
+    result = _sheets.values().update(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"{sheet_name}!A{row}",
+        valueInputOption="USER_ENTERED",
+        body={"values": [values]},
+    ).execute()
+    return {"updatedRange": result.get("updatedRange", "")}
 
 
 @mcp.tool()

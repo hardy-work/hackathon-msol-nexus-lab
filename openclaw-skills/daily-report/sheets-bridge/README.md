@@ -42,7 +42,11 @@ Add to `.mcp.json` (or OpenClaw's MCP config):
 ## Tools
 
 - `append_report_row(values, sheet_name="Sheet1")` — appends one row (e.g.
-  `[date, reporter, task, status, blockers]`) to the end of the sheet
+  `[date, reporter, task, status, blockers]`) to the end of the sheet;
+  returns `row` (1-indexed sheet row number) for later edits
+- `update_report_row(row, values, sheet_name="Sheet1")` — overwrites an
+  existing row in place (use the `row` returned by `append_report_row`) —
+  needed when a reporter edits their message after it was already pushed
 - `get_sheet_rows(sheet_name="Sheet1", range_suffix="A:Z")` — reads all rows
   currently in the given sheet/range
 

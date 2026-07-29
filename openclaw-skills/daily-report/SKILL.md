@@ -1,6 +1,6 @@
 ---
 name: daily-report
-description: Nhắc nhở team report task hàng ngày trong Slack, thu thập nội dung report, và đẩy lên Google Sheets / Jira sau khi xác nhận.
+description: Nhắc report task hàng ngày qua cron chính xác, follow-up DM riêng người thiếu, xử lý report bị sửa, đẩy Google Sheets / Jira sau xác nhận.
 user-invocable: true
 metadata:
   {
@@ -12,8 +12,11 @@ metadata:
             "env":
               [
                 "SLACK_REPORT_CHANNEL",
+                "SLACK_REPORT_CHANNEL_ID",
                 "REMINDER_TIME",
                 "REMINDER_TIMEZONE",
+                "FOLLOWUP_INTERVAL_MINUTES",
+                "FOLLOWUP_CUTOFF_TIME",
                 "GOOGLE_SHEETS_CREDENTIALS_JSON",
                 "GOOGLE_SHEETS_SPREADSHEET_ID",
               ],
@@ -22,147 +25,141 @@ metadata:
   }
 ---
 
-## Role
+## Quy tắc bất biến
 
-Bạn là trợ lý daily-report cho team, hoạt động trong kênh Slack cấu hình ở
-`SLACK_REPORT_CHANNEL` (kết nối qua plugin Slack chính thức của OpenClaw —
-xem [`README.md`](README.md) để cài đặt).
+- Không ghi Sheets/Jira mà không preview + xác nhận trước (như
+  [`../jira-task/SKILL.md`](../jira-task/SKILL.md)).
+- Thiếu `task`/`status` → hỏi lại, không đoán.
+- Lỗi API → báo rõ, không tự retry.
+- **Không bao giờ giao việc đọc/gửi Slack (đọc kênh, đọc thread, DM, đăng
+  tin) cho subagent** — tool `slack` chỉ cấp cho phiên chính (main/cron
+  session), subagent gọi sẽ luôn lỗi `No such tool available: slack`. Mọi
+  bước liên quan Slack trong skill này phải chạy trực tiếp (inline) trong
+  phiên đang xử lý job, không delegate.
 
-**Quy tắc bất biến:**
-- KHÔNG BAO GIỜ ghi vào Google Sheets hoặc Jira mà không hiển thị preview và
-  nhận xác nhận từ người report — cùng nguyên tắc với
-  [`../jira-task/SKILL.md`](../jira-task/SKILL.md).
-- Nếu thiếu thông tin bắt buộc (task/status) → hỏi lại, không tự đoán.
-- Nếu có lỗi API (Sheets hoặc Jira) → thông báo rõ ràng, không retry tự động.
+## State file
 
----
+`{baseDir}/state/<YYYY-MM-DD>.json`, tạo mới rỗng mỗi ngày:
 
-## Việc 1: Nhắc report (reminder)
+```json
+{
+  "reminderThreadTs": "1690000000.000100",
+  "reports": {
+    "<slack_user_id>": {
+      "reporter": "Núi", "messageTs": "...", "task": "...",
+      "status": "Đang làm", "blocker": "Không có",
+      "pushState": "pending|confirmed|declined",
+      "sheetRow": 42, "jiraIssue": "NEX-30"
+    }
+  }
+}
+```
 
-Đăng ký một cron job (dùng tool `cron` có sẵn của OpenClaw) chạy **17:00 hàng
-ngày, kể cả cuối tuần** (`REMINDER_TIME=17:00`, timezone `REMINDER_TIMEZONE`
-— giữ cấu hình được qua env, nhưng mặc định không bỏ qua cuối tuần trừ khi
-`REMINDER_WEEKDAYS_ONLY=true` được set tường minh). Khi cron này chạy:
-
-1. Đọc lịch sử `SLACK_REPORT_CHANNEL` trong ngày hôm nay, xác định ai đã post
-   report đúng format bên dưới rồi (xem Việc 2).
-2. Lấy danh sách thành viên kênh, trừ đi những ai đã report → danh sách chưa
-   report.
-3. Nếu danh sách chưa report rỗng → không cần nhắc, bỏ qua.
-4. Ngược lại, post 1 tin nhắn nhắc trong kênh, @-mention từng người trong
-   danh sách chưa report, kèm đúng format bắt buộc:
-
-   ```
-   ⏰ Đến giờ report task rồi: @a @b @c chưa report hôm nay nhé!
-
-   Report theo format sau (copy và điền vào):
-   📋 Report ngày <DD/MM>
-   Task: <nội dung công việc>
-   Trạng thái: Đang làm / Hoàn thành / Blocked
-   Blocker: <nội dung, hoặc "Không có">
-   ```
-
----
-
-## Việc 2: Thu thập report
-
-### Format report chuẩn
+## Format report chuẩn
 
 ```
 📋 Report ngày <DD/MM>
-Task: <nội dung công việc>
+Task: <nội dung>
 Trạng thái: Đang làm / Hoàn thành / Blocked
 Blocker: <nội dung, hoặc "Không có">
 ```
 
-### Nhận diện intent
+Report = reply vào thread `reminderThreadTs` trong `SLACK_REPORT_CHANNEL`
+(không phải tin rời trong kênh), hoặc DM lại tin nhắc ở job follow-up. Chấp
+nhận lệch nhỏ so với format, hoặc fallback tự do (VN/EN) nếu có đủ task +
+trạng thái — ưu tiên hướng người dùng theo đúng format khi có thể.
 
-Một tin nhắn trong `SLACK_REPORT_CHANNEL` được coi là report khi nó khớp
-(hoặc gần khớp — cho phép sai khác nhỏ về khoảng trắng/thứ tự dòng) format
-chuẩn ở trên, **hoặc** chứa đủ nội dung task + trạng thái dưới dạng tự do
-(fallback cho người quên format, VN/EN) — ví dụ "hôm nay làm xong API login,
-không có blocker". Ưu tiên hướng dẫn người report dùng đúng format chuẩn khi
-có thể (copy từ tin nhắc ở Việc 1), fallback tự do chỉ để không chặn luồng
-làm việc.
+## Cron (setup 1 lần, dùng cron expression thật — không diễn giải giờ chung
+chung để tránh trôi giờ; gán `--model sonnet` vì việc này không cần reasoning
+nặng, giảm độ trễ xử lý)
 
-### Extract fields
+**Job A — nhắc (`REMINDER_TIME`, mặc định 11:00 → `0 11 * * *`; đổi field
+giờ/phút nếu khác, vd 09:30 → `30 9 * * *`):**
+
+```bash
+openclaw cron create "0 11 * * *" \
+  "Việc A skill daily-report: đăng tin nhắc report, lưu message ts vào state." \
+  --name daily-report-reminder --tz "$REMINDER_TIMEZONE" \
+  --session isolated --model sonnet --announce \
+  --channel slack --to "channel:$SLACK_REPORT_CHANNEL_ID"
+```
+`--announce` bắt buộc — thiếu nó, cron chạy xong vẫn không tự đẩy kết quả ra
+Slack (`delivered: false` dù `status: ok`).
+Chạy: reset state ngày mới nếu chưa có → đọc thread cũ + state để biết ai đã
+report → nếu còn ai chưa, đăng tin @-mention kèm format chuẩn ở trên → lưu
+`ts` vào `reminderThreadTs`.
+
+**Job B — follow-up (mỗi `FOLLOWUP_INTERVAL_MINUTES` phút, mặc định 90, dùng
+`--every` vì 90 phút không chia đều theo giờ chẵn để viết bằng cron
+giờ/phút):**
+
+```bash
+openclaw cron create --every "${FOLLOWUP_INTERVAL_MINUTES:-90}m" \
+  "Việc B skill daily-report: kiểm tra ai chưa report, DM riêng từng người." \
+  --name daily-report-followup --tz "$REMINDER_TIMEZONE" \
+  --session isolated --model sonnet --announce \
+  --channel slack --to "channel:$SLACK_REPORT_CHANNEL_ID"
+```
+Chạy: nếu đã qua cutoff hoặc mọi người đã report → bỏ qua. Ngược lại đọc
+reply trong thread + state, DM riêng (không đăng gì vào thread/kênh) từng
+người còn thiếu — mỗi người chỉ 1 DM/lần chạy, không spam.
+
+## Thu thập report
 
 | Field | Bắt buộc | Ghi chú |
 |-------|----------|---------|
-| reporter | Có | Lấy từ Slack user gửi tin nhắn |
-| task | Có | Nội dung công việc; nếu có issue key (`NEX-\d+`) thì giữ lại riêng |
-| status | Có | Chuẩn hoá về: "Đang làm" / "Hoàn thành" / "Blocked" |
-| blocker | Không | "Không có" nếu trống hoặc ghi "không có" |
-| date | Có | Ngày hiện tại (timezone `REMINDER_TIMEZONE`), hoặc ngày ghi trong dòng đầu report nếu khác |
+| reporter | Có | Slack user gửi tin |
+| task | Có | Giữ riêng issue key `NEX-\d+` nếu có |
+| status | Có | Chuẩn hoá "Đang làm"/"Hoàn thành"/"Blocked" |
+| blocker | Không | "Không có" nếu trống |
+| date | Có | Hôm nay (tz `REMINDER_TIMEZONE`) hoặc ngày ghi trong report |
 
-Nếu thiếu `task` hoặc `status`, hỏi lại người report trước khi làm tiếp,
-không tự suy diễn.
-
-### Preview
-
-Sau khi extract xong, trả lời trong thread của tin nhắn report:
+Thiếu task/status → hỏi lại. Sau khi extract, reply trong thread report:
 
 ```
 Đã nhận report của <reporter>:
-─────────────────────────────
-• Task    : <task>
-• Status  : <status>
-• Blocker : <blocker, hoặc "không có">
-─────────────────────────────
-Đẩy lên Google Sheets? Có liên kết Jira issue không? (trả lời "có" / issue
-key / "không")
+• Task: <task>  • Status: <status>  • Blocker: <blocker>
+Đẩy Sheets? Có issue Jira liên kết? (có / issue key / không)
 ```
 
-Chờ xác nhận trước khi qua Việc 3. Nếu người report trả lời "không" → chỉ ghi
-nhận, không đẩy đi đâu cả.
+Ghi ngay `pushState: "pending"` vào state (kèm `messageTs`). Nếu người report
+từ chối → `pushState: "declined"`, không đẩy đi đâu.
 
----
+## Xử lý report bị sửa (`message_changed`, đã có sẵn trong event đã bật)
 
-## Việc 3: Đẩy dữ liệu (sau khi xác nhận)
+Nếu `messageTs` đã có trong state hôm nay:
 
-### Google Sheets
+- `pending` → âm thầm cập nhật draft, không hỏi lại.
+- `confirmed` → hỏi lại trước khi ghi đè:
+  ```
+  ⚠️ Report vừa sửa: <field cũ> → <field mới> (chỉ hiện dòng đổi)
+  Cập nhật lại Sheets/Jira? (có / không)
+  ```
+  "có" → `update_report_row(row=<sheetRow>, values=[...])` (không tạo dòng
+  mới) + update Jira nếu có `jiraIssue` (qua flow xác nhận của jira-task) →
+  cập nhật state với data mới. "không" → giữ nguyên dữ liệu đã ghi, chỉ cập
+  nhật task/status/blocker trong state (đánh dấu `syncedWithEdit: false`).
+- `declined` → coi như report mới, chạy lại từ đầu.
 
-Luôn đẩy khi được xác nhận, dùng tool `sheets-bridge`:
+## Đẩy dữ liệu (sau xác nhận)
 
-```
-append_report_row(
-  values=[date, reporter, task, status, blocker],
-  sheet_name="Sheet1",
-)
-```
+Sheets: `append_report_row(values=[date, reporter, task, status, blocker])`
+lần đầu (lưu `row` trả về vào state); dùng `update_report_row` nếu đã có
+`sheetRow` (case edit). Jira: nếu có issue key, update theo "Action 2" của
+[`../jira-task/SKILL.md`](../jira-task/SKILL.md) (preview/xác nhận riêng).
+Xong cả hai → `pushState: "confirmed"`. Phản hồi: `✓ Đã ghi Sheets. ✓ Đã cập
+nhật NEX-xxx (nếu có).`
 
-### Jira (chỉ khi có issue key)
+## Q&A
 
-Nếu người report cung cấp issue key (`NEX-\d+`), cập nhật issue đó theo đúng
-quy trình "Action 2: Cập Nhật Task" ở
-[`../jira-task/SKILL.md`](../jira-task/SKILL.md) — dùng `status`/`blocker`
-vừa thu thập được làm nội dung comment hoặc update field tương ứng, vẫn qua
-bước preview + xác nhận riêng của jira-task (không bỏ qua chỉ vì đã xác nhận
-ở Việc 2).
+Câu hỏi khác (không phải report) → trả lời trực tiếp; hỏi về issue Jira →
+tra cứu qua API (xem `jira-task/SKILL.md`) thay vì đoán.
 
-### Phản hồi
-
-```
-✓ Đã ghi report vào Sheets.
-✓ Đã cập nhật NEX-xxx (nếu có liên kết Jira).
-```
-
----
-
-## Việc 4: Trả lời câu hỏi (Q&A)
-
-Với mọi tin nhắn khác trong kênh không phải report (câu hỏi tự do, hỏi trạng
-thái task, hỏi deadline...), trả lời trực tiếp bằng khả năng hội thoại thông
-thường. Nếu câu hỏi liên quan tới một issue Jira cụ thể, tra cứu qua API Jira
-(xem cách gọi ở [`../jira-task/SKILL.md`](../jira-task/SKILL.md)) thay vì
-đoán.
-
----
-
-## Error Handling
+## Lỗi
 
 | Lỗi | Phản hồi |
 |-----|---------|
-| Sheets API lỗi | "Không ghi được vào Google Sheets: <lỗi>. Report vẫn được ghi nhận, bạn thử lại giúp mình nhé." |
-| Không tìm thấy issue key khi liên kết Jira | "Không tìm thấy <key> trong Jira, report vẫn lưu vào Sheets bình thường." |
-| Thiếu task/status | Hỏi lại, không tự đoán |
+| Sheets API lỗi | "Không ghi được Sheets: <lỗi>. Report vẫn ghi nhận, thử lại sau." |
+| Không tìm thấy issue Jira | "Không tìm thấy <key>, report vẫn lưu Sheets bình thường." |
+| Thiếu task/status | Hỏi lại, không đoán |
+| Follow-up không đọc được state | Coi như chưa ai report, log lỗi, không crash job |
