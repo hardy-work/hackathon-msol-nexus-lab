@@ -41,7 +41,9 @@ ln -s "$(pwd)" ~/.openclaw/workspace/skills/daily-report
 
 Skill chỉ mô tả *cách* nhắc/follow-up — cron job thật sự phải được tạo qua
 `openclaw cron create` (chính xác theo giờ, không trôi như polling/heartbeat).
-Xem chi tiết ở [`SKILL.md`](SKILL.md#cron-setup-1-lần-dùng-cron-expression-thật--không-diễn-giải-giờ-chung-chung-để-tránh-trôi-giờ-gán---model-sonnet-vì-việc-này-không-cần-reasoning-nặng-giảm-độ-trễ-xử-lý).
+Xem chi tiết ở [`SKILL.md`](SKILL.md#cron-setup-1-lần-dùng-cron-expression-thật--không-diễn-giải-giờ-chung-chung-để-tránh-trôi-giờ).
+Lưu ý: **không** gán `--model` cho cron job — để nó dùng model mặc định của
+workspace, tránh vỡ khi allowlist `agents.defaults.models` thay đổi.
 Cách đơn giản nhất là nhắn trong Slack: `@<tên bot> thiết lập 2 cron job nhắc
 report theo skill daily-report` — agent sẽ tự chạy đúng 2 lệnh `openclaw cron
 create` với giá trị lấy từ `.env`. Kiểm tra lại bằng `openclaw cron list`.

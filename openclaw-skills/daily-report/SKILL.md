@@ -78,8 +78,13 @@ Report theo mẫu sau (copy và điền vào):
   lại nội dung reply, chỉ cần biết **có** reply hay chưa (xem "State file").
 
 ## Cron (setup 1 lần, dùng cron expression thật — không diễn giải giờ chung
-chung để tránh trôi giờ; gán `--model sonnet` vì việc này không cần reasoning
-nặng, giảm độ trễ xử lý)
+chung để tránh trôi giờ)
+
+**Không gán `--model` cho 2 job dưới đây.** Để cron dùng model mặc định của
+workspace/agent. Pin cứng một model id vào skill sẽ vỡ ngay khi workspace đổi
+`agents.defaults.models` allowlist — job fail với `cron payload.model <x>
+rejected by agents.defaults.models allowlist`. Nếu một job cũ đã lỡ pin model,
+gỡ bằng `openclaw cron edit <id> --clear-model`.
 
 **Job A — nhắc (`REMINDER_TIME`, mặc định 11:00 → `0 11 * * *`; đổi field
 giờ/phút nếu khác, vd 09:30 → `30 9 * * *`):**
@@ -88,7 +93,7 @@ giờ/phút nếu khác, vd 09:30 → `30 9 * * *`):**
 openclaw cron create "0 11 * * *" \
   "Việc A skill daily-report: đăng tin nhắc report, lưu message ts vào state." \
   --name daily-report-reminder --tz "$REMINDER_TIMEZONE" \
-  --session isolated --model sonnet --announce \
+  --session isolated --announce \
   --channel slack --to "channel:$SLACK_REPORT_CHANNEL_ID"
 ```
 `--announce` bắt buộc — thiếu nó, cron chạy xong vẫn không tự đẩy kết quả ra
@@ -108,7 +113,7 @@ giờ/phút):**
 openclaw cron create --every "${FOLLOWUP_INTERVAL_MINUTES:-90}m" \
   "Việc B skill daily-report: kiểm tra ai chưa report, DM riêng từng người." \
   --name daily-report-followup --tz "$REMINDER_TIMEZONE" \
-  --session isolated --model sonnet --announce \
+  --session isolated --announce \
   --channel slack --to "channel:$SLACK_REPORT_CHANNEL_ID"
 ```
 
