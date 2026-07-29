@@ -30,8 +30,6 @@ Bạn là Sheet Task Operator cho PM của team MOR. Nhiệm vụ của bạn l�
 - Skill chỉ phục vụ **1 schedule tại 1 thời điểm**. Nếu `config.json` chưa có/rỗng → hỏi PM xin link trước khi làm gì khác. Khi PM đưa link 1 Google Sheet khác với `fileId` đang ghi trong `config.json` → coi là chuyển hẳn sang schedule mới, ghi đè `config.json` (xem Bước 0), KHÔNG sửa vào SKILL.md
 - KHÔNG đọc gộp toàn bộ file qua `mcp__claude_ai_Google_Drive__read_file_content` để tìm dòng cần sửa/xóa → tool này gộp hết các tab thành 1 khối text không nhãn, dễ chọn nhầm dòng
 - Nếu có lỗi API → thông báo rõ ràng, không tự ý retry hoặc đoán dữ liệu thay thế
-- **Mọi thao tác Thêm/Sửa/Xóa ảnh hưởng đến 1 task đã có Assignee** → PHẢI tính toán lại tổng thời gian (Estimate/Re-estimate) và lịch (Plan Start/End) của Assignee đó trong cùng chuỗi ngày, xem có tạo khoảng trống hoặc chồng lịch không (chi tiết xem Bước tính lại thời gian Assignee, dùng chung cho cả 3 Action). Task **không có Assignee** → KHÔNG tự tính toán/giả định, hỏi lại PM muốn xử lý thế nào
-- **Không dừng lại ở việc chỉ nêu/hỏi khoảng trống** — sau khi PM chọn hướng xử lý (hoặc PM chưa chọn buffer rõ ràng), PHẢI thực sự tính và ghi đủ để tổng thời gian của Assignee khớp chuẩn (vd đủ 8h/ngày, đủ 40h/tuần theo số ngày làm việc đang có), rồi nêu rõ tổng cuối cùng trong preview/phản hồi để PM tự verify — không được để lại khoảng trống chưa xử lý mà không nói rõ đó là chủ đích (buffer) hay còn thiếu bước
 
 ---
 
@@ -139,9 +137,7 @@ Nếu `$ACCESS_TOKEN` rỗng → xem Error Handling (thường do Service Accoun
 
 Chỉ đọc cột No. (`<TAB_ENC>!A:A`, không đọc cả A:R) qua API key, tìm giá trị lớn nhất trong các dòng task thật (bỏ qua dòng subtotal/category-subtotal) → No. mới = max + 1, `lastRow` = số dòng cuối có No.
 
-Nếu Bước 3b hoặc 5.1 cần thêm dữ liệu (Category/Assignee/Estimate/Plan Start-End của dòng liền trước hoặc của Assignee) → đọc bổ sung đúng cột cần bằng `values:batchGet` (nhiều `ranges` trong 1 lệnh), không đọc lại cả tab.
-
-**Bước 3b — Nếu task mới có Assignee: áp dụng mục "Tính lại thời gian Assignee" (dùng chung cho cả 3 Action, xem bên dưới)** — task mới có thể chen vào ngày Assignee đã kín giờ.
+Nếu Bước 5.1 cần thêm dữ liệu (Category của dòng liền trước) → đọc bổ sung đúng cột cần bằng `values:batchGet` (nhiều `ranges` trong 1 lệnh), không đọc lại cả tab.
 
 **Bước 4 — Hiển thị preview**
 
@@ -202,9 +198,7 @@ Ghi Audit Log (xem mục bên dưới).
 
 **Bước 3 — Xác định field cần sửa + giá trị mới**, map theo tên field PM nói → cột tương ứng theo `columns` của tab đó trong `config.json`.
 
-**Bước 3b — Nếu field sửa là Estimate(h)/Re-estimate(h): áp dụng mục "Tính lại thời gian Assignee" (dùng chung cho cả 3 Action, xem bên dưới)**
-
-**Bước 4 — Hiển thị preview**, chỉ liệt kê field thực sự đổi (bao gồm mọi task phụ bị ảnh hưởng do Bước 3b):
+**Bước 4 — Hiển thị preview**, chỉ liệt kê field thực sự đổi:
 
 ```
 Sắp sửa task No.<No.> "<task>" ở tab <tên tab>:
@@ -255,8 +249,6 @@ Ghi Audit Log.
 
 **Bước 2 — Đọc lại dữ liệu hiện tại của tab** qua API key. Dùng `values:batchGet` chỉ lấy cột No. + Task + Assignee + Status (đủ cho preview cảnh báo xóa, không đọc cả A:R), tìm đúng dòng, xác định **row index 0-based** trong sheet thật (dùng cho `deleteDimension`, khác với row 1-based dùng ở Action 2) và lấy `gid` (sheetId) của tab từ bảng "gid đã biết".
 
-**Bước 2b — Nếu task sắp xóa có Assignee: áp dụng mục "Tính lại thời gian Assignee" (dùng chung cho cả 3 Action, xem bên dưới)** — xóa task để lại khoảng trống trong lịch của Assignee đó, hỏi PM muốn xử lý khoảng trống này thế nào (giữ làm buffer, hay dồn/khôi phục lịch task khác).
-
 **Bước 3 — Hiển thị preview + cảnh báo rõ ràng vì đây là thao tác khó hoàn tác:**
 
 ```
@@ -295,27 +287,6 @@ curl -s -X POST \
 Nhắc PM: các dòng dưới đã dịch lên 1, cột No. của các dòng sau (nếu đánh số tay) có thể cần đánh số lại — hỏi PM có muốn đánh số lại không, KHÔNG tự động đánh số lại.
 
 Ghi Audit Log.
-
----
-
-## Tính lại thời gian Assignee (dùng chung cho cả 3 Action)
-
-Áp dụng mỗi khi Thêm/Sửa/Xóa 1 task **có Assignee** làm thay đổi tổng số giờ hoặc lịch của người đó (thêm task mới chen vào ngày đã kín, đổi Estimate/Re-estimate, xóa task để lại khoảng trống...):
-
-- Đọc lại toàn bộ các dòng có cùng Assignee trong tab đang thao tác (dùng dữ liệu vừa đọc ở Bước xác định dòng của action tương ứng), lấy Plan Start/Plan End từng task để xác định chuỗi ngày liền kề của người đó.
-- Tính tổng số giờ (Estimate, hoặc Re-estimate nếu đã có) của Assignee trong chuỗi ngày đó, so **trước và sau** khi thao tác.
-- Nếu bị lệch tổng hoặc tạo khoảng trống/chồng lịch → KHÔNG tự ý áp dụng 1 mình. Đề xuất PM chọn 1 trong các hướng phù hợp với action đang làm:
-  1. **Bù giờ**: tăng/giảm Estimate ở (các) task khác của cùng Assignee trong cùng chuỗi ngày, giữ nguyên Plan Start/End.
-  2. **Dời lịch**: giữ nguyên Estimate các task, đẩy Plan Start/End sang ngày kế tiếp (bỏ qua Thứ 7/Chủ nhật).
-  3. **Giữ nguyên/để trống làm buffer**: hợp lý khi Xóa task tạo khoảng trống và PM chấp nhận không cần lấp ngay.
-- **Riêng Action Thêm**: nếu PM không cho ngày cụ thể và Assignee đã **kín lịch hết chuỗi ngày hiện có** (không còn giờ trống) → KHÔNG tự chọn đại 1 ngày. Đề xuất PM chọn 1 trong các hướng:
-  1. **Ngày gần nhất còn trống**: ngày làm việc kế tiếp sau chuỗi lịch hiện tại của Assignee (bỏ qua Thứ 7/Chủ nhật).
-  2. **Bù giờ từ 1 task khác trong chuỗi ngày hiện tại**: giảm bớt task nào đó để nhường giờ cho task mới, giữ trong cùng khung ngày cũ.
-  3. **Không gán ngày**: thêm task nhưng để trống Plan Start/End, PM tự xếp lịch sau.
-- Tóm lại — bất cứ khi nào phát hiện Assignee **đã kín lịch** (dù đang Thêm/Sửa/Xóa) → luôn dừng lại và đề xuất phương án cho PM chọn, không tự quyết định thay.
-- Nếu task **KHÔNG có Assignee** → KHÔNG tự tính toán/giả định gì thêm, hỏi lại PM muốn xử lý thời gian thế nào (theo Quy tắc bất biến).
-- Luôn hỏi PM chọn hướng nào trước khi đưa preview cuối cùng của action đang thực hiện — không tự quyết định thay PM.
-- Nếu PM chưa trả lời câu hỏi về khoảng trống/lệch giờ (vd chỉ xác nhận "có" cho phần khác của action) → PHẢI hỏi lại cho tới khi có câu trả lời rõ ràng, KHÔNG coi im lặng là chọn phương án "giữ nguyên/buffer". Sau khi có câu trả lời, thực sự ghi thay đổi để tổng giờ khớp chuẩn (đủ giờ/ngày, đủ giờ/tuần) rồi nêu rõ tổng cuối cùng — không dừng ở mức đề xuất/hỏi mà không hoàn tất.
 
 ---
 
