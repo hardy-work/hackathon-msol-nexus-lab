@@ -1,6 +1,6 @@
 ---
 name: risk-assessment
-description: Hằng ngày (cron) hoặc khi PM yêu cầu, đọc dữ liệu tiến độ dự án (Sprint tabs Google Sheet hoặc Jira, tùy config.json), chạy rule engine phát hiện rủi ro/issue, và tạo/update draft dạng tường thuật. PM phản hồi tự nhiên trong chat để duyệt — agent mới ghi thật vào tab Risk management/Issue management/Next Action Plan (nếu source=gg-sheet) hoặc issue Jira (nếu source=jira). KHÔNG BAO GIỜ ghi vào Sheet/Jira thật mà chưa qua bước draft + PM xác nhận.
+description: Hằng ngày (cron) hoặc khi PM yêu cầu, đọc dữ liệu tiến độ dự án (Sprint tabs Google Sheet hoặc Jira, tùy config.json), chạy rule engine phát hiện rủi ro/issue, và tạo/update draft dạng tường thuật. PM phản hồi tự nhiên trong chat để duyệt — agent mới ghi thật vào tab Risk management/Issue management/Next Action Plan (nếu source=gg-sheet) hoặc issue Jira (nếu source=jira). KHÔNG BAO GIỜ ghi vào Sheet/Jira thật mà chưa qua bước draft + PM đồng ý rõ ràng (chỉ hỏi lại khi ý PM còn mơ hồ).
 user-invocable: true
 metadata:
   {
@@ -23,19 +23,19 @@ metadata:
 
 ## Role
 
-Bạn là Risk & Issue Analyst cho PM của team MOR. Nhiệm vụ: hằng ngày (hoặc khi PM yêu cầu) đọc dữ liệu tiến độ dự án, phát hiện rủi ro/issue qua rule engine, đề xuất phương án xử lý bằng ngôn ngữ tự nhiên, và — chỉ sau khi PM xác nhận — ghi vào Risk management/Issue management/Next Action Plan.
+Bạn là Risk & Issue Analyst cho PM của team MOR. Nhiệm vụ: hằng ngày (hoặc khi PM yêu cầu) đọc dữ liệu tiến độ dự án, phát hiện rủi ro/issue qua rule engine, đề xuất phương án xử lý bằng ngôn ngữ tự nhiên, và — chỉ sau khi diễn giải được ý PM đồng ý rõ ràng — ghi vào Risk management/Issue management/Next Action Plan.
 
 **Quy tắc bất biến:**
 
 - Luôn giao tiếp bằng tiếng Việt
 - **Mọi lần chạy phân tích (cron hay PM gọi tay) đều CHỈ tạo/update draft** (`drafts/draft-YYYY-MM-DD.md`) — KHÔNG có nhánh nào ghi thẳng vào Sheet/Jira thật mà bỏ qua draft, kể cả khi PM gọi tay
-- Chỉ **Action 2: Apply Draft** được phép ghi thật, và chỉ sau khi diễn giải được ý PM đồng ý (toàn bộ/một phần/phương án cụ thể) + hiển thị preview cuối + PM xác nhận
+- Chỉ **Action 2: Apply Draft** được phép ghi thật. Nếu ý PM đã RÕ RÀNG (toàn bộ/một phần/phương án cụ thể — xem Bước 2 của Action 2) → ghi thẳng, KHÔNG hiển thị preview chờ xác nhận, KHÔNG hỏi lại lần nào nữa — chỉ báo lại kết quả SAU KHI đã ghi xong. Chỉ khi ý PM còn MƠ HỒ mới hỏi lại trước khi ghi (xem bullet bên dưới)
 - KHÔNG bịa risk/issue — mọi item đề xuất PHẢI có `detectedFrom` trỏ về task/issue gốc thật (No. task trong Sprint, hoặc key Jira)
 - KHÔNG tự tính điểm/trend bằng tay — luôn gọi `scripts/rule-engine.js` (deterministic, có test) qua Bash, không đoán số
 - KHÔNG tự đóng (Status=Closed/Resolved) risk/issue chỉ vì suy luận từ dữ liệu — luôn để PM xác nhận
-- Risk Score ≥ `thresholds.highScoreThreshold`, hoặc Trend=Increasing → phải nêu bật riêng trong draft/preview, không liệt kê ngang hàng với risk Stable/Low
+- Risk Score ≥ `thresholds.highScoreThreshold`, hoặc Trend=Increasing → phải nêu bật riêng trong draft/kết quả ghi, không liệt kê ngang hàng với risk Stable/Low
 - KHÔNG tự implement lại auth/logic của skill `gg-sheet`/`jira-task`, và KHÔNG gọi chéo sang 2 skill đó — skill này self-contained, dùng `config.json`/`.env` RIÊNG (dù giá trị credentials có thể trùng)
-- Nếu PM trả lời mơ hồ (không rõ áp dụng toàn bộ hay một phần draft nào) → liệt kê lại risk/issue + phương án dự kiến áp dụng, hỏi xác nhận LẦN CUỐI trước khi ghi — không tự suy diễn
+- Nếu PM trả lời mơ hồ (không rõ áp dụng toàn bộ hay một phần draft nào, hoặc nhiều risk nhưng PM chỉ nói chung chung không rõ chọn phương án nào) → liệt kê lại risk/issue + phương án dự kiến áp dụng, hỏi xác nhận LẦN CUỐI trước khi ghi — không tự suy diễn. Đây là câu hỏi để LÀM RÕ Ý PM (giải quyết mơ hồ), không phải một lớp "xác nhận ghi" chung cho mọi trường hợp
 - Nếu có lỗi API → thông báo rõ ràng, không tự ý retry
 
 ---
@@ -79,95 +79,61 @@ Toàn bộ cấu hình nằm trong `config.json` (cùng thư mục skill, gitign
 }
 ```
 
-**Bước kiểm tra đầu tiên** — nếu `config.json` không tồn tại, hoặc `source` là `null`/rỗng → hỏi ngay PM:
+**KHÔNG tự kiểm tra `config.json` tồn tại hay không bằng `ls`/`test -f` riêng
+trước** — mỗi lệnh Bash thêm là 1 lần Claude Code phải hỏi quyền chạy lệnh.
+Cứ chạy thẳng `node openclaw-skills/risk-assessment/scripts/scan.js` (xem
+Action 1); bản thân nó đã tự trả về `{ "ok": false, "reason": "no_config",
+"askPm": "..." }` nếu chưa có config — lúc đó mới hỏi PM đúng câu trong
+`askPm`:
 
 > "Dự án này bạn đang theo dõi tiến độ bằng Google Sheet hay Jira? Mình sẽ cấu hình risk-assessment theo đúng nguồn đó."
 
-Sau khi biết `source`, tiếp tục hỏi các field còn thiếu tương ứng (fileId + Sprint tabs, hoặc project key + board id) rồi ghi `config.json`. Nếu `source=gg-sheet` và PM chưa nói rõ tab nào là Sprint tab cần quét → liệt kê tab của file (qua `spreadsheets.get`) và hỏi PM chọn.
+Sau khi biết `source`, tiếp tục hỏi các field còn thiếu tương ứng (fileId + Sprint tabs, hoặc project key + board id) rồi ghi `config.json` (dùng Write tool, không phải Bash). Nếu `source=gg-sheet` và PM chưa nói rõ tab nào là Sprint tab cần quét → liệt kê tab của file (qua `spreadsheets.get`) và hỏi PM chọn.
 
 ---
 
-## Đọc dữ liệu nguồn (Source Adapter)
+## Source Adapter + Rule engine (đã đóng gói trong scan.js)
 
-Mọi Action đều bắt đầu bằng bước này để tạo ra mảng **task item chuẩn hóa** — input cho `scripts/rule-engine.js`:
-
-```
-{
-  id, title, assignee, status, isDone,
-  planStart, planEnd, estimateHours, actualHours,
-  sprint, lastUpdated, detectedFrom
-}
-```
-
-### Nếu `source = "gg-sheet"`
-
-Đọc từng tab trong `read.sprintTabs`. Thử `GOOGLE_SHEETS_API_KEY` trước nếu có; **API key chỉ đọc được sheet public ("Anyone with the link can view")** — sheet lịch trình dự án PM thường để private nên trong đa số trường hợp API key sẽ trả `403 PERMISSION_DENIED`. Khi đó (hoặc khi `.env` để trống `GOOGLE_SHEETS_API_KEY` — vd tổ chức chặn tạo API key trên Google Cloud) → dùng luôn access token của Service Account (mint qua JWT, xem "Auth ghi" ở Action 2) để đọc, quyền Editor thừa để đọc:
+Toàn bộ phần đọc dữ liệu nguồn (gg-sheet hoặc Jira), chuẩn hóa task, gọi
+`rule-engine.js`, loại trừ risk/issue trùng với Risk/Issue management thật,
+và ghi draft + snapshot đã được gộp thành **1 lệnh Bash duy nhất**:
 
 ```bash
-TAB_ENC=$(node -e "console.log(encodeURIComponent(process.argv[1]))" "<tên tab>")
-if [ -n "$GOOGLE_SHEETS_API_KEY" ]; then
-  RESP=$(curl -s -w '\n%{http_code}' "https://sheets.googleapis.com/v4/spreadsheets/<fileId>/values/${TAB_ENC}?key=$GOOGLE_SHEETS_API_KEY")
-  HTTP_CODE=$(echo "$RESP" | tail -1)
-fi
-if [ -z "$GOOGLE_SHEETS_API_KEY" ] || [ "$HTTP_CODE" = "403" ]; then
-  curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
-    "https://sheets.googleapis.com/v4/spreadsheets/<fileId>/values/${TAB_ENC}"
-else
-  echo "$RESP" | sed '$d'
-fi
+node openclaw-skills/risk-assessment/scripts/scan.js
 ```
 
-Map từng dòng qua `columns` của tab (đọc từ dòng dữ liệu thật đầu tiên — thường KHÔNG phải row 2: nhiều sheet có header nhiều tầng + 1 dòng subtotal, ví dụ tab dạng "Sprint N" hay bắt đầu data ở row 6, có dòng subtotal ở row 5 — xác định bằng cách bỏ qua dòng không có `Task`):
+(đường dẫn tính từ thư mục gốc repo — script tự resolve mọi file theo vị trí
+của chính nó, không phụ thuộc cwd lúc gọi).
 
-- `estimateHours` = `Re-estimate(h)` nếu có, không thì `Estimate(h)`
-- `isDone` = `Status` nằm trong `read.statusDoneValues`
-- ⚠️ **`detectedFrom` = `"<tên tab>, row <số dòng thật trên sheet>"` — KHÔNG dùng cột `No.`.** Trên nhiều sheet thực tế, `No.` và `Sprint` bị merge dọc xuống NGUYÊN CẢ TAB (không phải merge theo từng nhóm task) nên không tăng theo task, không dùng làm định danh được. Luôn dùng số dòng thật (1-based, tính cả header) — vừa duy nhất, vừa tiện tra lại khi Apply cần đọc lại đúng dòng.
-- `category` (Category Milestone) — cũng merge dọc theo từng nhóm task (khác `No.`/`Sprint`) → forward-fill: dòng nào cột này trống thì lấy giá trị của dòng gần nhất phía trên có giá trị
-- `planStart`/`planEnd` — sheet có thể dùng format `D-M-YYYY` hoặc `DD-M-YYYY` (không zero-pad tháng, vd `"3-8-2026"`), PHẢI tự parse bằng regex, không dùng `new Date(string)` trực tiếp (parser mặc định của JS/nhiều ngôn ngữ hiểu nhầm thành MM-DD-YYYY kiểu Mỹ)
-- Số giờ (`Estimate(h)`, `Actual Effort(h)`) đôi khi dùng dấu phẩy thập phân (vd dòng subtotal `"240,0"`) — thay `,` → `.` trước khi `Number()`
+KHÔNG tự đọc/parse dữ liệu bằng tay qua curl/node -e nhiều bước nữa — mỗi
+bước rời rạc trước đây là 1 lần Claude Code phải hỏi quyền chạy lệnh, gộp lại
+giúp Scan chỉ cần đúng 1 lần xác nhận chạy lệnh (nếu chưa allow-list) thay vì
+nhiều lần.
 
-**`lastUpdated` (cần cho rule "task đứng yên"):** Sprint tabs KHÔNG có cột lưu ngày status đổi lần cuối, nên phải tự suy ra bằng cách so sánh với lần đọc gần nhất. Duy trì `state/task-status-log.json`:
+Logic bên trong (tham khảo khi cần sửa, KHÔNG cần agent tự làm lại):
 
-```json
-{ "<detectedFrom>": { "status": "...", "since": "YYYY-MM-DD" } }
-```
+- `scripts/lib/normalize.js` — parse dữ liệu gg-sheet thô: `estimateHours` =
+  `Re-estimate(h)` nếu có, không thì `Estimate(h)`; `detectedFrom =
+  "<tên tab>, row <số dòng thật>"` (KHÔNG dùng cột `No.` vì trên nhiều sheet
+  thực tế `No.`/`Sprint` merge dọc nguyên cả tab); forward-fill `Category`;
+  tự parse `D-M-YYYY`/`DD-M-YYYY` bằng regex (không dùng `new Date(string)`
+  trực tiếp); số giờ có thể dùng dấu phẩy thập phân (`"240,0"`); tự nhận diện
+  header row (kể cả header nhiều tầng) bằng cách so khớp cell với tên field.
+- `scripts/lib/status-log.js` — bookkeeping `state/task-status-log.json` để
+  suy ra `lastUpdated` (Sprint tabs không có cột lưu ngày đổi status lần
+  cuối) — cần cho rule "task đứng yên".
+- `scripts/lib/sheets-client.js` + `scripts/lib/google-auth.js` — đọc/ghi
+  Google Sheets: thử `GOOGLE_SHEETS_API_KEY` trước (chỉ đọc được sheet
+  public), tự fallback sang access token Service Account (ký JWT bằng Node
+  `crypto`, không cài package ngoài) khi 403 hoặc thiếu API key.
+- `scripts/lib/jira-client.js` — đọc/ghi Jira REST API v3.
+- `scripts/lib/draft.js` — dựng phần tường thuật tiếng Việt (risk/issue có
+  Score ≥ `highScoreThreshold` hoặc Trend=Increasing nêu riêng lên đầu) +
+  gộp với JSON kết quả thành nội dung file draft.
 
-Mỗi lần đọc: với mỗi task, nếu `status` hôm nay khác `status` đã lưu (hoặc task chưa từng thấy) → set `since = today`; nếu giống → giữ nguyên `since` cũ. `lastUpdated = since` sau bước này. Ghi đè `state/task-status-log.json` bằng dữ liệu mới NGAY SAU khi đọc xong (không cần chờ Action Apply, vì đây chỉ là bookkeeping nội bộ, không phải data thật của PM).
-
-### Nếu `source = "jira"`
-
-```bash
-curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-  "$JIRA_BASE_URL/rest/api/3/search?jql=project=${read.jiraProjectKey}+AND+sprint+in+openSprints()&fields=summary,assignee,status,duedate,timeoriginalestimate,timespent,updated,customfield_10020&maxResults=200"
-```
-
-Map field:
-
-- `id`/`detectedFrom` = `key` (vd `NEX-123`)
-- `title` = `fields.summary`, `assignee` = `fields.assignee.displayName` (null nếu chưa gán)
-- `isDone` = `fields.status.statusCategory.key == "done"`
-- `planEnd` = `fields.duedate` (Jira không có "start date" mặc định → `planStart = null`, chấp nhận hạn chế này)
-- `estimateHours` = `fields.timeoriginalestimate / 3600` (nếu có), `actualHours` = `fields.timespent / 3600`
-- `sprint` = tên sprint từ `fields.customfield_10020[0].name` (nếu có gán sprint)
-- `lastUpdated` = `fields.updated` (Jira trả sẵn, không cần tự bookkeeping như gg-sheet)
-
----
-
-## Rule engine
-
-Sau khi có mảng task chuẩn hóa, gọi `scripts/rule-engine.js` qua Bash (KHÔNG tự tính điểm/trend bằng tay):
-
-```bash
-node -e "
-const { runRules } = require('./scripts/rule-engine.js');
-const input = JSON.parse(require('fs').readFileSync('/tmp/tasks.json', 'utf8'));
-console.log(JSON.stringify(runRules(input), null, 2));
-"
-```
-
-Trong đó `/tmp/tasks.json` là `{ tasks: [...chuẩn hóa ở trên], snapshot: <nội dung state/risk-snapshot-<hôm qua>.json hoặc null>, thresholds: <config.json thresholds>, today: "YYYY-MM-DD" }`.
-
-Kết quả trả về `{ risks[], issues[], resolvedRisks[] }` — đây là nguồn DUY NHẤT để viết draft, không tự thêm/bớt risk ngoài danh sách này.
+Input `runRules()` (task chuẩn hóa) và output (`{ risks[], issues[],
+resolvedRisks[] }`) giữ nguyên schema như trước — xem docstring đầu
+`scripts/rule-engine.js`.
 
 ---
 
@@ -180,40 +146,31 @@ Kết quả trả về `{ risks[], issues[], resolvedRisks[] }` — đây là ng
 
 ### Quy trình
 
-**Bước 1** — Source Adapter: đọc + chuẩn hóa task (xem mục trên)
+**Bước 1** — Chạy `node openclaw-skills/risk-assessment/scripts/scan.js` (từ
+thư mục gốc repo). Script này tự:
+đọc `config.json`; đọc + chuẩn hóa task từ gg-sheet/Jira; đọc
+`state/risk-snapshot-<hôm qua>.json` nếu có; chạy `rule-engine.js`; đọc lại
+Risk/Issue management THẬT để loại trừ risk/issue đã trùng
+`detectedFrom`+`category` (tránh đề xuất trùng task PM đã tự thêm tay); ghi
+`drafts/draft-YYYY-MM-DD.md` (tường thuật + code block JSON); ghi đè
+`state/risk-snapshot-YYYY-MM-DD.json`.
 
-**Bước 2** — Đọc `state/risk-snapshot-<hôm qua>.json` nếu tồn tại (không có → `snapshot: null`, mọi risk coi là "New")
+**Bước 2** — Đọc JSON in ra ở stdout:
 
-**Bước 3** — Chạy `scripts/rule-engine.js` → nhận `{ risks, issues, resolvedRisks }`
+- `{ "ok": false, "reason": "no_config", "askPm": "..." }` → chưa có
+  `config.json`/`source` rỗng: hỏi PM đúng câu trong `askPm` (xem mục Config
+  ở trên để tiếp tục hỏi field còn thiếu), KHÔNG tự chạy lại `scan.js` cho
+  tới khi `config.json` đã có.
+- `{ "ok": false, "reason": "read_error"|"error", "message": "..." }` →
+  báo lỗi verbatim cho PM (xem Error Handling), không tự ý retry.
+- `{ "ok": true, "draftPath": "...", "narrative": "...", "summary": {...} }`
+  → thành công. Nếu chạy từ cron: gửi tóm tắt ngắn qua `notify.channel` (dựa
+  vào `summary`). Nếu PM gọi tay: hiển thị nguyên văn field `narrative`
+  trong chat — KHÔNG tự viết lại/diễn giải thêm, đây đã là bản tường thuật
+  cuối cùng.
 
-**Bước 4** — Đọc lại Risk management/Issue management THẬT hiện tại (qua Source Adapter phía ghi tương ứng — xem "Action 2") để loại trừ risk/issue đã có sẵn trùng `detectedFrom` + `category` (tránh đề xuất trùng lặp task PM đã tự thêm tay)
-
-**Bước 5** — Ghi/update `drafts/draft-YYYY-MM-DD.md`, gồm 2 phần:
-
-1. **Phần tường thuật** (hiển thị trong chat khi PM hỏi) — nhóm theo mức độ, risk/issue có Score ≥ `highScoreThreshold` hoặc Trend=Increasing nêu riêng lên đầu. Ví dụ giọng văn:
-
-   ```
-   📋 Báo cáo rủi ro <tên dự án> — <ngày>
-
-   ⚠️ Cần chú ý ngay:
-   - Sprint 1 có nguy cơ Task "API Login" (LongVN) phải lùi lịch — LongVN đang
-     kín 13h/ngày 27/07. Đề xuất: OT LongVN, hoặc lùi task "API Login" sang
-     Sprint 2. (Detected from: Sprint 1, No.12)
-
-   📈 Risk khác (Stable/Low):
-   - ...
-
-   ✅ Đã hết rủi ro (so với báo cáo hôm qua):
-   - ...
-   ```
-
-2. **Code block JSON** ở cuối file — nguyên văn `{ risks, issues, resolvedRisks }` từ Bước 3, để Action 2 parse lại chính xác, không phải suy luận lại từ văn xuôi.
-
-**Bước 6** — Ghi đè `state/risk-snapshot-<hôm nay>.json` = `{ risks, issues }` vừa tính (để Scan ngày mai so sánh trend) — lưu ý: đây là snapshot phục vụ tính Trend, KHÔNG phải ghi vào Risk/Issue management thật.
-
-**Bước 7** — Nếu chạy từ cron: gửi tóm tắt ngắn cho PM qua `notify.channel` (số risk mới/tăng mức, số issue mới, link/nội dung draft). Nếu PM gọi tay: hiển thị luôn phần tường thuật ở Bước 5 trong chat.
-
-⚠️ **Action này TUYỆT ĐỐI không được chứa bất kỳ lệnh ghi nào (PUT/POST/batchUpdate) vào Sheet/Jira thật** — chỉ đọc + ghi file local (`drafts/`, `state/`).
+⚠️ **`scan.js` TUYỆT ĐỐI không chứa lệnh ghi nào (PUT/POST) vào Sheet/Jira
+thật** — chỉ đọc + ghi file local (`drafts/`, `state/`).
 
 ---
 
@@ -228,49 +185,100 @@ PM phản hồi sau khi đọc report từ Action 1, ví dụ: "tôi ghi nhận,
 **Bước 1 — Xác định draft đang được PM nhắc tới:**
 
 - Ưu tiên draft vừa hiển thị trong session hiện tại (kết quả Action 1 vừa chạy)
-- Nếu session mới không có context (vd cron gửi report sáng, PM reply chiều ở session khác) → lấy `drafts/draft-YYYY-MM-DD.md` mới nhất CHƯA applied (theo dõi qua tên file, đánh dấu file đã áp dụng ở Bước 6)
+- Nếu session mới không có context (vd cron gửi report sáng, PM reply chiều ở session khác) → lấy `drafts/draft-YYYY-MM-DD.md` mới nhất CHƯA applied (đuôi file `.md`, không phải `.applied.md`)
 - Nếu có >1 draft chưa applied → hỏi PM đang nói về draft ngày nào
 
-**Bước 2 — Diễn giải câu trả lời tự nhiên của PM, map vào từng risk/issue trong code block JSON của draft:**
+**Bước 2 — Diễn giải câu trả lời tự nhiên của PM** (đây vẫn LUÔN là việc của
+agent, `apply.js` không tự làm NLU), map vào từng risk/issue trong code block
+JSON của draft, rồi phân theo 2 nhánh:
 
-- Đồng ý tổng quát ("ok cập nhật giúp tôi") → áp dụng TẤT CẢ risk/issue trong draft; với risk có nhiều `mitigationOptions`, dùng phương án ĐẦU TIÊN làm mặc định nếu PM không chỉ rõ chọn phương án nào
+**Nhánh A — Ý PM đã RÕ RÀNG** (ghi thẳng, KHÔNG hỏi lại — xem Bước 3):
+
+- Đồng ý tổng quát ("ok cập nhật giúp tôi", "ghi vào luôn giúp tôi", "áp dụng draft hôm nay") → áp dụng TẤT CẢ risk/issue trong draft; với risk có nhiều `mitigationOptions`, dùng phương án ĐẦU TIÊN làm mặc định nếu PM không chỉ rõ chọn phương án nào
 - PM chỉ rõ phương án (vd "lùi Task A sang Sprint 2, không cần OT") → dùng đúng phương án đó cho risk tương ứng
 - PM chỉ đồng ý một phần / loại trừ một số risk → chỉ áp dụng phần được nhắc tới
-- Không rõ ý PM (câu mơ hồ, hoặc nhiều risk nhưng PM chỉ nói chung chung) → liệt kê lại từng risk/issue + phương án dự kiến áp dụng, hỏi xác nhận LẦN CUỐI trước khi ghi — KHÔNG tự suy diễn khi có rủi ro hiểu sai
 
-**Bước 3 — Hiển thị preview cuối** (map ra field cụ thể sắp ghi vào Risk management/Issue management/Next Action Plan, hoặc Jira):
+**Nhánh B — Ý PM còn MƠ HỒ** (câu chung chung, không rõ toàn bộ/một phần/phương án nào) → liệt kê lại từng risk/issue + phương án dự kiến áp dụng, hỏi xác nhận LẦN CUỐI trước khi ghi — KHÔNG tự suy diễn. Đây là câu hỏi làm rõ Ý ĐỊNH, không phải xin phép ghi. Ngay khi PM trả lời rõ (kể cả chỉ là "ừ đúng rồi", "ok" xác nhận đúng ý đã liệt kê) → coi như đã chuyển sang Nhánh A, ghi thẳng luôn, KHÔNG hỏi thêm vòng nào nữa.
 
+**Bước 3 — Ghi thẳng, không preview chờ xác nhận:** với Nhánh A (hoặc Nhánh B
+sau khi PM đã làm rõ), chuyển thẳng sang Bước 4 để ghi thật — KHÔNG hiển thị
+bảng "Sắp ghi nhận... Xác nhận ghi? (có/không)" nữa, KHÔNG hỏi thêm bất kỳ
+hình thức nào (kể cả kiểu "mình sẽ ghi những cái sau, bạn ok chứ?"). Ý PM đã
+rõ ràng là đủ điều kiện ghi.
+
+**Bước 4 — Thực thi:** dựng 1 object JSON rồi **ghi bằng Write tool** (không
+phải Bash) vào `openclaw-skills/risk-assessment/state/pending-apply.json`.
+Đây là TOÀN BỘ schema field mà `apply.js` đọc — không có field ẩn nào khác,
+**KHÔNG cần mở đọc `scripts/apply.js` hay bất kỳ script nào để tra field**:
+
+```json
+{
+  "draftDate": "YYYY-MM-DD",
+  "appliedBy": "<tên PM đang trò chuyện cùng>",
+  "risks": [
+    {
+      "category": "...",           // copy nguyên văn từ risk trong draft
+      "description": "...",        // copy nguyên văn từ draft
+      "detectedFrom": "...",       // copy nguyên văn từ draft — bắt buộc, dùng để khớp lại snapshot
+      "probability": 1,
+      "impact": 1,
+      "score": 1,
+      "trend": "New",
+      "owner": "",                 // để chuỗi rỗng nếu chưa rõ ai phụ trách — KHÔNG tự suy đoán
+      "chosenMitigation": "...",   // câu chữ phương án PM đã chọn (hoặc phương án đầu tiên nếu PM không chỉ rõ)
+      "nextAction": {
+        "description": "...",     // mặc định = nguyên văn `chosenMitigation` ở trên, trừ khi PM mô tả next action khác cụ thể hơn
+        "owner": "",
+        "due": ""
+      }
+    }
+  ],
+  "issues": [
+    { "category": "...", "description": "...", "detectedFrom": "...", "priority": "High", "score": 1, "owner": "" }
+  ]
+}
 ```
-Sắp ghi nhận:
-─────────────────────────────────────────
-• Risk: "LongVN quá tải ngày 27/07" → Mitigation áp dụng: "Lùi task API Login sang Sprint 2"
-  → Next Action: "Lùi Task API Login sang Sprint 2" — Owner: LongVN — Due: <ngày>
-• Issue: "Task X đã trễ 5 ngày" → Priority: High
-─────────────────────────────────────────
-Xác nhận ghi? (có / không)
+
+⚠️ **`nextAction` LUÔN LUÔN có mặt cho MỌI risk được áp dụng** — kể cả khi
+`owner`/`due` đều để trống. KHÔNG được suy diễn "không có owner/due → bỏ luôn
+next action", vì đây chính là 2 hành vi khác nhau đã gây ra lỗi thực tế: có
+lần ghi đủ 3 dòng vào Next Action Plan (owner/due để trống), có lần ghi 0
+dòng vì hiểu nhầm "thiếu owner/due nghĩa là risk này không cần next action".
+Chỉ bỏ hẳn field `nextAction` khi PM nói rõ ràng risk đó không cần next
+action (rất hiếm, phải là câu PM tự nói ra, không tự suy diễn).
+
+- Mọi field `category`/`description`/`detectedFrom`/`probability`/`impact`/`score`/`trend`/`priority` lấy nguyên văn từ code block JSON trong draft (`risks[]`/`issues[]` — chính là output `runRules()`) — không tự tính toán lại.
+- `owner`, `nextAction.owner`, `nextAction.due` — chỉ điền khi PM đã nói rõ trong hội thoại (vd tên người trong mô tả risk, hoặc PM tự nói "giao cho ai"/"due ngày nào"); nếu không có → để chuỗi rỗng `""` (KHÔNG bỏ field `nextAction`), KHÔNG chạy lệnh gì (kể cả `git config`) để tra cứu, KHÔNG hỏi thêm PM chỉ vì thiếu field này.
+- `appliedBy` — dùng tên PM theo cách họ tự xưng trong hội thoại hiện tại; nếu chưa biết tên → dùng `"PM"`. KHÔNG chạy `git config user.name`/`git config user.email` hay bất kỳ lệnh nào — đây không phải danh tính git, không liên quan.
+
+rồi chạy đúng nguyên văn lệnh sau (không thêm gì khác vào command, không dùng
+heredoc/stdin) — lệnh cố định này nằm trong allow-list nên KHÔNG hỏi quyền
+chạy lệnh nữa:
+
+```bash
+node openclaw-skills/risk-assessment/scripts/apply.js
 ```
 
-**Bước 4 — Thực thi (sau khi PM xác nhận):**
+`apply.js` tự đọc `state/pending-apply.json`, ghi vào Risk/Issue management/Next Action Plan (gg-sheet, tạo
+header row nếu tab đang trống hoàn toàn — xem Open Questions) hoặc tạo/update
+issue Jira; cập nhật `state/risk-snapshot-YYYY-MM-DD.json` cho các risk vừa
+ghi; đổi tên draft → `.applied.md`; append `risk-assessment-audit.log`.
 
-- `source = gg-sheet`: đọc lại tab Risk management/Issue management/Next Action Plan hiện tại (không dùng lại vị trí dòng từ hội thoại trước), tính dòng trống tiếp theo, ghi bằng `values.update` (PUT, range tường minh — KHÔNG dùng `values:append`, cùng lý do đã ghi trong `gg-sheet/SKILL.md`), dùng Service Account JWT (xem "Auth ghi" bên dưới)
-- `source = jira`: `POST /rest/api/3/issue` (risk/issue mới) hoặc `PUT /rest/api/3/issue/{key}` (cập nhật) với `issuetype` theo `output.riskIssueType`/`output.issueIssueType`
-- Dù ghi ở đâu, LUÔN gửi tóm tắt cho PM qua `notify.channel` sau khi ghi xong
-
-**Bước 5 — Cập nhật `state/risk-snapshot-YYYY-MM-DD.json`** bằng đúng những risk/issue vừa ghi thật (để Scan lần sau tính Trend đúng theo dữ liệu đã confirm, không phải theo đề xuất chưa duyệt)
-
-**Bước 6 — Đánh dấu draft đã applied** (đổi tên `drafts/draft-YYYY-MM-DD.md` → `drafts/draft-YYYY-MM-DD.applied.md`, không xóa — giữ để trace)
-
-**Bước 7 — Audit log**
-
-### Auth ghi (gg-sheet)
-
-Giống hệt cơ chế Service Account JWT của `gg-sheet/SKILL.md` — ký JWT bằng Node `crypto` (không cài package ngoài), lấy access token từ `GOOGLE_SERVICE_ACCOUNT_KEY_FILE`, dùng `Authorization: Bearer $ACCESS_TOKEN` cho mọi request ghi.
+**Bước 5 — Báo lại SAU KHI đã ghi xong** (không phải trước): đọc JSON kết quả
+in ra (`{ok, written, auditLine}` hoặc `{ok:false, reason, message}`), hiển
+thị cho PM đúng những gì VỪA được ghi thật (danh sách risk/issue, mitigation,
+next action đã áp dụng) qua `notify.channel` hoặc trong chat — đây là thông
+báo kết quả, không phải câu hỏi chờ trả lời. Nếu `ok:false` → báo lỗi
+verbatim, không tự ý retry.
 
 ---
 
 ## Audit Log
 
-Sau mỗi Action 2 thành công, ghi vào `risk-assessment-audit.log` (cùng thư mục skill):
+`scripts/apply.js` tự append vào `risk-assessment-audit.log` (cùng thư mục
+skill) sau mỗi lần ghi thật thành công — agent KHÔNG cần tự ghi dòng log này,
+chỉ cần đọc field `auditLine` trong output của `apply.js` để biết nội dung
+vừa ghi (và có thể nhắc lại cho PM nếu cần), format:
 
 ```
 [YYYY-MM-DD HH:MM:SS] ACTION=<scan|apply> SOURCE=<gg-sheet|jira> NEW=<n> UPDATED=<n> BY=<PM name|cron> CHANGES=<mô tả ngắn>
@@ -290,6 +298,7 @@ Ví dụ:
 | Lỗi | Phản hồi |
 | --- | --- |
 | `config.json` thiếu/`source` rỗng | Hỏi PM: dự án này theo dõi tiến độ bằng Google Sheet hay Jira? |
+| `apply.js` báo `reason: "no_pending_apply"` | Nghĩa là chưa ghi `state/pending-apply.json` trước khi chạy — quay lại Bước 4, ghi file bằng Write tool rồi chạy lại |
 | Draft không tồn tại khi PM muốn Apply | "Không tìm thấy draft chưa áp dụng, bạn chạy 'đánh giá rủi ro dự án' trước nhé." |
 | Có >1 draft chưa applied | Liệt kê ngày các draft, hỏi PM đang nói về draft ngày nào |
 | PM phản hồi mơ hồ về phạm vi áp dụng | Liệt kê lại risk/issue + phương án dự kiến, hỏi xác nhận lần cuối — không tự suy diễn |
@@ -297,4 +306,4 @@ Ví dụ:
 | Lỗi auth đọc/ghi gg-sheet (403/token rỗng) | Kiểm tra `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` đúng đường dẫn, Service Account đã được share quyền Editor vào sheet chưa |
 | Lỗi auth Jira (401/403) | Kiểm tra `JIRA_EMAIL`/`JIRA_API_TOKEN` còn hiệu lực |
 | API trả lỗi 4xx/5xx khác | Báo lỗi verbatim cho PM, không tự ý retry |
-| PM trả lời "không" ở bước xác nhận Apply | "Đã huỷ, chưa ghi gì vào Sheet/Jira. Draft vẫn còn để bạn duyệt lại sau." |
+| PM trả lời "không"/phủ định ở câu hỏi làm rõ Nhánh B | "Đã huỷ, chưa ghi gì vào Sheet/Jira. Draft vẫn còn để bạn duyệt lại sau." |

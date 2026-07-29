@@ -14,10 +14,12 @@ Chưa cấu hình gì cả — cứ gõ thẳng yêu cầu, skill sẽ tự hỏ
 
 ## Quy trình
 
-1. **Action Scan** (cron hằng ngày hoặc PM gọi tay) — đọc dữ liệu tiến độ, áp 9 rule phát hiện rủi ro, tính Risk Score/Trend, ghi/update draft trong `drafts/`. **Không bao giờ ghi vào Sheet/Jira thật ở bước này.**
-2. Skill trình bày report dạng tường thuật trong chat (không phải checklist thô).
-3. PM phản hồi tự nhiên → **Action Apply** diễn giải ý PM (toàn bộ/một phần/phương án cụ thể), preview lần cuối, chờ xác nhận, rồi mới ghi thật.
-4. Ghi log lại thao tác sau khi thành công (`risk-assessment-audit.log`).
+1. **Action Scan** (cron hằng ngày hoặc PM gọi tay) — 1 lệnh duy nhất `node scripts/scan.js` đọc dữ liệu tiến độ, áp 9 rule phát hiện rủi ro, tính Risk Score/Trend, ghi/update draft trong `drafts/`. **Không bao giờ ghi vào Sheet/Jira thật ở bước này.**
+2. Skill trình bày report dạng tường thuật trong chat (không phải checklist thô) — lấy nguyên văn từ field `narrative` mà `scan.js` in ra.
+3. PM phản hồi tự nhiên → agent diễn giải ý PM. Nếu ý đã rõ ràng (toàn bộ/một phần/phương án cụ thể) → ghi thẳng, không hỏi lại: agent ghi quyết định vào `state/pending-apply.json` rồi gọi `node scripts/apply.js` (không tham số, không heredoc) để ghi thật, sau đó báo lại kết quả — **Action Apply**. Chỉ khi ý PM còn mơ hồ mới hỏi làm rõ trước.
+4. `apply.js` tự ghi log thao tác sau khi thành công (`risk-assessment-audit.log`).
+
+Gộp toàn bộ Source Adapter + rule engine + ghi draft/snapshot vào 1 lệnh Bash mỗi Action (thay vì nhiều bước curl/node -e rời rạc) để hạn chế số lần Claude Code phải hỏi quyền chạy lệnh khi thao tác.
 
 ## Cấu hình
 
@@ -25,4 +27,10 @@ Copy `config.example.json` → `config.json`, điền `source` (`"gg-sheet"` ho�
 
 ## Rule engine
 
-Phần tính toán rủi ro (score, trend) nằm ở `scripts/rule-engine.js` — thuần deterministic, không có LLM, có test đi kèm (`scripts/rule-engine.test.js`, chạy bằng `node --test scripts/*.test.js` — lưu ý dùng glob tường minh, `node --test scripts/` bị lỗi `MODULE_NOT_FOUND` trên môi trường Windows/Git Bash). SKILL.md chỉ gọi script này qua Bash rồi diễn giải kết quả bằng tiếng Việt cho PM — không tự tính điểm/trend bằng tay.
+Phần tính toán rủi ro (score, trend) nằm ở `scripts/rule-engine.js` — thuần deterministic, không có LLM, có test đi kèm. Logic đọc/chuẩn hóa dữ liệu nguồn (parse ngày, forward-fill Category, nhận diện header row...) nằm ở `scripts/lib/normalize.js`, cũng có test riêng. Chạy toàn bộ test bằng:
+
+```bash
+node --test scripts/*.test.js scripts/lib/*.test.js
+```
+
+(lưu ý dùng glob tường minh, `node --test scripts/` bị lỗi `MODULE_NOT_FOUND` trên môi trường Windows/Git Bash). `scan.js`/`apply.js` chỉ gọi các module này qua require — không tự tính điểm/trend/parse dữ liệu bằng tay trong SKILL.md nữa.
