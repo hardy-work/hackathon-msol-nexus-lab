@@ -105,6 +105,8 @@ ACCESS_TOKEN=$(bash openclaw-skills/gg-sheet/scripts/get-token.sh)
 
 Nếu `$ACCESS_TOKEN` rỗng → xem Error Handling (thường do Service Account chưa được share quyền Editor vào sheet, hoặc `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` sai đường dẫn).
 
+> ⚠️ Script dùng `Buffer.toString('base64url')` → cần **Node ≥15.7**. Nếu `node --version` trong môi trường đang là Node 14 (mặc định của máy này) → script lỗi `ERR_UNKNOWN_ENCODING: base64url` và `ACCESS_TOKEN` rỗng dù credentials đúng. Kiểm tra `nvm ls` để tìm bản mới hơn đã cài sẵn, rồi chạy: `export PATH="$(nvm which 20 2>/dev/null | xargs dirname):$PATH"` hoặc trỏ thẳng `PATH` vào thư mục bin của bản Node ≥15.7 (vd `~/.nvm/versions/node/v20.20.1/bin`) trước khi gọi `get-token.sh`.
+
 > ⚡ **Tối ưu tốc độ**: chỉ mint `ACCESS_TOKEN` **1 lần cho cả action**, dùng lại cho mọi lệnh ghi trong action đó — không mint lại giữa các bước (mỗi lần mint tốn 1 round-trip tới `oauth2.googleapis.com`). Việc mint token (dùng Service Account) độc lập với bước đọc dữ liệu (dùng API key) nên có thể chạy 2 lệnh này song song trong cùng 1 lời gọi Bash (`... & PID=$!; ...; wait $PID`) thay vì tuần tự, để giảm thời gian chờ trước khi ghi.
 
 ---
@@ -245,13 +247,15 @@ Ghi Audit Log.
 
 ### Bối cảnh
 
-PM báo 1 task của assignee có `Actual Effort (h)` (cột N) > `Estimate (h)` (cột H) → phần dư giờ (overrun) làm lệch lịch các task **Open** phía sau của **cùng assignee đó** trong tab. Giả định mỗi assignee làm việc theo capacity cố định 8h/ngày làm việc (thứ 2–6, bỏ qua thứ 7/CN), các task xếp tuần tự theo đúng thứ tự dòng trong sheet.
+PM báo 1 task của assignee có `Re-estimate(h) Actual` (cột K) > `Estimate(h) Plan` (cột H) → phần dư giờ (overrun) làm lệch lịch các task **Open** phía sau của **cùng assignee đó** trong tab. Giả định mỗi assignee làm việc theo capacity cố định 8h/ngày làm việc (thứ 2–6, bỏ qua thứ 7/CN), các task xếp tuần tự theo đúng thứ tự dòng trong sheet.
+
+> ⚠️ So sánh đúng **Estimate (H) vs Re-estimate (K)** để tính overrun — KHÔNG dùng `Actual Effort(h)` (cột N), vì cột N thường bằng đúng Estimate ban đầu (số giờ đã tiêu tới thời điểm báo cáo) và không phản ánh việc task được ước lại tổng effort cao hơn.
 
 ### Quy trình
 
-**Bước 1** — Đọc lại toàn bộ task của assignee đó trong tab (`values:batchGet` cột No./Task/Assignee/H/I/J/L/M/N/R), theo đúng thứ tự dòng trong sheet — đây chính là thứ tự làm việc thực tế.
+**Bước 1** — Đọc lại toàn bộ task của assignee đó trong tab (`values:batchGet` cột No./Task/Assignee/H/I/J/K/L/M/N/R), theo đúng thứ tự dòng trong sheet — đây chính là thứ tự làm việc thực tế.
 
-**Bước 2** — Xác định task bị trễ: `Actual Effort (h)` > `Estimate (h)` → `overrun = Actual Effort - Estimate` (giờ dư).
+**Bước 2** — Xác định task bị trễ: `Re-estimate(h) Actual` (K) > `Estimate(h) Plan` (H) → `overrun = Re-estimate - Estimate` (giờ dư).
 
 **Bước 3** — Cascade lại theo capacity 8h/ngày, **KHÔNG làm tròn nguyên khối** (tránh tạo ngày trống vô lý):
 
