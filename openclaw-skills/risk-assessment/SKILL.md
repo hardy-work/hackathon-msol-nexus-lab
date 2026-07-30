@@ -50,9 +50,10 @@ Toàn bộ cấu hình nằm trong `config.json` (cùng thư mục skill, gitign
   "read": {
     "fileId": "...",              // gg-sheet: fileId của Google Sheet lịch trình
     "sprintTabs": [
-      { "gid": "...", "name": "2.2.Sprint 1", "columns": { "No.": "A", "Task": "C", "Assignee": "F", "Estimate(h)": "G", "Re-estimate(h)": "H", "Plan Start": "I", "Plan End": "J", "Actual Effort(h)": "K", "Status": "L", "Sprint": "E" } }
+      { "gid": "...", "name": "2.2.Sprint 1", "columns": { "No.": "A", "Task": "C", "Assignee": "F", "Priority": "G", "Estimate(h)": "H", "Re-estimate(h)": "I", "Plan Start": "J", "Plan End": "K", "Actual Effort(h)": "L", "Status": "M", "Sprint": "E" } }
     ],
     "statusDoneValues": ["Done"],  // giá trị Status coi là "đã xong"
+    "currentSprint": "Sprint 1",   // CHỈ phân tích risk/issue cho sprint này (task ở sprint khác bị lọc bỏ trước khi vào rule engine) — null/bỏ trống = đọc hết mọi sprintTabs như cũ
     "jiraProjectKey": "NEX",       // jira: project key
     "jiraBoardId": "2"             // jira: board id (để đọc sprint qua Agile API)
   },
@@ -90,6 +91,10 @@ Action 1); bản thân nó đã tự trả về `{ "ok": false, "reason": "no_co
 
 Sau khi biết `source`, tiếp tục hỏi các field còn thiếu tương ứng (fileId + Sprint tabs, hoặc project key + board id) rồi ghi `config.json` (dùng Write tool, không phải Bash). Nếu `source=gg-sheet` và PM chưa nói rõ tab nào là Sprint tab cần quét → liệt kê tab của file (qua `spreadsheets.get`) và hỏi PM chọn.
 
+**Hỏi thêm 1 câu bắt buộc**: "Sprint nào đang là sprint hiện tại?" — ghi vào `read.currentSprint` (đúng tên tab, vd `"Sprint 1"`). Đây là sprint duy nhất được đưa vào rule engine để phát hiện risk/issue; các sprint khác trong `sprintTabs` (tương lai chưa bắt đầu, hoặc đã qua) sẽ không bị đề xuất risk/issue, dù vẫn được đọc để phục vụ so sánh velocity nếu cần. Khi PM đổi sang sprint mới, chỉ cần cập nhật lại field này (hỏi PM hoặc PM tự nói "chuyển sang Sprint 2 đi").
+
+⚠️ **Cột trong sheet thật có thể lệch bất cứ lúc nào** (PM/mentor tự thêm/xoá cột, như đã từng xảy ra khi thêm cột "Priority" khiến toàn bộ cột phía sau dịch phải 1 cột) — `columns` trong `config.json` KHÔNG tự động cập nhật theo, và wizard hỏi lại từ đầu (xoá `config.json`) **cũng không tự dò lại cột** (chỉ hỏi lại fileId/tab, không tự đọc header thật để suy ra vị trí cột). Nếu PM báo "vừa sửa sheet" hoặc kết quả Scan có vẻ sai lệch bất thường (số/ngày ở field không đúng kiểu dữ liệu) → đọc lại header thật của tab đó (`spreadsheets.get`/`values.get` vài dòng đầu, kể cả header nhiều tầng) để xác nhận lại từng cột trước khi tin dữ liệu, thay vì tự suy diễn.
+
 ---
 
 ## Source Adapter + Rule engine (đã đóng gói trong scan.js)
@@ -118,7 +123,10 @@ Logic bên trong (tham khảo khi cần sửa, KHÔNG cần agent tự làm lạ
   thực tế `No.`/`Sprint` merge dọc nguyên cả tab); forward-fill `Category`;
   tự parse `D-M-YYYY`/`DD-M-YYYY` bằng regex (không dùng `new Date(string)`
   trực tiếp); số giờ có thể dùng dấu phẩy thập phân (`"240,0"`); tự nhận diện
-  header row (kể cả header nhiều tầng) bằng cách so khớp cell với tên field.
+  header row (kể cả header nhiều tầng) bằng cách so khớp cell với tên field;
+  nếu tab có cột `Priority` (map trong `columns`) thì đọc vào `taskPriority`
+  (giá trị thô từ sheet, vd "High") — KHÁC với `priority` mà rule-engine tự
+  tính cho risk/issue (Critical/High/Medium/Low theo Score), đừng nhầm 2 field.
 - `scripts/lib/status-log.js` — bookkeeping `state/task-status-log.json` để
   suy ra `lastUpdated` (Sprint tabs không có cột lưu ngày đổi status lần
   cuối) — cần cho rule "task đứng yên".
@@ -224,6 +232,7 @@ phải Bash) vào `openclaw-skills/risk-assessment/state/pending-apply.json`.
       "impact": 1,
       "score": 1,
       "trend": "New",
+      "priority": "High",           // copy nguyên văn từ draft — Critical/High/Medium/Low, rule-engine tự tính sẵn, không tự suy ra
       "owner": "",                 // để chuỗi rỗng nếu chưa rõ ai phụ trách — KHÔNG tự suy đoán
       "chosenMitigation": "...",   // câu chữ phương án PM đã chọn (hoặc phương án đầu tiên nếu PM không chỉ rõ)
       "nextAction": {

@@ -77,6 +77,32 @@ test('rowsToTasks: Re-estimate(h) takes precedence over Estimate(h)', () => {
   assert.equal(tasks[0].estimateHours, 12);
 });
 
+test('rowsToTasks: reads taskPriority when Priority column mapped', () => {
+  const columnsWithPriority = {
+    'No.': 'A',
+    Sprint: 'B',
+    Category: 'C',
+    Task: 'D',
+    Priority: 'E',
+    Assignee: 'F',
+    'Estimate(h)': 'G',
+    'Plan Start': 'H',
+    'Plan End': 'I',
+    'Re-estimate(h)': 'J',
+    'Actual Effort(h)': 'K',
+    Status: 'L',
+  };
+  const rows = [['1', 'Sprint 1', 'Backend', 'Task A', 'High', 'LongVN', '8', '', '', '', '', 'Open']];
+  const tasks = rowsToTasks({ rows, columns: columnsWithPriority, tabName: 'Sprint 1', statusDoneValues: ['Done'] });
+  assert.equal(tasks[0].taskPriority, 'High');
+});
+
+test('rowsToTasks: taskPriority is null when Priority column not mapped', () => {
+  const rows = [['1', 'Sprint 1', 'Backend', 'Task A', 'LongVN', '8', '', '', '', '', 'Open']];
+  const tasks = rowsToTasks({ rows, columns: COLUMNS, tabName: 'Sprint 1', statusDoneValues: ['Done'] });
+  assert.equal(tasks[0].taskPriority, null);
+});
+
 test('rowsToTasks: isDone true only when Status in statusDoneValues', () => {
   const rows = [
     ['1', 'Sprint 1', 'Backend', 'Task A', 'LongVN', '8', '', '', '', '', 'Done'],

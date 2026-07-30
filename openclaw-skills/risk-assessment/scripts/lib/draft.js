@@ -9,7 +9,8 @@ function isHighlighted(item, thresholds) {
 
 function riskLine(r) {
   const opts = (r.mitigationOptions || []).map((o) => `Đề xuất: ${o}`).join('; ');
-  return `- ${r.description}${opts ? ` — ${opts}` : ''} (Detected from: ${r.detectedFrom})`;
+  const priorityTag = r.priority ? `[${r.priority}] ` : '';
+  return `- ${priorityTag}${r.description}${opts ? ` — ${opts}` : ''} (Detected from: ${r.detectedFrom})`;
 }
 
 function issueLine(i) {

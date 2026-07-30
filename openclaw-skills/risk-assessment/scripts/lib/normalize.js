@@ -87,6 +87,10 @@ function rowsToTasks({ rows, columns, tabName, statusDoneValues }) {
       actualHours: parseHoursNumber(get(row, 'Actual Effort(h)')),
       sprint: get(row, 'Sprint') ? String(get(row, 'Sprint')).trim() : tabName,
       category: lastCategory,
+      // Priority của TASK (từ cột "Priority" trên sheet, vd "High") — khác với
+      // `priority` (Critical/High/Medium/Low) mà rule-engine tự tính cho từng
+      // risk/issue dựa theo Score. Đặt tên khác để khỏi lẫn 2 khái niệm.
+      taskPriority: get(row, 'Priority') ? String(get(row, 'Priority')).trim() : null,
       lastUpdated: null, // điền bởi scripts/lib/status-log.js
       detectedFrom: `${tabName}, row ${rowNumber}`,
     });
@@ -112,6 +116,7 @@ function jiraIssuesToTasks(issues) {
       actualHours: typeof f.timespent === 'number' ? f.timespent / 3600 : null,
       sprint,
       category: null,
+      taskPriority: f.priority ? f.priority.name : null,
       lastUpdated: f.updated ? f.updated.slice(0, 10) : null,
       detectedFrom: issue.key,
     };

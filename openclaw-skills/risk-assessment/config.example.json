@@ -4,6 +4,7 @@
     "fileId": null,
     "sprintTabs": [],
     "statusDoneValues": ["Done"],
+    "currentSprint": null,
     "jiraProjectKey": null,
     "jiraBoardId": null
   },

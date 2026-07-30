@@ -45,7 +45,7 @@ const { getValuesWithApiKey, getValuesWithToken, updateValues } = require('./lib
 const { getAccessToken } = require('./lib/google-auth.js');
 const { createIssue, updateIssue } = require('./lib/jira-client.js');
 
-const RISK_HEADER = ['Category', 'Description', 'Detected From', 'Probability', 'Impact', 'Score', 'Trend', 'Owner', 'Mitigation', 'Status', 'Source', 'Last Updated'];
+const RISK_HEADER = ['Category', 'Description', 'Detected From', 'Probability', 'Impact', 'Score', 'Trend', 'Priority', 'Owner', 'Mitigation', 'Status', 'Source', 'Last Updated'];
 const ISSUE_HEADER = ['Category', 'Description', 'Detected From', 'Priority', 'Score', 'Owner', 'Status', 'Raised Date', 'Source', 'Last Updated'];
 const NEXT_ACTION_HEADER = ['Description', 'Owner', 'Due', 'Related Detected From', 'Status'];
 
@@ -110,6 +110,7 @@ function riskRow(r, today_) {
     r.impact ?? '',
     r.score ?? '',
     r.trend || 'New',
+    r.priority || '',
     r.owner || '',
     r.chosenMitigation || '',
     'Open',

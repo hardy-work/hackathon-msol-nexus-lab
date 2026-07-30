@@ -70,7 +70,7 @@ function makeIssue({ category, description, detectedFrom, probability, impact, t
   };
 }
 
-function makeRisk({ category, description, detectedFrom, probability, impact, mitigationOptions, today }) {
+function makeRisk({ category, description, detectedFrom, probability, impact, mitigationOptions, today, th }) {
   const score = probability * impact;
   return {
     riskId: null,
@@ -80,6 +80,7 @@ function makeRisk({ category, description, detectedFrom, probability, impact, mi
     probability,
     impact,
     score,
+    priority: priorityFromScore(score, th), // Critical/High/Medium/Low — cùng thang với Issue, để PM đọc dễ hiểu thay vì số thô
     trend: 'New',
     owner: null,
     mitigationOptions: mitigationOptions || [],
@@ -136,6 +137,7 @@ function ruleAssigneeOverload(tasks, today, th) {
           impact: 2,
           mitigationOptions: [`OT ${assignee}`, `Dời bớt task sang ngày làm việc kế tiếp`],
           today,
+          th,
         })
       );
     }
@@ -182,6 +184,7 @@ function ruleStalledTask(tasks, today, th) {
           impact: 2,
           mitigationOptions: [`Hỏi ${t.assignee || 'người phụ trách'} về tiến độ`, `Xem xét reassign task`],
           today,
+          th,
         })
       );
     }
@@ -205,6 +208,7 @@ function ruleUnassignedNearDeadline(tasks, today, th) {
           impact: 2,
           mitigationOptions: [`Gán người ngay`, `Dời Plan End sang sau`],
           today,
+          th,
         })
       );
     }
@@ -249,6 +253,7 @@ function ruleVelocityDrop(tasks, today, th) {
         impact: 3,
         mitigationOptions: [`Rà soát scope ${currName}`, `Bổ sung người hỗ trợ`],
         today,
+        th,
       }),
     ];
   }
@@ -275,6 +280,7 @@ function ruleNotStartedOnTime(tasks, today, th) {
             `Kiểm tra task có đang phụ thuộc (blocked by) task khác chưa xong không`,
           ],
           today,
+          th,
         })
       );
     }
@@ -300,6 +306,7 @@ function ruleBugTrend(tasks, today, th) {
       impact: count >= 6 ? 3 : count >= 3 ? 2 : 1,
       mitigationOptions: [`Rà soát lại danh sách bug đang chờ verify`, `Ưu tiên fix/verify trước khi nhận task mới`],
       today,
+      th,
     }),
   ];
 }

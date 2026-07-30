@@ -14,6 +14,18 @@ test('buildNarrative: high-score risk goes under "Cần chú ý ngay"', () => {
   assert.doesNotMatch(text, /Risk khác \(Stable\/Low\)/);
 });
 
+test('buildNarrative: risk with priority shows [Priority] tag, matching issue style', () => {
+  const risks = [{ riskId: null, category: 'Resource', description: 'Quá tải', detectedFrom: 'Sprint 1, No.1', score: 6, priority: 'Critical', trend: 'Stable', mitigationOptions: [] }];
+  const text = buildNarrative({ risks, issues: [], resolvedRisks: [], thresholds: THRESHOLDS });
+  assert.match(text, /\[Critical\] Quá tải/);
+});
+
+test('buildNarrative: risk without priority renders without a stray tag', () => {
+  const risks = [{ riskId: null, category: 'Resource', description: 'Không rõ priority', detectedFrom: 'Sprint 1, No.2', score: 6, trend: 'Stable', mitigationOptions: [] }];
+  const text = buildNarrative({ risks, issues: [], resolvedRisks: [], thresholds: THRESHOLDS });
+  assert.doesNotMatch(text, /\[undefined\]/);
+});
+
 test('buildNarrative: low-score risk goes under "Risk khác"', () => {
   const risks = [{ riskId: null, category: 'Resource', description: 'Nhẹ thôi', detectedFrom: 'Sprint 1, No.2', score: 2, trend: 'Stable', mitigationOptions: [] }];
   const text = buildNarrative({ risks, issues: [], resolvedRisks: [], thresholds: THRESHOLDS });

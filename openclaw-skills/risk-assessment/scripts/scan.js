@@ -168,6 +168,15 @@ async function main() {
     return;
   }
 
+  // Chỉ phân tích risk/issue cho sprint hiện tại (nếu đã cấu hình) — task ở
+  // sprint khác (vd sprint tương lai chưa bắt đầu) không đưa vào rule engine.
+  // Lưu ý: ruleVelocityDrop cần task của ≥2 sprint để so sánh nên sẽ không
+  // bao giờ bắn khi bị scope về đúng 1 sprint hiện tại — đây là đánh đổi
+  // chấp nhận được, không phải bug.
+  if (config.read.currentSprint) {
+    tasks = tasks.filter((t) => t.sprint === config.read.currentSprint);
+  }
+
   const yesterdaySnapshotPath = path.join(ROOT, 'state', `risk-snapshot-${shiftDate(todayStr, -1)}.json`);
   const snapshot = fs.existsSync(yesterdaySnapshotPath)
     ? JSON.parse(fs.readFileSync(yesterdaySnapshotPath, 'utf8'))

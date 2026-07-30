@@ -30,7 +30,7 @@ function request(method, urlStr, email, token, jsonBody) {
   });
 }
 
-const FIELDS = 'summary,assignee,status,duedate,timeoriginalestimate,timespent,updated,customfield_10020';
+const FIELDS = 'summary,assignee,status,duedate,timeoriginalestimate,timespent,updated,customfield_10020,priority';
 
 async function searchIssues({ baseUrl, email, token, projectKey }) {
   const jql = encodeURIComponent(`project=${projectKey} AND sprint in openSprints()`);
