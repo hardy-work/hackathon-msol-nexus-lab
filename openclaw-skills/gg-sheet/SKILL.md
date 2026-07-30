@@ -237,6 +237,41 @@ Ghi Audit Log.
 
 ---
 
+## Action 2b: Re-schedule task của 1 Assignee (do trễ tiến độ)
+
+### Nhận diện intent
+
+- "re-schedule của <assignee>", "tính lại lịch cho <assignee>", "task X bị trễ, ảnh hưởng các task sau của <assignee>"
+
+### Bối cảnh
+
+PM báo 1 task của assignee có `Actual Effort (h)` (cột N) > `Estimate (h)` (cột H) → phần dư giờ (overrun) làm lệch lịch các task **Open** phía sau của **cùng assignee đó** trong tab. Giả định mỗi assignee làm việc theo capacity cố định 8h/ngày làm việc (thứ 2–6, bỏ qua thứ 7/CN), các task xếp tuần tự theo đúng thứ tự dòng trong sheet.
+
+### Quy trình
+
+**Bước 1** — Đọc lại toàn bộ task của assignee đó trong tab (`values:batchGet` cột No./Task/Assignee/H/I/J/L/M/N/R), theo đúng thứ tự dòng trong sheet — đây chính là thứ tự làm việc thực tế.
+
+**Bước 2** — Xác định task bị trễ: `Actual Effort (h)` > `Estimate (h)` → `overrun = Actual Effort - Estimate` (giờ dư).
+
+**Bước 3** — Cascade lại theo capacity 8h/ngày, **KHÔNG làm tròn nguyên khối** (tránh tạo ngày trống vô lý):
+
+- Task bị trễ: `End Date (Actual)` = ngày mà giờ dư (`overrun`) dùng hết capacity còn lại, tính từ `Start Date (Actual)` với 8h/ngày (bỏ qua T7/CN). Vd overrun 4h (nửa ngày) → tràn sang đúng 1 ngày làm việc kế tiếp. **Đồng thời sửa luôn `End Date (Plan)` của task này bằng với `End Date (Actual)` mới** — nếu chỉ sửa Actual mà để Plan nguyên như cũ, Plan sẽ hiển thị sai là task đã xong đúng hạn, khiến ngày kế tiếp trông như còn nguyên 8h trống trong khi thực ra một phần đã bị task trễ chiếm mất.
+- Mỗi task **Open** kế tiếp của assignee: `Start Date (Plan)` mới = `End Date` (Actual/Plan mới) của task ngay trước nó — KHÔNG nhảy cách 1 ngày trống. `End Date (Plan)` = `Start Date` mới + phần giờ còn dư sau khi trừ capacity ngày hôm đó, cứ thế cộng dồn tới task cuối cùng bị ảnh hưởng.
+- Bỏ qua thứ 7/CN khi cộng ngày (nếu rơi vào cuối tuần → nhảy sang thứ 2 kế tiếp).
+- Các task đã Done/có Actual rồi (không phải Open) thì KHÔNG động vào.
+
+**Bước 4** — Hiển thị preview đầy đủ cascade (liệt kê từng task, ngày cũ → ngày mới), xác nhận PM trước khi ghi — **đặc biệt lưu ý PM dễ phát hiện lỗi "ngày trống"** nếu cascade tính sai (task sau nhảy quá xa so với ngày task trước kết thúc) → nếu PM phản hồi phát hiện gap vô lý, tính lại theo đúng nguyên tắc Bước 3 (start = end của task liền trước, không làm tròn nguyên khối).
+
+**Bước 5** — Ghi từng ô đổi qua `values:batchUpdate` (giống Bước 5 của Action 2), verify, ghi Audit Log.
+
+**Bước 6** — Phản hồi:
+
+```
+✓ Đã re-schedule N task của <assignee> ở <tên tab> do task "<task bị trễ>" trễ <overrun>h.
+```
+
+---
+
 ## Action 3: Xóa Task
 
 ### Nhận diện intent
