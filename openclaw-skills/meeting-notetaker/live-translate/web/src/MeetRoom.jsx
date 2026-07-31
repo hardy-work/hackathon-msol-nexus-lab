@@ -152,17 +152,25 @@ export default function MeetRoom() {
               : "Đang chờ bot bắt đầu nghe… nội dung sẽ hiện ngay khi có người nói."}
           </div>
         )}
-        {ordered.map((seg) => (
-          <div className="turn" key={seg.idx}>
-            <div className="speaker">{seg.speaker}{seg.srcLang ? ` · ${seg.srcLang}` : ""}</div>
-            <div className="turn-cols">
-              <div className="cell original">{seg.original}</div>
-              <div className={`cell translated ${seg.translated == null ? "pending" : ""}`}>
-                {seg.translated == null ? "…" : seg.translated}
+        {ordered.map((seg) => {
+          // Segment is already in the target language (e.g. a Vietnamese
+          // meeting on a lang=vi link) -> nothing to translate, so show one
+          // full-width cell instead of two identical columns.
+          const sameLang = !!seg.srcLang && seg.srcLang.toLowerCase() === lang.toLowerCase();
+          return (
+            <div className="turn" key={seg.idx}>
+              <div className="speaker">{seg.speaker}{seg.srcLang ? ` · ${seg.srcLang}` : ""}</div>
+              <div className="turn-cols">
+                <div className={`cell original ${sameLang ? "full-width" : ""}`}>{seg.original}</div>
+                {!sameLang && (
+                  <div className={`cell translated ${seg.translated == null ? "pending" : ""}`}>
+                    {seg.translated == null ? "…" : seg.translated}
+                  </div>
+                )}
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {interim && status !== "ended" && (

@@ -288,6 +288,10 @@ class Room:
                 self._segments[i]
                 for i in sorted(self._segments)
                 if i not in cache and i not in pending
+                # Segment is already in the target language -> nothing to
+                # translate; the frontend collapses these to a single column
+                # instead of showing identical text twice.
+                and not (self._segments[i].language and self._segments[i].language == lang)
             ]
             if not todo:
                 continue
