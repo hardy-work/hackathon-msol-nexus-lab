@@ -16,6 +16,12 @@ from mcp.server.fastmcp import FastMCP
 
 VEXA_BASE_URL = os.environ.get("VEXA_BASE_URL", "http://localhost:18056")
 VEXA_API_KEY = os.environ.get("VEXA_API_KEY", "")
+# Public base URL of the live-translate web app (see ../live-translate). When
+# set, join_meeting returns a ready-to-share room link so the skill can post it
+# straight into the Slack thread. LIVE_TRANSLATE_LANG fixes the translation
+# target for that link (not switchable by viewers, by design).
+WEB_PUBLIC_URL = os.environ.get("WEB_PUBLIC_URL", "").rstrip("/")
+LIVE_TRANSLATE_LANG = os.environ.get("LIVE_TRANSLATE_LANG", "vi")
 
 mcp = FastMCP("vexa-bridge")
 
@@ -47,6 +53,14 @@ def _request(method: str, path: str, **kwargs) -> dict:
     return resp.json() if resp.content else {}
 
 
+def _share_link(platform: str, native_meeting_id: str) -> str:
+    """Live-translate room URL for this meeting, with the fixed target language.
+    Empty string if WEB_PUBLIC_URL isn't configured."""
+    if not WEB_PUBLIC_URL:
+        return ""
+    return f"{WEB_PUBLIC_URL}/meet/{platform}/{native_meeting_id}?lang={LIVE_TRANSLATE_LANG}"
+
+
 @mcp.tool()
 def join_meeting(
     meeting_url: str = "",
@@ -60,6 +74,13 @@ def join_meeting(
     Either pass `meeting_url` (parsed automatically), or pass `platform`
     ("google_meet" | "zoom" | "teams" | "jitsi") and `native_meeting_id`
     directly (required for Teams, or if URL parsing fails).
+
+    IMPORTANT — after a successful join, the result contains a `share_link`
+    field, e.g. "http://192.168.4.15:8080/meet/google_meet/abc-defg-hij?lang=vi".
+    Your reply to the user MUST include that exact `share_link` URL — it is the
+    live transcript + translation page everyone can open to watch together. Do
+    NOT reply with only the Google Meet URL; the Meet link is NOT a substitute
+    for `share_link`. Only omit it if `share_link` is empty/missing.
     """
     if meeting_url:
         platform, native_meeting_id = _parse_meeting_url(meeting_url)
@@ -73,7 +94,17 @@ def join_meeting(
     }
     if language:
         body["language"] = language
-    return _request("POST", "/bots", json=body)
+    resp = _request("POST", "/bots", json=body)
+    # Attach the live-translate room link so the caller can post it to Slack
+    # without re-deriving the URL. Also echo platform/native_meeting_id in case
+    # the Vexa response omits them (the skill needs them for later calls).
+    if isinstance(resp, dict):
+        resp.setdefault("platform", platform)
+        resp.setdefault("native_meeting_id", native_meeting_id)
+        link = _share_link(platform, native_meeting_id)
+        if link:
+            resp["share_link"] = link
+    return resp
 
 
 @mcp.tool()

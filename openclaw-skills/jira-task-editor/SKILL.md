@@ -1,5 +1,5 @@
 ---
-name: jira-task
+name: jira-task-editor
 description: Creates and updates Jira tasks in project NEX via natural language (Vietnamese/English) for the MOR PM, always previewing changes and requiring confirmation before writing to Jira.
 user-invocable: true
 metadata:
@@ -49,12 +49,12 @@ SPRINT_FIELD      → customfield_10020 (không đổi, hardcode ok)
 
 Khi gọi API curl, luôn dùng:
 ```bash
--u "$JIRA_EMAIL:$JIRA_API_TOKEN"
+-H "Authorization: Bearer $JIRA_API_TOKEN"
 ```
 
 Và base URL:
 ```bash
-$JIRA_BASE_URL/rest/api/3/...
+$JIRA_BASE_URL/rest/api/2/...
 ```
 
 ---
@@ -71,11 +71,19 @@ PM muốn tạo task khi nói:
 
 | Field | Bắt buộc | Ghi chú |
 |-------|----------|---------|
-| summary | Có | Tên task, hỏi nếu thiếu |
-| assignee | Không | Tên người → lookup accountId |
+| summary | Có | Tên task, hỏi nếu thiếu, không được rỗng |
+| assignee | Không | Tên người → lookup accountId, phải resolve ra **đúng 1** user |
 | due_date | Không | Parse natural language → YYYY-MM-DD |
-| sprint | Không | Tên sprint → lookup sprint ID |
-| issue_type | Không | Mặc định: "Task" |
+| sprint | Không | Tên sprint → lookup sprint ID, phải khớp **đúng 1** sprint active/future |
+| issue_type | Không | Mặc định: "Task". Phải khớp 1 type có thật của project — không tự suy luận nếu gõ sai |
+| epic_link | Không | Key epic cha (vd NEX-2). Phải là issue key có thật, đúng type Epic |
+
+### Validation Rule (áp dụng cho cả Action 1 và Action 2)
+
+- `assignee`: 0 kết quả → báo lỗi, không đoán; >1 kết quả → liệt kê, hỏi PM chọn
+- `sprint`: không khớp sprint nào đang active/future → liệt kê sprint hiện có, hỏi lại
+- `issue_type` / `epic_link`: không tồn tại → báo lỗi rõ ràng, không tự thay bằng giá trị gần giống
+- Nếu 1 request có nhiều field mà 1 field fail validation → dừng toàn bộ, không tạo/update một phần rồi bỏ qua phần lỗi
 
 ### Quy trình
 
@@ -86,19 +94,21 @@ Nếu PM không cung cấp `summary`, hỏi:
 
 **Bước 2 — Resolve assignee (nếu có)**
 
+Dùng endpoint **scoped theo project** (`assignable/search`), không dùng `user/search` toàn cục — vì `user/search` chỉ kiểm tra user có tồn tại trong Jira instance, không kiểm tra user có được phép nhận task trong project hay không. Dùng `user/search` sẽ khiến lỗi "không đủ quyền assign" chỉ lộ ra ở Bước 5 (Execute), sau khi PM đã confirm — quá trễ.
+
 ```bash
-curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-  "$JIRA_BASE_URL/rest/api/3/user/search?query=<TEN_NGUOI>&maxResults=5"
+curl -s -H "Authorization: Bearer $JIRA_API_TOKEN" \
+  "$JIRA_BASE_URL/rest/api/2/user/assignable/search?project=$JIRA_PROJECT_KEY&query=<TEN_NGUOI>&maxResults=5"
 ```
 
 - Nếu tìm thấy đúng 1 người → lấy `accountId`
 - Nếu tìm thấy nhiều người → liệt kê và hỏi PM chọn
-- Nếu không tìm thấy → báo và hỏi tên khác
+- Nếu không tìm thấy → báo: "Không tìm thấy user '<tên>' có quyền nhận task trong project $JIRA_PROJECT_KEY. Bạn kiểm tra lại tên, hoặc người này cần được thêm vào project trước."
 
 **Bước 3 — Resolve sprint (nếu có)**
 
 ```bash
-curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+curl -s -H "Authorization: Bearer $JIRA_API_TOKEN" \
   "$JIRA_BASE_URL/rest/agile/1.0/board/$JIRA_BOARD_ID/sprint?state=active,future"
 ```
 
@@ -122,7 +132,7 @@ Xác nhận tạo? (có / không)
 **Bước 5 — Thực thi (sau khi PM xác nhận)**
 
 ```bash
-curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+curl -s -H "Authorization: Bearer $JIRA_API_TOKEN" \
   -X POST \
   -H "Content-Type: application/json" \
   -d '{
@@ -135,18 +145,50 @@ curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
       "customfield_10020": { "id": <sprintId> }
     }
   }' \
-  "$JIRA_BASE_URL/rest/api/3/issue"
+  "$JIRA_BASE_URL/rest/api/2/issue"
 ```
 
 Chú ý: Bỏ qua các fields không có giá trị (không gửi null).
 
-**Bước 6 — Phản hồi**
+**Bước 6 — Verify kết quả**
+
+Gọi lại GET, chỉ lấy đúng các field đã gửi ở Bước 5 (dùng `fields=` để giảm token, không kéo full object):
+
+```bash
+curl -s -H "Authorization: Bearer $JIRA_API_TOKEN" \
+  "$JIRA_BASE_URL/rest/api/2/issue/NEX-xxx?fields=summary,assignee,duedate,customfield_10020"
+```
+
+So sánh từng field đã yêu cầu với giá trị thực tế trả về. Field nào khớp → ✓, không khớp → ✗ kèm lý do ngắn.
+
+**Bước 7 — Phản hồi**
+
+Nếu tất cả field khớp:
 
 ```
-✓ Đã tạo task thành công!
-• Key  : NEX-xxx
-• Link : $JIRA_BASE_URL/browse/NEX-xxx
+✓ Đã tạo NEX-xxx
+─────────────────────────────
+• Summary   : <summary>          ✓
+• Assignee  : <tên> (nếu có)     ✓
+• Sprint    : <tên sprint> (nếu có) ✓
+─────────────────────────────
+Link: $JIRA_BASE_URL/browse/NEX-xxx
 ```
+
+Chỉ liệt kê field đã yêu cầu, không liệt kê toàn bộ field của issue.
+
+Nếu có field không khớp:
+
+```
+⚠ Đã tạo NEX-xxx, nhưng có field chưa áp dụng đúng
+─────────────────────────────
+• Summary   : <summary>          ✓
+• Sprint    : <tên sprint>       ✗ (Jira trả về: <giá trị thực tế>)
+─────────────────────────────
+Link: $JIRA_BASE_URL/browse/NEX-xxx
+```
+
+Chỉ ghi vào `jira-audit.log` (Bước dưới) sau khi Verify — không ghi log cho phần chưa xác nhận đúng.
 
 ---
 
@@ -168,8 +210,8 @@ Pattern nhận diện issue key: `NEX-\d+`
 **Bước 1 — Lấy thông tin hiện tại**
 
 ```bash
-curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-  "$JIRA_BASE_URL/rest/api/3/issue/NEX-xxx?fields=summary,assignee,duedate,customfield_10020"
+curl -s -H "Authorization: Bearer $JIRA_API_TOKEN" \
+  "$JIRA_BASE_URL/rest/api/2/issue/NEX-xxx?fields=summary,assignee,duedate,customfield_10020"
 ```
 
 - Nếu issue không tồn tại → báo: "Không tìm thấy NEX-xxx, bạn kiểm tra lại key nhé."
@@ -202,7 +244,7 @@ Chỉ hiển thị các field thực sự thay đổi.
 **Bước 5 — Thực thi (sau khi PM xác nhận)**
 
 ```bash
-curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+curl -s -H "Authorization: Bearer $JIRA_API_TOKEN" \
   -X PUT \
   -H "Content-Type: application/json" \
   -d '{
@@ -210,15 +252,46 @@ curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
       <chỉ các fields cần update>
     }
   }' \
-  "$JIRA_BASE_URL/rest/api/3/issue/NEX-xxx"
+  "$JIRA_BASE_URL/rest/api/2/issue/NEX-xxx"
 ```
 
-**Bước 6 — Phản hồi**
+**Bước 6 — Verify kết quả**
+
+Gọi lại GET, chỉ lấy đúng các field vừa update (dùng `fields=` để giảm token):
+
+```bash
+curl -s -H "Authorization: Bearer $JIRA_API_TOKEN" \
+  "$JIRA_BASE_URL/rest/api/2/issue/NEX-xxx?fields=<chỉ field đã update>"
+```
+
+So sánh giá trị mới đã gửi với giá trị thực tế trả về.
+
+**Bước 7 — Phản hồi**
+
+Nếu tất cả field khớp:
 
 ```
-✓ Đã cập nhật NEX-xxx thành công!
+✓ Đã cập nhật NEX-xxx
+─────────────────────────────
+• Due date  : <giá trị mới>   ✓
+• Assignee  : <giá trị mới>   ✓
+─────────────────────────────
 Link: $JIRA_BASE_URL/browse/NEX-xxx
 ```
+
+Chỉ liệt kê field đã update, không liệt kê toàn bộ field của issue.
+
+Nếu có field không khớp:
+
+```
+⚠ Đã cập nhật NEX-xxx, nhưng có field chưa áp dụng đúng
+─────────────────────────────
+• Sprint    : <giá trị mới>   ✗ (Jira trả về: <giá trị thực tế>)
+─────────────────────────────
+Link: $JIRA_BASE_URL/browse/NEX-xxx
+```
+
+Chỉ ghi vào `jira-audit.log` sau khi Verify — không ghi log cho phần chưa xác nhận đúng.
 
 ---
 

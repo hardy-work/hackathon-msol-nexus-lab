@@ -1,0 +1,31 @@
+# Template chuẩn hoá input khi thao tác Jira (dùng với skills/jira-task.md)
+# Copy khối "template" bên dưới, điền giá trị, rồi gửi cho assistant.
+# Bỏ trống / xoá field nào không dùng — không bắt buộc phải điền hết.
+
+action: create            # create | update
+project: NEX               # mặc định lấy từ JIRA_PROJECT_KEY trong .env, ghi đè nếu khác
+issue_type: Task           # Task | Epic | Story | Bug | Sub-task ...
+issue_key:                 # bắt buộc nếu action = update, ví dụ: NEX-12
+
+summary:                   # bắt buộc nếu action = create
+description:               # optional
+
+assignee:                  # tên hoặc email, optional — assistant sẽ tự lookup user
+due_date:                   # optional — hỗ trợ ngôn ngữ tự nhiên: "25/7", "thứ 6 này", "delay 3 ngày"
+sprint:                     # optional — tên sprint, assistant sẽ tự lookup sprint id
+epic_link:                  # optional — key của epic cha, ví dụ: NEX-2 (chỉ áp dụng cho Task/Story/Bug)
+
+# --- Ví dụ đã điền ---
+# action: create
+# issue_type: Story
+# summary: "Implement forgot-password flow"
+# assignee: tungdv@mor.com.vn
+# due_date: "thứ 6 này"
+# sprint: "Sprint 5"
+# epic_link: NEX-2
+
+# --- Ví dụ update ---
+# action: update
+# issue_key: NEX-5
+# due_date: "delay 3 ngày"
+# assignee: minhnv
