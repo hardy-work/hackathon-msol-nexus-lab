@@ -151,6 +151,7 @@ body {
 }
 .cell.translated { background: var(--panel-2); }
 .cell.pending { color: var(--pending); font-style: italic; }
+.cell.full-width { grid-column: 1 / -1; }
 
 .interim-bar {
   display: flex;
