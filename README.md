@@ -16,15 +16,28 @@ servers / backend services it depends on.
   - `soniox-bridge/` — transcription backend Vexa calls into.
   - `notes/` — generated meeting summaries.
 
-- [`openclaw-skills/jira-task/`](openclaw-skills/jira-task/) — creates and
-  updates Jira tasks in project NEX via natural language (Vietnamese/English)
-  for the MOR PM, always previewing changes and requiring confirmation before
-  writing to Jira. Contains:
+- [`openclaw-skills/jira-task-editor/`](openclaw-skills/jira-task-editor/) —
+  creates and updates Jira tasks in project NEX via natural language
+  (Vietnamese/English) for the MOR PM, always previewing changes and
+  requiring confirmation before writing to Jira. Contains:
   - `SKILL.md` — instructions the agent follows to create/update tasks.
 
   Needs a `.env` in this folder with `JIRA_EMAIL`, `JIRA_API_TOKEN`,
   `JIRA_BASE_URL`, `JIRA_PROJECT_KEY`, `JIRA_BOARD_ID` (see
   `.env.example` in the same folder).
+
+- [`openclaw-skills/jira-daily-report/`](openclaw-skills/jira-daily-report/) —
+  end-of-day report roll-up for the PM: who logged work today on the active
+  sprint, who didn't, who logged but forgot to update status on an
+  already-late issue, and a reschedule proposal for that member's other
+  sprint issues (assumes 100% effort, one task at a time). Read-only — never
+  writes to Jira; hand-off to `jira-task-editor` for any actual update.
+  Contains:
+  - `SKILL.md` — instructions the agent follows to build the report.
+
+  Needs a `.env` in this folder with the same `JIRA_*` vars as
+  `jira-task-editor` plus optional `DAILY_WORK_HOURS` (defaults to 8) — see
+  `.env.example`.
 
 Assumes a Vexa instance is already running and reachable (see the machine at
 `192.168.4.15:18056` on the LAN, or your own self-hosted instance — see
