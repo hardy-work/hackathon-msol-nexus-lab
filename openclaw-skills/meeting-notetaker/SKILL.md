@@ -223,14 +223,14 @@ one before doing anything else.
 
 ## Known limitation: transcription accuracy
 
-Transcription runs through [`soniox-bridge`](soniox-bridge/) (Soniox's
-real-time API), which replaced an earlier self-hosted Whisper attempt after
-it repeatedly crashed the host under CPU/memory load — Soniox needs no
-local model and tested cleanly on real English and Vietnamese speech. Even
-so, when telling the user about a completed note, don't imply the summary
-is fully accurate — say the key points are best-effort and point them at
-the full transcript for anything they need to rely on precisely (task IDs,
-exact names, decisions with consequences). See
-[`soniox-bridge/README.md`](soniox-bridge/README.md#known-limitations) for
-the specific gaps (single dominant language per chunk, no diarization from
-the STT call itself, approximate confidence mapping).
+Transcription runs through [`soniox-bridge`](../../services/soniox-bridge/)
+(Soniox's real-time API), which replaced an earlier self-hosted Whisper
+attempt after it repeatedly crashed the host under CPU/memory load — Soniox
+needs no local model and tested cleanly on real English and Vietnamese
+speech. Even so, when telling the user about a completed note, don't imply
+the summary is fully accurate — say the key points are best-effort and point
+them at the full transcript for anything they need to rely on precisely
+(task IDs, exact names, decisions with consequences). See
+[`soniox-bridge/README.md`](../../services/soniox-bridge/README.md#known-limitations)
+for the specific gaps (single dominant language per chunk, no diarization
+from the STT call itself, approximate confidence mapping).

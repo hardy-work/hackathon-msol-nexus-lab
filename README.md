@@ -13,8 +13,12 @@ servers / backend services it depends on.
   summary with action items. Contains:
   - `SKILL.md` — instructions the agent follows to run the whole flow.
   - `vexa-mcp/` — MCP server bridging Vexa's bot REST API.
-  - `soniox-bridge/` — transcription backend Vexa calls into.
   - `notes/` — generated meeting summaries.
+
+  Depends on two standalone backend servers under [`services/`](services/):
+  `soniox-bridge` (transcription) and `live-translate` (the shared live
+  transcript + translation web view). They deploy independently of this skill
+  — see [Services](#services) below.
 
 - [`openclaw-skills/jira-task-editor/`](openclaw-skills/jira-task-editor/) —
   creates and updates Jira tasks in project NEX via natural language
@@ -42,6 +46,18 @@ servers / backend services it depends on.
 Assumes a Vexa instance is already running and reachable (see the machine at
 `192.168.4.15:18056` on the LAN, or your own self-hosted instance — see
 [Vexa's README](https://github.com/Vexa-ai/vexa) to deploy one).
+
+## Services
+
+Standalone backend servers under [`services/`](services/) — not OpenClaw
+skills themselves, but persistent servers a skill depends on. Each deploys and
+runs independently of the skill-sync flow (its own build/run steps, own
+lifecycle), see its own README:
+
+- [`services/soniox-bridge/`](services/soniox-bridge/) — transcription backend
+  Vexa calls into, used by `meeting-notetaker`.
+- [`services/live-translate/`](services/live-translate/) — realtime meeting
+  transcript + translation web app, used by `meeting-notetaker`.
 
 ## Setup on a new machine
 
@@ -71,7 +87,7 @@ Assumes a Vexa instance is already running and reachable (see the machine at
    ln -s "$(pwd)/openclaw-skills/meeting-notetaker" ~/.openclaw/workspace/skills/meeting-notetaker
    ```
 6. Deploy the transcription backend — see
-   [`openclaw-skills/meeting-notetaker/soniox-bridge/README.md`](openclaw-skills/meeting-notetaker/soniox-bridge/README.md).
+   [`services/soniox-bridge/README.md`](services/soniox-bridge/README.md).
 
 `.env` and `.mcp.json` are gitignored (they hold API keys) — always copy
 from the `.example` files rather than committing real ones.
@@ -81,7 +97,7 @@ from the `.example` files rather than committing real ones.
 See the "Known limitation" section in
 [`SKILL.md`](openclaw-skills/meeting-notetaker/SKILL.md) (multilingual
 meetings, single-language-per-chunk) and in
-[`soniox-bridge/README.md`](openclaw-skills/meeting-notetaker/soniox-bridge/README.md)
+[`soniox-bridge/README.md`](services/soniox-bridge/README.md)
 (no per-request diarization, approximate confidence mapping).
 
 ## Adding a new skill
