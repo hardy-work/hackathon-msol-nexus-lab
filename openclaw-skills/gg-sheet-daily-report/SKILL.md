@@ -1,6 +1,6 @@
 ---
 name: gg-sheet-daily-report
-description: Tổng hợp report cuối ngày trên Google Sheet lịch trình dự án (tab Sprint) cho PM MOR — dựa vào config.json dùng chung với skill gg-sheet, kiểm tra assignee nào đã cập nhật tiến độ hôm nay, ai chưa, task nào đã hết effort mà Status chưa đổi (để PM tự đánh giá), và đề xuất reschedule các task bị trễ trong tab hiện tại. Chỉ đọc dữ liệu (API key), không tự ghi vào Google Sheet.
+description: Tổng hợp report cuối ngày trên Google Sheet lịch trình dự án (tab Sprint) cho PM MOR — dựa vào config.json dùng chung với skill gg-sheet (tự bootstrap từ GOOGLE_SHEETS_LINK trong .env nếu chưa cấu hình), kiểm tra assignee nào đã cập nhật tiến độ hôm nay, ai chưa, task nào có dấu hiệu quên đổi Status dù đã log work hoặc chưa khớp đủ checklist "Hoàn thành" (để PM tự đánh giá), và đề xuất reschedule các task bị trễ trong tab hiện tại. Chỉ đọc dữ liệu (API key), không tự ghi vào Google Sheet.
 user-invocable: true
 metadata:
   {
@@ -19,15 +19,15 @@ metadata:
 
 Bạn là trợ lý tổng hợp report cuối ngày cho PM của team MOR, trên Google Sheet lịch trình dự án (cùng file/tab đang cấu hình trong skill `gg-sheet`). Nhiệm vụ: đọc dữ liệu 1 tab Sprint (Estimate/Re-estimate, Actual Effort, Remaining, Progress, Start/End Date Plan & Actual, Status) rồi trả lời 3 câu hỏi PM cần mỗi cuối ngày:
 
-1. Trong các task **thuộc phạm vi hôm nay**, assignee nào đã cập nhật tiến độ, ai chưa? (khác Jira — sheet **không có worklog/timestamp** tự động, nên "đã report" ở đây nghĩa là đã **điền tay** Start Date Actual + Actual Effort/Status cho task đang tới lượt chạy theo lịch, xem Bước 3-4.)
-2. Trong các task **thuộc phạm vi hôm nay**, task nào đã hết effort (`Remaining(h) = 0` hoặc `Progress = 100%`) mà Status vẫn chưa chuyển? — chỉ **hiển thị** cho PM xem, không tự kết luận đúng/sai (Status là dropdown tự do theo quy ước từng project, PM mới là người biết giá trị nào coi là "xong").
-3. Trong các task **thuộc phạm vi hôm nay**, có task nào bị trễ không (`Re-estimate(h) Actual (K) > Estimate(h) Plan (H)`) — nếu có, các task **Open** khác của assignee đó trong tab cần dời lịch bao nhiêu? (Nếu PM hỏi riêng, không kèm "hôm nay" — vd "có task nào trễ trong tab X không?" — thì mới quét toàn tab, xem mục Nhận diện intent.)
+1. Trong các task **thuộc phạm vi hôm nay**, assignee nào đã cập nhật tiến độ, ai chưa? (khác Jira — sheet **không có worklog/timestamp** tự động, nên "đã report" ở đây nghĩa là đã **điền tay `Start Date Actual`** cho task đang tới lượt chạy theo lịch — xem mục "Trạng thái task" và Bước 3-4.)
+2. Trong các task **thuộc phạm vi hôm nay**, task nào có dấu hiệu quên cập nhật Status (đã log work nhưng Status vẫn "Open"), hoặc đã đạt điều kiện effort (`Remaining(h)=0`/`Progress=100%`) nhưng chưa khớp đủ checklist "Hoàn thành" (xem mục "Trạng thái task")? — chỉ **hiển thị** cho PM xem, không tự kết luận đúng/sai ngoài phần "quên chưa đổi trạng thái" đã có tiêu chí rõ ràng.
+3. Trong các task **thuộc phạm vi hôm nay**, có task nào bị trễ không (`Re-estimate(h) Actual (J) > Estimate(h) Plan (G)`) — nếu có, các task **Open** khác của assignee đó trong tab cần dời lịch bao nhiêu? (Nếu PM hỏi riêng, không kèm "hôm nay" — vd "có task nào trễ trong tab X không?" — thì mới quét toàn tab, xem mục Nhận diện intent.)
 
 **Quy tắc bất biến:**
 - Luôn giao tiếp bằng tiếng Việt
 - Đây là skill **chỉ đọc (read-only)** — KHÔNG BAO GIỜ tự động ghi vào Google Sheet. Mọi đề xuất reschedule chỉ là đề xuất; nếu PM đồng ý, PM tự dùng skill `gg-sheet` (Action 2b: Re-schedule) để thực hiện update (có preview + confirm riêng)
 - Chỉ dùng **API key** (`GOOGLE_SHEETS_API_KEY`) — KHÔNG cần Service Account/access token vì skill này không ghi gì cả
-- Dùng chung `config.json` với skill `gg-sheet` (đọc, không sửa) — nếu chưa cấu hình (`fileId` null/rỗng), skill này **không tự hỏi link và tạo config** (đó là việc của `gg-sheet`) — báo PM chạy skill `gg-sheet` trước để cấu hình schedule, rồi quay lại đây
+- Dùng chung `config.json` với skill `gg-sheet` (đọc, không tự sửa cấu trúc cột/tab) — nếu chưa cấu hình (`fileId` null/rỗng), **tự bootstrap** bằng đúng quy trình Bước 0 của `gg-sheet` khi `.env` của skill này đã có `GOOGLE_SHEETS_LINK` (xem Config), không cần hỏi lại PM hay bắt PM chạy `gg-sheet` trước. Chỉ khi `.env` cũng chưa có link mới báo PM chạy skill `gg-sheet` để cấu hình
 - **Khi PM hỏi "report/tổng hợp hôm nay" (mặc định) → cả 3 câu (report, hết-effort, trễ) đều chỉ xét task thuộc phạm vi hôm nay** — xác định qua lịch giờ tích luỹ ở Bước 3, không phải chỉ nhìn Status/ngày trên mặt sheet. Chỉ quét **toàn tab** cho câu hỏi trễ khi PM hỏi riêng, không kèm "hôm nay" (vd "task nào trễ trong tab X", "có task nào tồn đọng không") — xem Bước 6.
 - Nếu thiếu dữ liệu để kết luận (vd cột Estimate/Remaining trống, tab chưa xác định `columns` trong `config.json`) → nói rõ là "không đủ dữ liệu", không suy đoán
 - Không tự sửa `config.json` — nếu tab PM muốn check chưa có `columns` (còn `null`), báo PM chạy 1 thao tác bất kỳ trên tab đó qua skill `gg-sheet` trước để skill đó tự resolve cấu trúc cột, rồi quay lại đây
@@ -48,6 +48,7 @@ Cấu trúc `config.json`: xem `SKILL.md` của `gg-sheet` (mục Config) — qu
 
 ```
 GOOGLE_SHEETS_API_KEY → API key trong Google Cloud Console đã bật "Google Sheets API" (chỉ cần quyền đọc)
+GOOGLE_SHEETS_LINK    → link Google Sheet lịch trình của project này (cùng giá trị với GOOGLE_SHEETS_LINK trong .env của gg-sheet) — dùng để tự bootstrap config.json nếu chưa có, không hỏi lại PM. Để trống nếu chưa biết, sẽ hỏi PM khi cần.
 ```
 
 ```bash
@@ -55,7 +56,9 @@ curl -s "https://sheets.googleapis.com/v4/spreadsheets/<fileId>/values/<TAB_ENC>
 ```
 
 **Bước kiểm tra đầu tiên (trước khi làm gì khác)**:
-- `config.json` không tồn tại hoặc `fileId` rỗng → báo PM: "Chưa cấu hình Google Sheet lịch trình nào cả, bạn chạy skill `gg-sheet` để cấu hình trước nhé (đưa link sheet), rồi quay lại mình tổng hợp report cho." — dừng.
+- `config.json` không tồn tại hoặc `fileId` rỗng:
+  - Nếu `GOOGLE_SHEETS_LINK` trong `.env` có giá trị → tự chạy quy trình Bước 0 của `gg-sheet` (gọi `spreadsheets.get`, ghi `fileId`/`link`/`title`/`tabs` vào `openclaw-skills/gg-sheet/config.json`) với link đó, không cần hỏi lại PM — chỉ báo ngắn gọn đã cấu hình xong trước khi tiếp tục report.
+  - Nếu `.env` cũng không có `GOOGLE_SHEETS_LINK` → báo PM: "Chưa cấu hình Google Sheet lịch trình nào cả, bạn cho mình link sheet nhé, mình cấu hình rồi tổng hợp report cho." — dừng.
 - Tab PM muốn check không có trong `tabs`, hoặc có nhưng `columns` = `null` → báo PM: "Tab <tên> chưa xác định cấu trúc cột, bạn thao tác 1 lần qua skill `gg-sheet` trên tab đó (vd sửa thử 1 task) để mình đọc được cấu trúc cột, rồi quay lại đây." — dừng.
 
 **Ánh xạ cột cần dùng** (tên field trong `columns` của tab, ví dụ khớp tab "Sprint 1" hiện có — field thật lấy theo đúng `columns` trong `config.json` của tab đang check, không hardcode chữ cái cột vì có thể khác nhau giữa các tab):
@@ -66,16 +69,18 @@ curl -s "https://sheets.googleapis.com/v4/spreadsheets/<fileId>/values/<TAB_ENC>
 | Assignee | Người phụ trách |
 | Estimate(h) Plan | Effort dự kiến ban đầu |
 | Start Date Plan / End Date Plan | Ngày kế hoạch |
-| Re-estimate(h) Actual | Effort ước lại (chỉ có khi task đã chạy/trễ) |
-| Start Date Actual / End Date Actual | Ngày thực tế (PM/member tự điền tay khi task bắt đầu/xong) |
-| Actual Effort(h) | Giờ đã dùng thật tới hiện tại |
-| Remaining(h) | Giờ còn lại |
-| Progress | % hoàn thành |
+| Re-estimate(h) Actual | Tổng thời gian để hoàn thành task (member tự điền/cập nhật) |
+| Start Date Actual / End Date Actual | Ngày thực tế — member tự điền tay: Start Date khi **bắt đầu** thực hiện, End Date **chỉ khi đã hoàn thành** |
+| Actual Effort(h) | Tổng thời gian thực đã dùng (member tự điền/cập nhật) |
+| Remaining(h) | Giờ còn lại — **auto tính theo công thức** `Re-estimate(h) Actual − Actual Effort(h)`, KHÔNG phải member tự điền. `Remaining > 0` ⟺ task **chưa hoàn thành** |
+| Progress | % hoàn thành — **auto tính theo công thức** `Actual Effort(h) / Re-estimate(h) Actual`, KHÔNG phải member tự điền |
 | Status | Trạng thái (dropdown tự do theo project) |
 
 Nếu tab đang check thiếu 1 trong các field trên trong `columns` → coi như không đủ dữ liệu cho phần liên quan (nói rõ với PM), KHÔNG suy đoán tên cột khác.
 
-Timezone: **Asia/Ho_Chi_Minh (UTC+7)**. "Hôm nay" = ngày hiện tại theo giờ VN.
+**4 field member thực sự phải tự tay điền**: `Re-estimate(h) Actual`, `Start Date Actual`, `End Date Actual`, `Actual Effort(h)`. `Progress` và `Remaining(h)` là công thức — không bao giờ nhắc PM/member "điền Progress"/"điền Remaining", chỉ dùng 2 field này để **validate** 4 field kia có nhất quán không (xem "Validate dữ liệu member tự điền" bên dưới).
+
+Timezone: **Asia/Ho_Chi_Minh (UTC+7)**. "Hôm nay" = ngày hiện tại theo giờ VN — **trừ khi ngày hiện tại rơi vào Thứ 7/CN** (không phải ngày làm việc, không assignee nào có task "đang tới lượt chạy" theo lịch), khi đó dùng **ngày làm việc gần nhất trước đó** (luôn là Thứ 6 liền trước) làm "hôm nay" cho toàn bộ report. Luôn nói rõ với PM khi có lùi ngày, vd: "Hôm nay Thứ 7 (dd/mm), không phải ngày làm việc — báo cáo theo Thứ 6 gần nhất (dd/mm):".
 
 **Lịch làm việc chuẩn** (dùng để dựng lịch giờ tích luỹ ở Bước 3, và quy đổi ra ngày dời lịch ở Bước 6) — giống quy ước đã dùng ở Action 2b của `gg-sheet`:
 - Ngày làm việc: **Thứ 2 → Thứ 6**. Thứ 7, Chủ nhật **không tính**.
@@ -92,11 +97,19 @@ Chạy skill này khi PM nói kiểu:
 - "Ai chưa cập nhật tiến độ?", "Report Sprint 1 hôm nay thế nào?"
 - "Có task nào trễ trong tab X không?"
 
-Nếu PM chỉ nói chung chung "check report" mà không rõ tab → hỏi lại (không đoán tab mặc định), trừ khi `config.json` chỉ có đúng 1 tab đã resolve `columns` (không `null`) thì dùng luôn tab đó.
+**Tự nhận diện dự án này quản lý trên Sheet hay Jira** — khi PM hỏi chung chung ("tổng hợp tiến độ hôm nay", "check report", không nói rõ Sheet hay Jira): kiểm tra `.env` của skill Sheet (`GOOGLE_SHEETS_LINK` trong `gg-sheet-daily-report/.env` hoặc `gg-sheet/.env`) và `.env` của skill `jira-daily-report` (`JIRA_BASE_URL`, `JIRA_API_TOKEN`):
+- Chỉ `.env` bên Sheet có giá trị thật, bên Jira rỗng/chưa điền → dùng skill này, chạy tiếp bình thường.
+- Chỉ `.env` bên Jira có giá trị thật, bên Sheet rỗng → dự án này theo Jira, nhường cho skill `jira-daily-report`, KHÔNG tự chạy tiếp skill này.
+- Cả 2 cùng có giá trị, hoặc cùng rỗng → hỏi PM: "Dự án này bạn theo dõi tiến độ trên Google Sheet hay Jira?" rồi mới chạy đúng skill PM chọn.
+- PM đã nói rõ nguồn (vd "check report trên sheet", "report Jira thế nào") → dùng thẳng skill được chỉ định, bỏ qua bước tự nhận diện này.
+
+Nếu PM chỉ nói chung chung "check report" mà không rõ tab → **tự xác định sprint hiện tại qua tab "Summary project"** (xem Bước 1), không hỏi lại PM trong trường hợp này. Chỉ hỏi lại PM khi tự xác định không được (xem Error Handling).
 
 **2 phạm vi khác nhau** — xác định theo đúng câu PM hỏi, không tự suy rộng ra:
 - Có chữ "hôm nay" (hoặc ý tương đương: "cuối ngày", "hôm nay thế nào") → **mặc định**, cả 3 câu hỏi (report/hết-effort/trễ) đều giới hạn trong task thuộc phạm vi hôm nay (Bước 3-4). Đây là trường hợp phổ biến nhất khi PM gõ "check report hôm nay".
 - Không có "hôm nay", hỏi thẳng về trễ/tồn đọng của cả tab (vd "có task nào trễ trong tab X không?", "task nào đang bị trễ?") → quét **toàn bộ tab**, không giới hạn ngày, theo Bước 6 (nhánh toàn tab).
+
+**"Ngày cần xét"** — mọi chỗ nói "hôm nay" trong skill này (Bước 1, 3-7) thực chất là **"ngày cần xét"**, mặc định = hôm nay (đã áp dụng rule lùi Thứ 6 nếu rơi Thứ 7/CN, xem Config). Nếu PM hỏi về **1 ngày cụ thể khác** (quá khứ hoặc tương lai, vd "report ngày 30/07", "tiến độ hôm qua thế nào") → dùng đúng ngày PM nêu làm "ngày cần xét" xuyên suốt toàn bộ quy trình, kể cả **Bước 1 (chọn sprint qua "Summary project")** — không mặc định lấy sprint hiện tại theo hôm nay thật nếu PM đang hỏi về 1 ngày thuộc sprint khác.
 
 ---
 
@@ -104,7 +117,20 @@ Nếu PM chỉ nói chung chung "check report" mà không rõ tab → hỏi lạ
 
 ### Bước 1 — Xác định tab cần check
 
-Theo mục "Bước kiểm tra đầu tiên" ở Config phía trên. Lấy `gid`, `name`, `columns` của tab từ `config.json`.
+Theo mục "Bước kiểm tra đầu tiên" ở Config phía trên trước (đảm bảo `config.json` đã có `fileId`).
+
+- PM nói rõ tên tab (vd "report Sprint 1 hôm nay") → dùng thẳng tab đó, bỏ qua phần tự xác định dưới đây.
+- PM không nói tên tab (vd chỉ "check report hôm nay") → **tự xác định qua tab "Summary project"**:
+  1. Nếu tab "Summary project" chưa có trong `tabs` của `config.json`, hoặc có nhưng `columns` = `null` → không tự xác định được, xem Error Handling.
+  2. Đọc toàn bộ data của "Summary project" (từ row4 trở đi theo `note` đã ghi ở `config.json`). Mỗi dòng: `No`, `Sprint` (= tên tab tương ứng), `Start date`, `End date`.
+  3. Parse `Start date`/`End date`: cắt bỏ phần trong dấu ngoặc full-width `（...）` (tên thứ), chỉ giữ `YYYY/MM/DD`.
+  4. Xác định **"ngày cần xét"** (xem mục "Ngày cần xét" ở Nhận diện intent — mặc định hôm nay đã áp dụng rule lùi Thứ 6 nếu rơi Thứ 7/CN, hoặc đúng ngày PM nêu nếu PM hỏi về 1 ngày cụ thể khác).
+  5. Tìm dòng có `Start date <= ngày cần xét <= End date` → lấy giá trị `Sprint` làm tên tab cần check — cơ chế này tự chạy đúng dù dự án đã trải qua nhiều sprint, không cần PM tự nhớ sprint nào đang active.
+     - 0 dòng khớp (ngày cần xét nằm ngoài mọi sprint đã liệt kê — trước sprint đầu, sau sprint cuối, hoặc giữa 2 sprint) → xem Error Handling.
+     - ≥2 dòng khớp (range 2 sprint đè lên nhau — không nên xảy ra nếu dữ liệu đúng) → hỏi PM chọn.
+  6. Tab `Sprint` đã xác định phải có trong `tabs` của `config.json`. Nếu tên trong "Summary project" không khớp tên tab nào (lệch chính tả, hoặc `columns` của tab đó còn `null`) → xem Error Handling.
+
+Lấy `gid`, `name`, `columns` của tab đã xác định (theo cách trên hoặc PM nói thẳng) từ `config.json`.
 
 ### Bước 2 — Đọc toàn bộ task trong tab
 
@@ -131,24 +157,57 @@ Dựng "lịch giờ tích luỹ": bắt đầu từ đầu ngày làm việc **
 
 Nếu không xác định được mốc bắt đầu đáng tin (không task nào có `Start Date Plan`/`Start Date Actual`) → báo "không đủ dữ liệu để dựng lịch cho assignee <tên>", bỏ qua assignee đó ở Bước 4-5 nhưng vẫn xét được ở Bước 6 (trễ chỉ cần so `Re-estimate(h) Actual` vs `Estimate(h) Plan`, không cần lịch).
 
+### Trạng thái task (dùng chung cho Bước 4-6)
+
+Với mỗi task, xác định trạng thái thực tế bằng cách đối chiếu chéo nhiều field — **không suy luận từ 1 field đơn lẻ** (đặc biệt không chỉ nhìn `Status`, vì đây là dropdown tự điền tay, dễ bị bỏ quên):
+
+- **Chưa làm** ⟺ `Start Date Actual` (K) trống. Đây là trạng thái **bình thường/kỳ vọng** cho task chưa tới lượt chạy theo lịch — chưa cần điền Actual Date ở trạng thái này, không phải lỗi/thiếu report.
+- **Đang làm** ⟺ `Start Date Actual` (K) đã điền **và** `End Date Actual` (L) còn trống. Ở trạng thái này **chỉ cần điền `Start Date Actual` là đủ** để coi là đã report — chưa bắt buộc phải có `End Date Actual`, `Actual Effort`, hay `Progress` đầy đủ ngay (có thể đang cập nhật dần trong lúc làm).
+- **Hoàn thành** ⟺ đủ **tất cả** các điều kiện sau (thiếu bất kỳ điều kiện nào thì KHÔNG coi là hoàn thành, dù các field khác đã đúng):
+  - `Re-estimate(h) Actual` (J) đã điền
+  - `Start Date Actual` (K) đã điền
+  - `End Date Actual` (L) đã điền
+  - `Actual Effort(h)` (M) đã điền
+  - `Progress` (N) = 100%
+  - `Remaining(h)` (P) = 0
+  - `Status` (Q) = "Done"
+- **Quên chưa đổi trạng thái** ⟺ `Status` (Q) vẫn là "Open" (giá trị mặc định ban đầu) **nhưng** đã có bằng chứng đang làm (`Start Date Actual` đã điền, hoặc `Actual Effort(h) > 0`). Đây là dấu hiệu dev quên cập nhật `Status` dù đã bắt đầu/đang làm — khác với "Chưa làm" thật sự (không có bằng chứng nào).
+
+Trường hợp biên: task đạt các điều kiện effort (`Remaining(h)=0`, `Progress=100%`) nhưng `Status` không phải "Done" và cũng không phải "Open" (vd 1 giá trị trung gian khác của project) → không phải "Hoàn thành" (thiếu điều kiện Status), cũng không phải "Quên chưa đổi trạng thái" (không phải case Open) → xem như "hết effort nhưng Status chưa chuyển Done", hiển thị ở Bước 5 để PM tự đánh giá, không tự kết luận đúng/sai.
+
+### Validate dữ liệu member tự điền (dùng ở Bước 5)
+
+Chỉ validate 4 field member thực sự tự tay điền (`Re-estimate(h) Actual`, `Start Date Actual`, `End Date Actual`, `Actual Effort(h)`) — KHÔNG bao giờ yêu cầu member "điền Progress"/"điền Remaining" vì 2 field đó là công thức tự tính từ chính 4 field kia.
+
+Với mỗi `T_i` có slot giao với hôm nay (hoặc toàn tab nếu PM hỏi riêng về tồn đọng):
+
+- **Thiếu field bắt buộc theo đúng lúc cần fill**:
+  - Ở trạng thái "Đang làm"/"Hoàn thành" (`Start Date Actual` đã điền) mà `Re-estimate(h) Actual` vẫn trống → thiếu, member chưa điền tổng effort ước tính để hoàn thành task.
+  - Ở trạng thái "Đang làm" mà `Actual Effort(h)` vẫn trống/0 → nghi ngờ chưa cập nhật giờ đã làm thật.
+- **Điền sai lúc / dữ liệu mâu thuẫn**:
+  - `End Date Actual` đã điền nhưng task chưa thực sự xong (`Remaining(h) > 0`, hoặc `Progress < 100%`, hoặc `Status` khác "Done") → có thể member điền nhầm ngày hoàn thành khi task chưa xong thật.
+  - `Progress` hoặc `Remaining(h)` hiện có **không khớp công thức kỳ vọng** từ `Actual Effort(h)`/`Re-estimate(h) Actual` đang có (`Progress ≠ Actual Effort(h) / Re-estimate(h) Actual`, hoặc `Remaining(h) ≠ Re-estimate(h) Actual − Actual Effort(h)`) → nghi ngờ công thức trên sheet bị ghi đè bằng tay hoặc dữ liệu bị sửa sau khi tính, KHÔNG tự suy đoán lý do — chỉ nêu đúng số liệu lệch để PM tự kiểm tra trực tiếp trên sheet.
+
+Mọi phát hiện ở trên hiển thị verbatim (kèm giá trị hiện tại), dùng ở Bước 5 (và ở Bước 7 khi trình bày — mục "nếu số liệu tự mâu thuẫn" trong format đã có sẵn).
+
 ### Bước 4 — Report hôm nay: assignee nào đã cập nhật, assignee nào chưa
 
 Với mỗi assignee, tìm các `T_i` có slot giao với hôm nay (từ Bước 3).
 
 - Không có `T_i` nào giao với hôm nay (theo lịch, hôm nay assignee không có task nào đang chạy) → không xét assignee này ở mục report hôm nay (không phải lỗi, chỉ là không có gì tới lượt).
 - Có `T_i` giao với hôm nay:
-  - `Start Date Actual` của `T_i` đã điền **và** (`Actual Effort(h) > 0` hoặc `Status` khác giá trị "Open"/rỗng ban đầu) → **đã report**.
-  - `Start Date Actual` trống **hoặc** `Actual Effort(h) = 0` và `Status` vẫn ở giá trị mặc định ban đầu ("Open") → **chưa report** dù theo lịch phải đang chạy task đó hôm nay.
+  - `T_i` ở trạng thái **Đang làm** hoặc **Hoàn thành** (tức `Start Date Actual` đã điền) → **đã report**.
+  - `T_i` ở trạng thái **Chưa làm** (`Start Date Actual` trống) dù theo lịch phải đang chạy task đó hôm nay → **chưa report**.
 
 Không có cách tính "report thiếu giờ" chính xác như Jira (không có worklog theo giờ/ngày) — chỉ phân 2 nhóm: đã report / chưa report. Nếu PM muốn biết giờ đã làm hôm nay, dùng trực tiếp `Actual Effort(h)` của task đang giao với hôm nay (giá trị PM tự điền, không đảm bảo chính xác theo ngày).
 
-### Bước 5 — Task hôm nay đã hết effort nhưng Status chưa đổi (chỉ hiển thị, không tự kết luận)
+### Bước 5 — Task hôm nay có vấn đề về Status (chỉ hiển thị, không tự kết luận)
 
-**Chỉ xét các `T_i` có slot giao với hôm nay** (đã xác định ở Bước 4).
+**Chỉ xét các `T_i` có slot giao với hôm nay** (đã xác định ở Bước 4), theo phân loại "Trạng thái task" ở trên:
 
-**Không dùng `Status` để đánh giá task đã xong hay chưa** — Status là dropdown tự do theo project, không có chuẩn chung. Nguồn sự thật duy nhất cho "đã hết effort" là: `Remaining(h) == 0` **hoặc** `Progress == 100%`.
-
-Nếu đúng điều kiện trên → chỉ **liệt kê** task đó kèm `Status` hiện tại (verbatim, không gắn nhãn đúng/sai) để PM tự xem và đánh giá.
+- `T_i` ở trạng thái **Quên chưa đổi trạng thái** → liệt kê rõ, đây là dấu hiệu khá chắc chắn dev quên cập nhật (đã log work nhưng Status còn "Open").
+- `T_i` đạt điều kiện effort (`Remaining(h)=0`/`Progress=100%`) nhưng chưa phải **Hoàn thành** đầy đủ theo checklist (thiếu 1 trong 7 điều kiện, vd `Status` chưa chuyển "Done", hoặc thiếu `End Date Actual`/`Re-estimate`) → liệt kê kèm field còn thiếu/chưa khớp (verbatim, không gắn nhãn đúng/sai) để PM tự xem và đánh giá.
+- Chạy thêm mục **"Validate dữ liệu member tự điền"** ở trên cho `T_i` → liệt kê mọi field thiếu/sai lúc/mâu thuẫn công thức phát hiện được, verbatim kèm giá trị hiện tại.
 
 ### Bước 6 — Xác định task bị trễ & đề xuất reschedule
 
@@ -158,11 +217,15 @@ Nếu đúng điều kiện trên → chỉ **liệt kê** task đó kèm `Statu
 
 Trong tập đã xác định ở trên, dùng trực tiếp:
 
-- **Task bị trễ** ⟺ `Re-estimate(h) Actual (K)` đã điền **và** `> Estimate(h) Plan (H)` → `overrun_hours_i = K_i - H_i`. Task chưa có `Re-estimate(h) Actual` (còn trống) → chưa xét được, bỏ qua (chưa có dữ liệu overrun). Task bị trễ **luôn được liệt kê** trong report (mục "Task bị trễ") bất kể có cascade hay không — chỉ phần cascade bên dưới là có điều kiện.
+- **Task bị trễ** ⟺ `Re-estimate(h) Actual (J)` đã điền **và** `> Estimate(h) Plan (G)` → `overrun_hours_i = J_i - G_i`. Task chưa có `Re-estimate(h) Actual` (còn trống) → chưa xét được, bỏ qua (chưa có dữ liệu overrun). Task bị trễ **luôn được liệt kê** trong report (mục "Task bị trễ") bất kể có cascade hay không — chỉ phần cascade bên dưới là có điều kiện.
 - **Chỉ đề xuất cascade reschedule khi slippage là thật** (không phải chỉ lệch giờ trên giấy):
   - `Status = "Done"` (hoặc tương đương đã đóng) **và** `End Date Actual` đã điền **và** `End Date Actual <= End Date Plan` → task tuy vượt giờ (K > H) nhưng vẫn đóng đúng/sớm hơn ngày kế hoạch, **không có tràn lịch thật** → **không** đề xuất dời các task Open sau của assignee đó (vẫn hiện task này ở mục "trễ" để PM biết, chỉ bỏ khối cascade).
   - Mọi trường hợp còn lại — `Status` khác "Done" (task còn đang chạy, còn `Remaining` chưa xong), hoặc `End Date Actual` còn trống (chưa xác nhận xong), hoặc `End Date Actual > End Date Plan` (đã đóng nhưng đóng trễ thật) — → coi là còn ảnh hưởng lịch thật, áp dụng cascade như bình thường.
-  - Với mỗi task bị trễ **có cascade**, các task **Status = "Open"** khác của **cùng assignee đó**, nằm **sau** nó theo thứ tự dòng trong tab → bị ảnh hưởng dây chuyền. Tính ngày dời lịch mới theo đúng công thức đã dùng ở **Action 2b (Re-schedule) của skill `gg-sheet`** (cascade 8h/ngày làm việc T2-T6, không làm tròn nguyên khối, start = end của task liền trước) — không tính lại công thức riêng ở đây, tham chiếu thẳng logic đó để tránh lệch 2 nơi.
+  - Với mỗi task bị trễ **có cascade**, các task **Status = "Open"** khác của **cùng assignee đó**, nằm **sau** nó theo thứ tự dòng trong tab → bị ảnh hưởng dây chuyền. Tính ngày dời lịch mới theo đúng công thức đã dùng ở **Action 2b (Re-schedule) của skill `gg-sheet`** (cascade 8h/ngày làm việc T2-T6, không làm tròn nguyên khối, start = end của task liền trước, cập nhật cả `Start Date Plan` lẫn `End Date Plan`) — không tính lại công thức riêng ở đây, tham chiếu thẳng logic đó để tránh lệch 2 nơi.
+
+**Trước khi đề xuất cách xử lý cho task bị trễ có cascade — kiểm tra `Priority` (F) của chính task đó:**
+- `Priority` = **Highest** hoặc **High** → đây là task gấp, không nên để trễ deadline chồng thêm bằng cách dời lịch — **ưu tiên cảnh báo PM và đề xuất OT** (làm thêm giờ bù `overrun_hours`) thay vì reschedule. KHÔNG tự in sẵn danh sách cascade trong report — chỉ liệt kê danh sách task cần dời khi PM xác nhận vẫn muốn dời lịch sau khi đã thấy cảnh báo này.
+- `Priority` = **Medium**, **Low** (hoặc thấp hơn) → đề xuất reschedule bình thường, in kèm danh sách cascade ngay trong report như hiện tại.
 
 Đây chỉ là **đề xuất tham khảo** — không tự động áp dụng. Nói rõ điều này với PM khi trình bày.
 
@@ -171,32 +234,34 @@ Trong tập đã xác định ở trên, dùng trực tiếp:
 Trình bày theo format — văn phong **tự nhiên, như PM nói chuyện với nhau**, không dịch nguyên thuật ngữ nội bộ (vd không viết "theo lịch tích luỹ", "tràn lịch thật", "tới lượt chạy task" ra report — những cụm đó chỉ dùng để mô tả logic tính toán ở Bước 3-6, không phải văn phong hiển thị cho PM):
 
 ```
-📋 TỔNG HỢP REPORT NGÀY <YYYY-MM-DD> — Tab: <tên tab>
+📋 TỔNG HỢP REPORT NGÀY <YYYY-MM-DD> — <tên tab>
 ════════════════════════════════════════
-✅ Đã cập nhật tiến độ hôm nay (<N> người)
-• <tên>: "<task>" — đã làm <H>h, Status "<status>"
-  [nếu số liệu tự mâu thuẫn, vd Status đã đóng nhưng Remaining>0 hoặc Progress<100% → thêm 1 dòng ngắn nêu đúng số liệu lệch, không suy đoán lý do]
+• "<task>" (<tên assignee>) — <mô tả tự nhiên tiến độ, vd "đã xong, Done, 8/8h" / "đang làm, còn <X>h" / "chưa điền tiến độ dù lẽ ra đang phải làm hôm nay">
+  [CHỈ khi có vấn đề mới thêm dòng cảnh báo — task ổn thì dừng ở dòng trên, KHÔNG viết thêm nhận xét kiểu "dữ liệu đầy đủ"/"khớp công thức"/mọi lời khen tình trạng bình thường:]
+  [nếu quên đổi status → "⚠️ có vẻ quên đổi Status — đã bắt đầu làm (hoặc đã log effort) nhưng Status vẫn để 'Open'"]
+  [nếu gần xong nhưng chưa khớp đủ checklist "Hoàn thành" → "ℹ️ gần xong nhưng chưa đủ để tính Done — còn thiếu <field còn thiếu/chưa khớp>"]
+  [nếu thiếu/sai theo mục "Validate dữ liệu member tự điền" → "⚠️ thiếu/sai dữ liệu: <đúng field bị thiếu hoặc lệch công thức>, cần kiểm tra lại" — nêu đúng field, KHÔNG chỉ định một người cụ thể phải kiểm tra (không viết "nhờ X kiểm tra")]
+  [nếu số liệu tự mâu thuẫn khác → 1 dòng ngắn nêu đúng số liệu lệch, không suy đoán lý do]
 
-❌ Chưa cập nhật (<N> người)
-• <tên>: chưa điền tiến độ cho "<task>" dù theo kế hoạch hôm nay phải đang làm task này
-
-ℹ️ Task hôm nay đã hết effort nhưng Status chưa đổi (<N> task) — PM tự đánh giá
-• "<task>" (<assignee>) — Status hiện tại: "<status>"
+**1 dòng = 1 task, KHÔNG gộp theo assignee** — 1 assignee có thể có nhiều task cùng thuộc phạm vi hôm nay (vd task hôm qua overrun tràn sang + task mới bắt đầu cùng ngày) → liệt kê mỗi task 1 dòng riêng, tên assignee lặp lại ở từng dòng nếu cần. Chỉ thêm dòng flag khi thực sự phát sinh, KHÔNG gộp thành mục riêng kiểu "❌ Chưa cập nhật (0 người)" hay "⚠️ Quên đổi trạng thái: không có" khi không có gì.
 
 🕐 Task trễ tiến độ (<N> task[, quét toàn bộ tab — chỉ thêm cụm này khi PM hỏi riêng về trễ không kèm "hôm nay", xem Bước 6])
-• <assignee> — "<task>": làm hết <K>h thay vì <H>h dự kiến (vượt <overrun>h)
-  [nếu Status = "Done" và End Date Actual <= End Date Plan → thêm dòng: "Task đã Done đúng/sớm ngày kế hoạch nên không ảnh hưởng các task sau, không cần dời lịch.", KHÔNG in khối cascade]
-  [ngược lại → in khối cascade:]
-  → Task này còn Open nên sẽ đẩy lịch các task sau của <assignee>:
-     - "<task Y>": <ngày cũ> → <ngày mới>
-     - "<task Z>": <ngày cũ> → <ngày mới>
+• <assignee> — "<task>" (Priority: <priority>): làm hết <K>h thay vì <H>h dự kiến (vượt <overrun>h)
+  [nếu Status = "Done" và End Date Actual <= End Date Plan → thêm dòng: "Task đã Done đúng/sớm ngày kế hoạch nên không ảnh hưởng các task sau, không cần dời lịch.", KHÔNG xét OT/cascade bên dưới]
+  [ngược lại, nếu Priority = Highest/High → in cảnh báo OT, KHÔNG in sẵn danh sách cascade:]
+  ⚠️ Đây là task ưu tiên <priority> — không nên để trễ deadline thêm bằng cách dời lịch. Đề xuất <assignee> OT bù <overrun>h thay vì dời các task sau.
+  Nếu bạn vẫn muốn dời lịch, nói mình liệt kê danh sách task cần dời nhé.
+  [ngược lại (Priority Medium/Low), hoặc PM đã xác nhận muốn dời lịch dù Highest/High → in khối cascade:]
+  → Đề xuất dời lịch (cập nhật cả Start Date Plan lẫn End Date Plan) các task Open sau của <assignee>:
+     - "<task Y>": <Start Plan cũ>–<End Plan cũ> → <Start Plan mới>–<End Plan mới>
+     - "<task Z>": <Start Plan cũ>–<End Plan cũ> → <Start Plan mới>–<End Plan mới>
 
 ℹ️ <N> task trong tab thiếu dữ liệu Estimate/Remaining nên chưa đánh giá được effort hết/trễ
 ════════════════════════════════════════
 Bạn có muốn mình dùng skill gg-sheet (Action 2b) để dời lịch theo đề xuất trên không?
 ```
 
-Chỉ hiện các mục có dữ liệu. Định danh task bằng **tên task** (không dùng "No.<X>") trừ khi tab đó không merge cell No. theo từng dòng — nhiều tab (vd Sprint 1) merge No. dọc theo nhóm task nên hầu hết các dòng sau task đầu tiên trong nhóm sẽ trống No., dùng No. lúc đó sẽ sai/thiếu.
+Chỉ hiện các mục có dữ liệu — không tự thêm mục/dòng báo "không có" cho trường hợp không phát sinh (vd không ai quên report thì không cần nói ra). Định danh task bằng **tên task** (không dùng "No.<X>") trừ khi tab đó không merge cell No. theo từng dòng — nhiều tab (vd Sprint 1) merge No. dọc theo nhóm task nên hầu hết các dòng sau task đầu tiên trong nhóm sẽ trống No., dùng No. lúc đó sẽ sai/thiếu.
 
 Nếu PM đồng ý reschedule, **không tự ghi** — nhắc PM xác nhận rồi gọi skill `gg-sheet` (Action 2b: Re-schedule) để thực hiện, giữ nguyên luồng preview/confirm/verify của skill đó.
 
@@ -208,6 +273,9 @@ Nếu PM đồng ý reschedule, **không tự ghi** — nhắc PM xác nhận r�
 |-----|---------|
 | `config.json` chưa cấu hình (`fileId` rỗng/null) | "Chưa cấu hình Google Sheet lịch trình nào cả, bạn chạy skill `gg-sheet` để cấu hình trước nhé, rồi quay lại mình tổng hợp report cho." |
 | Tab PM muốn check không có trong `tabs`, hoặc `columns` = `null` | "Tab <tên> chưa xác định cấu trúc cột, bạn thao tác 1 lần qua skill `gg-sheet` trên tab đó rồi quay lại đây." |
+| PM không nói tên tab, và "Summary project" chưa có trong `tabs`/`columns` = `null` | "Mình chưa đọc được cấu trúc tab 'Summary project' để tự xác định sprint hiện tại, bạn cho biết tên tab muốn check hôm nay nhé (hoặc thao tác 1 lần qua `gg-sheet` trên tab 'Summary project' để mình đọc được cấu trúc cột)." |
+| Không có dòng nào trong "Summary project" có `Start date <= hôm nay <= End date` | "Hôm nay (<ngày>) không nằm trong khoảng ngày của sprint nào trong 'Summary project' (sprint gần nhất: <tên>, <start>–<end>) — bạn cho biết tab muốn check nhé." |
+| Tên `Sprint` trong "Summary project" không khớp tên tab nào trong `tabs`, hoặc tab đó `columns` = `null` | "Summary project ghi sprint hiện tại là '<tên>' nhưng mình chưa xác định được cấu trúc cột của tab đó — bạn thao tác 1 lần qua `gg-sheet` trên tab '<tên>' rồi quay lại đây." |
 | Không xác định được mốc bắt đầu để dựng lịch cho 1 assignee | Bỏ qua assignee đó ở mục report/hết-effort/trễ hôm nay (không dựng được lịch thì không biết task nào của họ thuộc hôm nay), nói rõ "không đủ dữ liệu để dựng lịch cho <tên>". Nếu PM hỏi trễ toàn tab (không kèm "hôm nay") thì vẫn xét được, vì nhánh đó không cần lịch |
 | Không có task nào giao với hôm nay (theo lịch, toàn tab đang rảnh) | "Hôm nay không có task nào trong tab <tên> đang chạy theo lịch giờ tích luỹ — không có gì để check report." |
 | API trả lỗi 4xx/5xx | "Google Sheets API báo lỗi: <status> - <message>. Bạn thử lại sau nhé." |

@@ -1,6 +1,6 @@
 ---
 name: gg-sheet
-description: Thêm, sửa, xóa task trong file Google Sheet lịch trình dự án theo đúng tab/gid, cho PM. File/tab đang dùng được lưu trong config.json (hỏi PM link Google Sheet nếu chưa cấu hình, tự đổi sang schedule khác nếu PM đưa link mới), không hardcode 1 project cụ thể trong skill. Gọi thẳng Google Sheets API v4 (Service Account) để ghi, luôn preview và yêu cầu xác nhận trước khi ghi. KHÔNG dùng để tổng hợp/báo cáo tiến độ.
+description: Thêm, sửa, xóa task trong file Google Sheet lịch trình dự án theo đúng tab/gid, cho PM. File/tab đang dùng được lưu trong config.json — tự bootstrap từ GOOGLE_SHEETS_LINK trong .env nếu chưa cấu hình (mỗi project 1 .env riêng), chỉ hỏi PM link khi .env cũng chưa có; tự đổi sang schedule khác nếu PM đưa link mới. Không hardcode 1 project cụ thể trong skill. Gọi thẳng Google Sheets API v4 (Service Account) để ghi, luôn preview và yêu cầu xác nhận trước khi ghi. KHÔNG dùng để tổng hợp/báo cáo tiến độ.
 user-invocable: true
 metadata:
   {
@@ -27,9 +27,19 @@ Bạn là Sheet Task Operator cho PM của team MOR. Nhiệm vụ của bạn l�
 - Thao tác **xóa dòng** (`deleteDimension`) khó hoàn tác qua API → xác nhận riêng, nhắc rõ đây là xóa thật khỏi sheet (không phải archive), PM có thể khôi phục qua Version History của Google Sheets nếu lỡ tay
 - Trước khi sửa/xóa, luôn **đọc lại dữ liệu hiện tại từ sheet** để xác định đúng vị trí dòng thật — KHÔNG dùng lại vị trí dòng/số liệu từ hội thoại trước, vì sheet có thể đã thay đổi
 - Nếu không chắc câu hỏi nhắm vào tab/gid, No. task, hay field nào → hỏi lại PM, KHÔNG tự đoán hoặc chọn đại
-- Skill chỉ phục vụ **1 schedule tại 1 thời điểm**. Nếu `config.json` chưa có/rỗng → hỏi PM xin link trước khi làm gì khác. Khi PM đưa link 1 Google Sheet khác với `fileId` đang ghi trong `config.json` → coi là chuyển hẳn sang schedule mới, ghi đè `config.json` (xem Bước 0), KHÔNG sửa vào SKILL.md
+- Skill chỉ phục vụ **1 schedule tại 1 thời điểm**. Nếu `config.json` chưa có/rỗng → thử tự bootstrap từ `GOOGLE_SHEETS_LINK` trong `.env` trước (xem Config), chỉ hỏi PM xin link nếu `.env` cũng chưa có. Khi PM đưa link 1 Google Sheet khác với `fileId` đang ghi trong `config.json` → coi là chuyển hẳn sang schedule mới, ghi đè `config.json` (xem Bước 0), KHÔNG sửa vào SKILL.md (và không tự sửa `.env` trừ khi PM yêu cầu — link trong `.env` là default lâu dài của máy này, còn đổi bằng lời nói chỉ là override tạm cho phiên hiện tại)
 - KHÔNG đọc gộp toàn bộ file qua `mcp__claude_ai_Google_Drive__read_file_content` để tìm dòng cần sửa/xóa → tool này gộp hết các tab thành 1 khối text không nhãn, dễ chọn nhầm dòng
 - Nếu có lỗi API → thông báo rõ ràng, không tự ý retry hoặc đoán dữ liệu thay thế
+
+---
+
+## Nhận diện dự án dùng Sheet hay Jira
+
+Khi PM nói chung chung "thêm/sửa/xóa task ..." mà không chỉ rõ đang thao tác trên Google Sheet hay Jira: kiểm tra `.env` của skill này (`GOOGLE_SHEETS_LINK`) và `.env` của skill `jira-task-editor` (`JIRA_BASE_URL`, `JIRA_API_TOKEN`):
+- Chỉ `.env` bên Sheet có giá trị thật, bên Jira rỗng/chưa điền → dùng skill này, chạy tiếp bình thường.
+- Chỉ `.env` bên Jira có giá trị thật, bên Sheet rỗng → dự án này quản lý task trên Jira, nhường cho skill `jira-task-editor`, KHÔNG tự chạy tiếp skill này.
+- Cả 2 cùng có giá trị, hoặc cùng rỗng → hỏi PM: "Dự án này bạn quản lý task trên Google Sheet hay Jira?" rồi mới chạy đúng skill PM chọn.
+- PM đã nói rõ nguồn (vd "thêm task vào sheet", "tạo task Jira") → dùng thẳng skill được chỉ định, bỏ qua bước tự nhận diện này.
 
 ---
 
@@ -63,11 +73,14 @@ Cấu trúc `config.json`:
 }
 ```
 
-**Bước kiểm tra đầu tiên (trước MỌI Action)** — Nếu `config.json` không tồn tại, hoặc `fileId` là `null`/rỗng → skill **chưa được cấu hình cho project này**. KHÔNG tự đoán hay dùng schedule mặc định nào — hỏi ngay PM:
+**Bước kiểm tra đầu tiên (trước MỌI Action)** — Nếu `config.json` không tồn tại, hoặc `fileId` là `null`/rỗng → skill **chưa được cấu hình cho project này**:
+
+1. Đọc `GOOGLE_SHEETS_LINK` từ `.env` (file `.env` trong thư mục skill này — mỗi project/máy có 1 `.env` riêng trỏ đúng schedule của project đó, không cần PM nhắc lại link mỗi lần dùng skill). Nếu có giá trị → coi như PM vừa đưa link đó, tự chạy quy trình Bước 0 (xem "Xác định tab/gid" bên dưới) **không cần hỏi lại PM**, chỉ báo ngắn gọn sau khi xong (vd "Đã cấu hình theo schedule trong .env: <title>, tìm thấy N tab.").
+2. Nếu `.env` cũng không có `GOOGLE_SHEETS_LINK` (rỗng/chưa điền) → KHÔNG tự đoán hay dùng schedule mặc định nào, hỏi ngay PM:
 
 > "Bạn cho mình link Google Sheet lịch trình dự án bạn muốn dùng nhé, mình sẽ cấu hình rồi thêm task cho bạn."
 
-Sau khi có link, chạy đúng quy trình Bước 0 (xem "Xác định tab/gid" bên dưới) để tạo mới `config.json` từ đầu, rồi mới tiếp tục Action PM yêu cầu.
+Sau khi có link (từ `.env` hoặc PM đưa trực tiếp), chạy đúng quy trình Bước 0 để tạo mới `config.json` từ đầu, rồi mới tiếp tục Action PM yêu cầu.
 
 > ⚠️ `config.json` là dữ liệu **theo từng project/máy**, không phải logic của skill — khi copy skill này sang dùng cho dự án khác, chỉ cần xoá `config.json` (giữ lại `config.example.json`) để quay về trạng thái "chưa cấu hình" ở trên.
 
@@ -247,20 +260,20 @@ Ghi Audit Log.
 
 ### Bối cảnh
 
-PM báo 1 task của assignee có `Re-estimate(h) Actual` (cột K) > `Estimate(h) Plan` (cột H) → phần dư giờ (overrun) làm lệch lịch các task **Open** phía sau của **cùng assignee đó** trong tab. Giả định mỗi assignee làm việc theo capacity cố định 8h/ngày làm việc (thứ 2–6, bỏ qua thứ 7/CN), các task xếp tuần tự theo đúng thứ tự dòng trong sheet.
+PM báo 1 task của assignee có `Re-estimate(h) Actual` (cột J) > `Estimate(h) Plan` (cột G) → phần dư giờ (overrun) làm lệch lịch các task **Open** phía sau của **cùng assignee đó** trong tab. Giả định mỗi assignee làm việc theo capacity cố định 8h/ngày làm việc (thứ 2–6, bỏ qua thứ 7/CN), các task xếp tuần tự theo đúng thứ tự dòng trong sheet.
 
-> ⚠️ So sánh đúng **Estimate (H) vs Re-estimate (K)** để tính overrun — KHÔNG dùng `Actual Effort(h)` (cột N), vì cột N thường bằng đúng Estimate ban đầu (số giờ đã tiêu tới thời điểm báo cáo) và không phản ánh việc task được ước lại tổng effort cao hơn.
+> ⚠️ So sánh đúng **Estimate (G) vs Re-estimate (J)** để tính overrun — KHÔNG dùng `Actual Effort(h)` (cột M), vì cột M thường bằng đúng Estimate ban đầu (số giờ đã tiêu tới thời điểm báo cáo) và không phản ánh việc task được ước lại tổng effort cao hơn.
 
 ### Quy trình
 
 **Bước 1** — Đọc lại toàn bộ task của assignee đó trong tab (`values:batchGet` cột No./Task/Assignee/H/I/J/K/L/M/N/R), theo đúng thứ tự dòng trong sheet — đây chính là thứ tự làm việc thực tế.
 
-**Bước 2** — Xác định task bị trễ: `Re-estimate(h) Actual` (K) > `Estimate(h) Plan` (H) → `overrun = Re-estimate - Estimate` (giờ dư).
+**Bước 2** — Xác định task bị trễ: `Re-estimate(h) Actual` (J) > `Estimate(h) Plan` (G) → `overrun = Re-estimate - Estimate` (giờ dư).
 
-**Bước 3** — Cascade lại theo capacity 8h/ngày, **KHÔNG làm tròn nguyên khối** (tránh tạo ngày trống vô lý):
+**Bước 3** — Cascade lại theo capacity 8h/ngày, **KHÔNG làm tròn nguyên khối** (tránh tạo ngày trống vô lý). **Chỉ ghi vào cột Plan (`Start Date Plan`/`End Date Plan`) — KHÔNG BAO GIỜ ghi vào `Start Date Actual`/`End Date Actual`**: 2 cột Actual chỉ do chính assignee tự điền tay khi task thực sự bắt đầu/hoàn thành (100%), agent không tự đoán hộ hay đại diện điền, kể cả khi đang re-schedule task đó:
 
-- Task bị trễ: `End Date (Actual)` = ngày mà giờ dư (`overrun`) dùng hết capacity còn lại, tính từ `Start Date (Actual)` với 8h/ngày (bỏ qua T7/CN). Vd overrun 4h (nửa ngày) → tràn sang đúng 1 ngày làm việc kế tiếp. **Đồng thời sửa luôn `End Date (Plan)` của task này bằng với `End Date (Actual)` mới** — nếu chỉ sửa Actual mà để Plan nguyên như cũ, Plan sẽ hiển thị sai là task đã xong đúng hạn, khiến ngày kế tiếp trông như còn nguyên 8h trống trong khi thực ra một phần đã bị task trễ chiếm mất.
-- Mỗi task **Open** kế tiếp của assignee: `Start Date (Plan)` mới = `End Date` (Actual/Plan mới) của task ngay trước nó — KHÔNG nhảy cách 1 ngày trống. `End Date (Plan)` = `Start Date` mới + phần giờ còn dư sau khi trừ capacity ngày hôm đó, cứ thế cộng dồn tới task cuối cùng bị ảnh hưởng.
+- Task bị trễ: dùng `Start Date Actual` (K, đã có sẵn — chỉ **đọc** để tính, không sửa) làm mốc, cộng dồn giờ dư (`overrun`) theo capacity 8h/ngày (bỏ qua T7/CN) → ra ngày task này thực sự cần đến để xong với effort đã ước lại → ghi ngày đó vào `End Date (Plan)` của chính task này. `End Date (Actual)` giữ nguyên hiện trạng (trống nếu đang trống) — chỉ assignee tự điền khi Progress=100%/Status=Done.
+- Mỗi task **Open** kế tiếp của assignee: `Start Date (Plan)` mới = `End Date (Plan)` mới của task ngay trước nó — KHÔNG nhảy cách 1 ngày trống. `End Date (Plan)` = `Start Date (Plan)` mới + phần giờ còn dư sau khi trừ capacity ngày hôm đó, cứ thế cộng dồn tới task cuối cùng bị ảnh hưởng.
 - Bỏ qua thứ 7/CN khi cộng ngày (nếu rơi vào cuối tuần → nhảy sang thứ 2 kế tiếp).
 - Các task đã Done/có Actual rồi (không phải Open) thì KHÔNG động vào.
 

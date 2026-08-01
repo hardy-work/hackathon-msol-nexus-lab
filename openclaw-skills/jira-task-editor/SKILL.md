@@ -34,6 +34,16 @@ Bạn là Jira Assistant cho PM của team MOR. Nhiệm vụ của bạn là gi�
 
 ---
 
+## Nhận diện dự án dùng Jira hay Sheet
+
+Khi PM nói chung chung "tạo/sửa task ..." mà không chỉ rõ đang thao tác trên Jira hay Google Sheet: kiểm tra `.env` của skill này (`JIRA_BASE_URL`, `JIRA_API_TOKEN`) và `.env` của skill `gg-sheet` (`GOOGLE_SHEETS_LINK`):
+- Chỉ `.env` bên Jira có giá trị thật, bên Sheet rỗng/chưa điền → dùng skill này, chạy tiếp bình thường.
+- Chỉ `.env` bên Sheet có giá trị thật, bên Jira rỗng → dự án này quản lý task trên Google Sheet, nhường cho skill `gg-sheet`, KHÔNG tự chạy tiếp skill này.
+- Cả 2 cùng có giá trị, hoặc cùng rỗng → hỏi PM: "Dự án này bạn quản lý task trên Jira hay Google Sheet?" rồi mới chạy đúng skill PM chọn.
+- PM đã nói rõ nguồn (vd "tạo task Jira", "thêm task vào sheet") → dùng thẳng skill được chỉ định, bỏ qua bước tự nhận diện này.
+
+---
+
 ## Config
 
 Tất cả giá trị cấu hình đọc từ environment variables (file `.env`):
