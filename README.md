@@ -43,6 +43,36 @@ servers / backend services it depends on.
   `jira-task-editor` plus optional `DAILY_WORK_HOURS` (defaults to 8) — see
   `.env.example`.
 
+- [`openclaw-skills/gg-sheet/`](openclaw-skills/gg-sheet/) — adds, edits, and
+  deletes tasks in a project's Google Sheet schedule (tab/gid tracked in
+  `config.json`, not hardcoded to one project) for the MOR PM, always
+  previewing changes and requiring confirmation before writing. Calls the
+  Google Sheets API v4 directly (Service Account for writes, API key for
+  reads). Read-only for progress reporting — see `gg-sheet-daily-report`
+  below. Contains:
+  - `SKILL.md` — instructions the agent follows for add/edit/delete/reschedule.
+  - `config.json` — per-project sheet/tab config (gitignored; see
+    `config.example.json`).
+  - `scripts/get-token.sh` — mints a Service Account access token for writes.
+
+  Needs a `.env` in this folder with `GOOGLE_SHEETS_API_KEY` and
+  `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` (see `.env.example`), plus a Service
+  Account JSON key file shared as Editor on the target sheet.
+
+- [`openclaw-skills/gg-sheet-daily-report/`](openclaw-skills/gg-sheet-daily-report/) —
+  end-of-day report roll-up for the PM, mirroring `jira-daily-report` but for
+  the Google Sheet schedule managed by `gg-sheet`: which assignees updated
+  progress today vs. didn't, which today's tasks are out of effort but still
+  show an unchanged status, and a reschedule proposal (scanning the whole
+  tab) for assignees with overrun tasks. Read-only — never writes to the
+  sheet; hand off to `gg-sheet` (Action 2b: Re-schedule) for any actual
+  update. Shares `config.json` with `gg-sheet` rather than duplicating it.
+  Contains:
+  - `SKILL.md` — instructions the agent follows to build the report.
+
+  Needs a `.env` in this folder with `GOOGLE_SHEETS_API_KEY` only (read-only,
+  no Service Account needed) — see `.env.example`.
+
 Assumes a Vexa instance is already running and reachable (see the machine at
 `192.168.4.15:18056` on the LAN, or your own self-hosted instance — see
 [Vexa's README](https://github.com/Vexa-ai/vexa) to deploy one).

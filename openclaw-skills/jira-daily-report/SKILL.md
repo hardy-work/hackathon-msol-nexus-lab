@@ -56,7 +56,7 @@ Field "Plan start date" trên Jira của instance này là `customfield_10604` (
 
 Khi gọi API curl, luôn dùng `-H "Authorization: Bearer $JIRA_API_TOKEN"` và base URL `$JIRA_BASE_URL/rest/...`.
 
-Timezone: **Asia/Ho_Chi_Minh (UTC+7)**. "Hôm nay" = ngày hiện tại theo giờ VN.
+Timezone: **Asia/Ho_Chi_Minh (UTC+7)**. "Hôm nay" = ngày hiện tại theo giờ VN — **trừ khi ngày hiện tại rơi vào Thứ 7/CN** (không phải ngày làm việc, không ai có task nào "đang chạy" theo lịch), khi đó dùng **ngày làm việc gần nhất trước đó** (luôn là Thứ 6 liền trước — do Thứ 7/CN đứng liền nhau, cả 2 đều lùi về cùng 1 Thứ 6) làm "hôm nay" cho toàn bộ report. Luôn nói rõ với PM khi có lùi ngày, vd: "Hôm nay Thứ 7 (dd/mm), không phải ngày làm việc — báo cáo theo Thứ 6 gần nhất (dd/mm):".
 
 **Lịch làm việc chuẩn** (dùng để dựng lịch giờ tích luỹ ở Bước 3, và quy đổi ra ngày dời lịch ở Bước 6):
 - Ngày làm việc: **Thứ 2 → Thứ 6**. Thứ 7, Chủ nhật **không tính** khi đếm ngày dời task.
@@ -74,6 +74,12 @@ Chạy skill này khi PM nói kiểu:
 - "Check report hôm nay", "Tổng hợp report cuối ngày"
 - "Ai chưa report?", "Report của team hôm nay thế nào?"
 - "Có task nào trễ deadline không?"
+
+**Tự nhận diện dự án này quản lý trên Jira hay Sheet** — khi PM hỏi chung chung ("tổng hợp tiến độ hôm nay", "check report", không nói rõ Jira hay Sheet): kiểm tra `.env` của skill này (`JIRA_BASE_URL`, `JIRA_API_TOKEN`) và `.env` của skill Sheet (`GOOGLE_SHEETS_LINK` trong `gg-sheet-daily-report/.env` hoặc `gg-sheet/.env`):
+- Chỉ `.env` bên Jira có giá trị thật, bên Sheet rỗng/chưa điền → dùng skill này, chạy tiếp bình thường.
+- Chỉ `.env` bên Sheet có giá trị thật, bên Jira rỗng → dự án này theo Sheet, nhường cho skill `gg-sheet-daily-report`, KHÔNG tự chạy tiếp skill này.
+- Cả 2 cùng có giá trị, hoặc cùng rỗng → hỏi PM: "Dự án này bạn theo dõi tiến độ trên Jira hay Google Sheet?" rồi mới chạy đúng skill PM chọn.
+- PM đã nói rõ nguồn (vd "check report Jira", "report trên sheet thế nào") → dùng thẳng skill được chỉ định, bỏ qua bước tự nhận diện này.
 
 ---
 
