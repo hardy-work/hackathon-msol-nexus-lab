@@ -1,7 +1,8 @@
 # daily-report
 
-Nhắc nhở team report task hàng ngày trong Slack qua cron, và follow-up DM
-riêng người chưa report. Xem [`SKILL.md`](SKILL.md) cho luồng chi tiết.
+Nhắc nhở team report task hàng ngày trong Slack qua cron, và follow-up tag
+người chưa report ngay trong thread của tin nhắc. Xem [`SKILL.md`](SKILL.md)
+cho luồng chi tiết.
 
 ## Setup
 
@@ -22,22 +23,31 @@ Restart Gateway sau khi cài xong. Xem thêm
 ```bash
 cp .env.example .env
 # điền SLACK_REPORT_CHANNEL, SLACK_REPORT_CHANNEL_ID, REMINDER_TIME,
-# REMINDER_TIMEZONE, REMINDER_WEEKDAYS_ONLY, FOLLOWUP_INTERVAL_MINUTES,
-# FOLLOWUP_CUTOFF_TIME
+# REMINDER_TIMEZONE, REMINDER_WEEKDAYS_ONLY, FOLLOWUP_CRON_1,
+# FOLLOWUP_CRON_2, FOLLOWUP_CUTOFF_TIME
 ```
 
 `SLACK_REPORT_CHANNEL_ID` là ID Slack thật (vd `C0BKLP5KYD7`, xem trong
 "About" của kênh) — bắt buộc cho bước 4 dưới đây (`openclaw cron create --to
 channel:<id>` cần ID, không nhận tên kênh).
 
-### 3. (Tuỳ chọn) copy vào OpenClaw workspace
+### 3. Khai roster cho nhóm
+
+Tạo `roster/<SLACK_REPORT_CHANNEL_ID>.json` liệt kê ai phải report — xem
+[`roster/README.md`](roster/README.md). Đây là nguồn duy nhất, bot **không**
+đọc danh sách thành viên kênh.
+
+Nhiều nhóm thì mỗi nhóm 1 file roster + 1 cặp cron job trỏ vào channel id
+tương ứng; skill dùng chung, không phải sửa `SKILL.md`.
+
+### 4. (Tuỳ chọn) copy vào OpenClaw workspace
 
 ```bash
 mkdir -p ~/.openclaw/workspace/skills
 ln -s "$(pwd)" ~/.openclaw/workspace/skills/daily-report
 ```
 
-### 4. Đăng ký 2 cron job (1 lần duy nhất)
+### 5. Đăng ký 2 cron job (1 lần duy nhất)
 
 Skill chỉ mô tả *cách* nhắc/follow-up — cron job thật sự phải được tạo qua
 `openclaw cron create` (chính xác theo giờ, không trôi như polling/heartbeat).
@@ -50,12 +60,16 @@ create` với giá trị lấy từ `.env`. Kiểm tra lại bằng `openclaw cr
 
 ## Known limitations
 
-- Chỉ nhắc + follow-up DM — không thu thập/parse nội dung report, không đẩy
-  đi Google Sheets hay Jira. Ai muốn theo dõi nội dung report thì tự đọc lại
-  trong thread Slack.
-- Reminder/follow-up dựa vào đọc lịch sử kênh trong ngày để biết ai chưa
-  report — nếu channel history bị giới hạn (Slack free tier) thì có thể nhắc
-  nhầm.
+- Chỉ nhắc + follow-up trong thread — không thu thập nội dung report, không
+  đẩy đi Google Sheets hay Jira. Ai muốn theo dõi nội dung report thì tự đọc
+  lại trong thread Slack.
+- Bot có kiểm **cấu trúc** dòng report (`NEX-số | trạng thái | giờ | ghi chú`)
+  để biết ai report cho có lệ, nhưng không đánh giá nội dung — reply không đủ
+  4 field bị tính là chưa report và sẽ bị nhắc sửa mẫu.
+- Ai phải report lấy từ roster, nên roster phải được cập nhật tay khi có người
+  vào/ra nhóm — bot không tự đồng bộ theo thành viên kênh.
+- Follow-up dựa vào đọc reply trong thread để biết ai đã report — nếu channel
+  history bị giới hạn (Slack free tier) thì có thể nhắc nhầm người đã report.
 - State file (`state/<ngày>.json`) là file cục bộ trên máy chạy Gateway —
   không đồng bộ nếu bạn chạy Gateway trên nhiều máy cùng lúc (xem cảnh báo ở
   README gốc repo về việc chỉ nên chạy 1 Gateway tại 1 thời điểm).
