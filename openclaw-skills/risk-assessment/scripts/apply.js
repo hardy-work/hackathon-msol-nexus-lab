@@ -2,8 +2,15 @@
 'use strict';
 
 /**
- * Action 2: Apply Draft — ghi THẬT vào Risk management / Issue management /
- * Next Action Plan (gg-sheet) hoặc Jira, sau khi PM đã xác nhận trong chat.
+ * Action 2: Apply Draft — ghi THẬT vào Risk management / Issue management
+ * (gg-sheet) hoặc Jira, sau khi PM đã xác nhận trong chat.
+ *
+ * Cả 2 tab Risk/Issue management dùng CHUNG 1 format chính thức (theo mẫu
+ * PM/mentor đã dựng sẵn trên sheet thật):
+ *   ID | Date Detected | Description | Priority | Related Assignee/Task |
+ *   Next Action | Status | Notes
+ * Không còn tab "Next Action Plan" riêng — "Next Action" nằm ngay trong
+ * dòng Risk/Issue.
  *
  * Agent vẫn là bên duy nhất diễn giải câu trả lời tự nhiên của PM (chọn
  * risk/issue nào, phương án nào) — script này chỉ làm phần cơ học: đọc input
@@ -20,17 +27,16 @@
  *   "draftDate": "2026-07-29",
  *   "appliedBy": "PM Kiên",
  *   "risks": [
- *     { "detectedFrom": "Sprint 1, No.1", "category": "Resource", "description": "...",
- *       "score": 6, "trend": "New", "chosenMitigation": "OT LongVN",
- *       "nextAction": { "description": "...", "owner": "LongVN", "due": "2026-08-01" } }
+ *     { "detectedFrom": "AU-3", "category": "Resource", "description": "...",
+ *       "priority": "Highest", "owner": "LongVN", "chosenMitigation": "OT LongVN" }
  *   ],
  *   "issues": [
- *     { "detectedFrom": "Sprint 1, No.3", "category": "Technical", "description": "...",
- *       "priority": "High" }
+ *     { "detectedFrom": "PCS-7", "category": "Technical", "description": "...",
+ *       "priority": "High", "owner": "SơnBH", "chosenMitigation": "Re-estimate lại" }
  *   ]
  * }
  *
- * In ra stdout 1 JSON: { ok, written: {risks,issues,nextActions}, auditLine }.
+ * In ra stdout 1 JSON: { ok, written: {risks,issues}, auditLine }.
  */
 
 const fs = require('fs');
@@ -44,10 +50,10 @@ loadEnv(path.join(ROOT, '.env'));
 const { getValuesWithApiKey, getValuesWithToken, updateValues } = require('./lib/sheets-client.js');
 const { getAccessToken } = require('./lib/google-auth.js');
 const { createIssue, updateIssue } = require('./lib/jira-client.js');
+const { toDMY, nextSequentialId, formatId, relatedAssigneeTask, notesTrace } = require('./lib/sheet-format.js');
 
-const RISK_HEADER = ['Category', 'Description', 'Detected From', 'Probability', 'Impact', 'Score', 'Trend', 'Priority', 'Owner', 'Mitigation', 'Status', 'Source', 'Last Updated'];
-const ISSUE_HEADER = ['Category', 'Description', 'Detected From', 'Priority', 'Score', 'Owner', 'Status', 'Raised Date', 'Source', 'Last Updated'];
-const NEXT_ACTION_HEADER = ['Description', 'Owner', 'Due', 'Related Detected From', 'Status'];
+// Format chính thức chung cho cả Risk management và Issue management.
+const RISK_ISSUE_HEADER = ['ID', 'Date Detected', 'Description', 'Priority', 'Related Assignee/Task', 'Next Action', 'Status', 'Notes'];
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -86,8 +92,12 @@ function makeTabReader(fileId) {
   return { readTab, getToken };
 }
 
-/** Đọc tab hiện có; nếu trống hoàn toàn (chưa có header) → coi header cần tạo mới. */
-async function ensureHeaderAndNextRow(tabReader, fileId, tabName, header, accessToken) {
+/**
+ * Đọc tab hiện có; nếu trống hoàn toàn (chưa có header) → tạo header mới.
+ * Trả về cả rows hiện có (để tính ID tiếp theo, xem nextSequentialId) lẫn
+ * số dòng tiếp theo để ghi — tránh phải đọc lại tab 2 lần.
+ */
+async function ensureHeaderAndGetRows(tabReader, fileId, tabName, header, accessToken) {
   let rows = [];
   try {
     rows = (await tabReader.readTab(tabName)) || [];
@@ -96,66 +106,43 @@ async function ensureHeaderAndNextRow(tabReader, fileId, tabName, header, access
   }
   if (rows.length === 0) {
     await updateValues(fileId, `${tabName}!A1`, [header], accessToken);
-    return 2; // dòng dữ liệu đầu tiên sau header mới tạo
+    return { rows: [header], nextRow: 2 };
   }
-  return rows.length + 1;
+  return { rows, nextRow: rows.length + 1 };
 }
 
-function riskRow(r, today_) {
-  return [
-    r.category,
-    r.description,
-    r.detectedFrom,
-    r.probability ?? '',
-    r.impact ?? '',
-    r.score ?? '',
-    r.trend || 'New',
-    r.priority || '',
-    r.owner || '',
-    r.chosenMitigation || '',
-    'Open',
-    'AI',
-    today_,
-  ];
+function riskRow(r, dateDetectedDMY, id) {
+  return [id, dateDetectedDMY, r.description, r.priority || '', relatedAssigneeTask(r), r.chosenMitigation || '', 'Open', notesTrace(r)];
 }
 
-function issueRow(i, today_) {
-  return [i.category, i.description, i.detectedFrom, i.priority, i.score ?? '', i.owner || '', 'Open', today_, 'AI', today_];
-}
-
-function nextActionRow(na, detectedFrom) {
-  return [na.description, na.owner || '', na.due || '', detectedFrom, 'Open'];
+function issueRow(i, dateDetectedDMY, id) {
+  return [id, dateDetectedDMY, i.description, i.priority || '', relatedAssigneeTask(i), i.chosenMitigation || '', 'Open', notesTrace(i)];
 }
 
 async function applyGgSheet(config, decision) {
   const tabReader = makeTabReader(config.read.fileId);
   const accessToken = await tabReader.getToken();
-  const todayStr = today();
-  const written = { risks: 0, issues: 0, nextActions: 0 };
+  const todayDMY = toDMY(today());
+  const written = { risks: 0, issues: 0 };
 
   const risks = decision.risks || [];
   const issues = decision.issues || [];
+  const lastCol = String.fromCharCode(64 + RISK_ISSUE_HEADER.length); // 8 cột → 'H'
 
   if (risks.length) {
-    let nextRow = await ensureHeaderAndNextRow(tabReader, config.read.fileId, config.output.riskTabName, RISK_HEADER, accessToken);
-    const rowsToWrite = risks.map((r) => riskRow(r, todayStr));
-    const range = `${config.output.riskTabName}!A${nextRow}:${String.fromCharCode(64 + RISK_HEADER.length)}${nextRow + rowsToWrite.length - 1}`;
+    const { rows, nextRow } = await ensureHeaderAndGetRows(tabReader, config.read.fileId, config.output.riskTabName, RISK_ISSUE_HEADER, accessToken);
+    let idNum = nextSequentialId(rows, 'R');
+    const rowsToWrite = risks.map((r) => riskRow(r, todayDMY, formatId('R', idNum++)));
+    const range = `${config.output.riskTabName}!A${nextRow}:${lastCol}${nextRow + rowsToWrite.length - 1}`;
     await updateValues(config.read.fileId, range, rowsToWrite, accessToken);
     written.risks = rowsToWrite.length;
-
-    const nextActions = risks.filter((r) => r.nextAction).map((r) => nextActionRow(r.nextAction, r.detectedFrom));
-    if (nextActions.length && config.output.nextActionTabName) {
-      let naNextRow = await ensureHeaderAndNextRow(tabReader, config.read.fileId, config.output.nextActionTabName, NEXT_ACTION_HEADER, accessToken);
-      const naRange = `${config.output.nextActionTabName}!A${naNextRow}:${String.fromCharCode(64 + NEXT_ACTION_HEADER.length)}${naNextRow + nextActions.length - 1}`;
-      await updateValues(config.read.fileId, naRange, nextActions, accessToken);
-      written.nextActions = nextActions.length;
-    }
   }
 
   if (issues.length) {
-    let nextRow = await ensureHeaderAndNextRow(tabReader, config.read.fileId, config.output.issueTabName, ISSUE_HEADER, accessToken);
-    const rowsToWrite = issues.map((i) => issueRow(i, todayStr));
-    const range = `${config.output.issueTabName}!A${nextRow}:${String.fromCharCode(64 + ISSUE_HEADER.length)}${nextRow + rowsToWrite.length - 1}`;
+    const { rows, nextRow } = await ensureHeaderAndGetRows(tabReader, config.read.fileId, config.output.issueTabName, RISK_ISSUE_HEADER, accessToken);
+    let idNum = nextSequentialId(rows, 'I');
+    const rowsToWrite = issues.map((i) => issueRow(i, todayDMY, formatId('I', idNum++)));
+    const range = `${config.output.issueTabName}!A${nextRow}:${lastCol}${nextRow + rowsToWrite.length - 1}`;
     await updateValues(config.read.fileId, range, rowsToWrite, accessToken);
     written.issues = rowsToWrite.length;
   }
@@ -168,7 +155,7 @@ async function applyJira(config, decision) {
   if (!JIRA_EMAIL || !JIRA_API_TOKEN || !JIRA_BASE_URL) {
     throw new Error('Thiếu JIRA_EMAIL/JIRA_API_TOKEN/JIRA_BASE_URL trong .env');
   }
-  const written = { risks: 0, issues: 0, nextActions: 0 };
+  const written = { risks: 0, issues: 0 };
   for (const r of decision.risks || []) {
     await createIssue({
       baseUrl: JIRA_BASE_URL,
@@ -213,7 +200,7 @@ function markDraftApplied(draftDate) {
 }
 
 function appendAuditLog(config, written, appliedBy) {
-  const line = `[${new Date().toISOString().replace('T', ' ').slice(0, 19)}] ACTION=apply SOURCE=${config.source} NEW=${written.risks + written.issues} UPDATED=0 BY="${appliedBy || 'PM'}" CHANGES="ghi ${written.risks} risk, ${written.issues} issue, ${written.nextActions} next action"`;
+  const line = `[${new Date().toISOString().replace('T', ' ').slice(0, 19)}] ACTION=apply SOURCE=${config.source} NEW=${written.risks + written.issues} UPDATED=0 BY="${appliedBy || 'PM'}" CHANGES="ghi ${written.risks} risk, ${written.issues} issue"`;
   fs.appendFileSync(path.join(ROOT, 'risk-assessment-audit.log'), `${line}\n`, 'utf8');
   return line;
 }

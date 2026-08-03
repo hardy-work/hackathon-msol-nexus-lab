@@ -97,6 +97,34 @@ test('rowsToTasks: reads taskPriority when Priority column mapped', () => {
   assert.equal(tasks[0].taskPriority, 'High');
 });
 
+test('rowsToTasks: detectedFrom uses TaskID column when mapped, not row number', () => {
+  const columnsWithTaskId = {
+    Category: 'A',
+    TaskID: 'B',
+    Task: 'C',
+    Assignee: 'D',
+    'Estimate(h)': 'E',
+    'Plan Start': 'F',
+    'Plan End': 'G',
+    'Re-estimate(h)': 'H',
+    'Actual Effort(h)': 'I',
+    Status: 'J',
+  };
+  const rows = [
+    ['Authentication', 'AU-1', 'API Login', 'SơnBH', '8', '', '', '', '', 'Open'],
+    ['', 'AU-2', 'API Logout', 'SơnBH', '8', '', '', '', '', 'Open'],
+  ];
+  const tasks = rowsToTasks({ rows, columns: columnsWithTaskId, tabName: 'Sprint 1', statusDoneValues: ['Done'] });
+  assert.equal(tasks[0].detectedFrom, 'AU-1');
+  assert.equal(tasks[1].detectedFrom, 'AU-2');
+});
+
+test('rowsToTasks: detectedFrom falls back to "<tab>, row N" when no TaskID column mapped', () => {
+  const rows = [['1', 'Sprint 1', 'Backend', 'Task A', 'LongVN', '8', '', '', '', '', 'Open']];
+  const tasks = rowsToTasks({ rows, columns: COLUMNS, tabName: 'Sprint 1', statusDoneValues: ['Done'] });
+  assert.equal(tasks[0].detectedFrom, 'Sprint 1, row 1');
+});
+
 test('rowsToTasks: taskPriority is null when Priority column not mapped', () => {
   const rows = [['1', 'Sprint 1', 'Backend', 'Task A', 'LongVN', '8', '', '', '', '', 'Open']];
   const tasks = rowsToTasks({ rows, columns: COLUMNS, tabName: 'Sprint 1', statusDoneValues: ['Done'] });

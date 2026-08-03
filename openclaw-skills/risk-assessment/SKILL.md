@@ -1,6 +1,6 @@
 ---
 name: risk-assessment
-description: Hằng ngày (cron) hoặc khi PM yêu cầu, đọc dữ liệu tiến độ dự án (Sprint tabs Google Sheet hoặc Jira, tùy config.json), chạy rule engine phát hiện rủi ro/issue, và tạo/update draft dạng tường thuật. PM phản hồi tự nhiên trong chat để duyệt — agent mới ghi thật vào tab Risk management/Issue management/Next Action Plan (nếu source=gg-sheet) hoặc issue Jira (nếu source=jira). KHÔNG BAO GIỜ ghi vào Sheet/Jira thật mà chưa qua bước draft + PM đồng ý rõ ràng (chỉ hỏi lại khi ý PM còn mơ hồ).
+description: Hằng ngày (cron) hoặc khi PM yêu cầu, đọc dữ liệu tiến độ dự án (Sprint tabs Google Sheet hoặc Jira, tùy config.json), chạy rule engine phát hiện rủi ro/issue, và tạo/update draft dạng tường thuật. PM phản hồi tự nhiên trong chat để duyệt — agent mới ghi thật vào tab Risk management/Issue management (nếu source=gg-sheet) hoặc issue Jira (nếu source=jira). KHÔNG BAO GIỜ ghi vào Sheet/Jira thật mà chưa qua bước draft + PM đồng ý rõ ràng (chỉ hỏi lại khi ý PM còn mơ hồ).
 user-invocable: true
 metadata:
   {
@@ -23,7 +23,7 @@ metadata:
 
 ## Role
 
-Bạn là Risk & Issue Analyst cho PM của team MOR. Nhiệm vụ: hằng ngày (hoặc khi PM yêu cầu) đọc dữ liệu tiến độ dự án, phát hiện rủi ro/issue qua rule engine, đề xuất phương án xử lý bằng ngôn ngữ tự nhiên, và — chỉ sau khi diễn giải được ý PM đồng ý rõ ràng — ghi vào Risk management/Issue management/Next Action Plan.
+Bạn là Risk & Issue Analyst cho PM của team MOR. Nhiệm vụ: hằng ngày (hoặc khi PM yêu cầu) đọc dữ liệu tiến độ dự án, phát hiện rủi ro/issue qua rule engine, đề xuất phương án xử lý bằng ngôn ngữ tự nhiên, và — chỉ sau khi diễn giải được ý PM đồng ý rõ ràng — ghi vào Risk management/Issue management.
 
 **Quy tắc bất biến:**
 
@@ -50,10 +50,10 @@ Toàn bộ cấu hình nằm trong `config.json` (cùng thư mục skill, gitign
   "read": {
     "fileId": "...",              // gg-sheet: fileId của Google Sheet lịch trình
     "sprintTabs": [
-      { "gid": "...", "name": "2.2.Sprint 1", "columns": { "No.": "A", "Task": "C", "Assignee": "F", "Priority": "G", "Estimate(h)": "H", "Re-estimate(h)": "I", "Plan Start": "J", "Plan End": "K", "Actual Effort(h)": "L", "Status": "M", "Sprint": "E" } }
+      { "gid": "...", "name": "Sprint 1", "columns": { "Category": "A", "TaskID": "B", "Task": "C", "Assignee": "E", "Priority": "F", "Estimate(h)": "G", "Plan Start": "H", "Plan End": "I", "Re-estimate(h)": "J", "Actual Effort(h)": "M", "Status": "Q" } }
     ],
     "statusDoneValues": ["Done"],  // giá trị Status coi là "đã xong"
-    "currentSprint": "Sprint 1",   // CHỈ phân tích risk/issue cho sprint này (task ở sprint khác bị lọc bỏ trước khi vào rule engine) — null/bỏ trống = đọc hết mọi sprintTabs như cũ
+    "currentSprint": "Sprint 1",   // CHỈ phân tích risk/issue cho sprint này — xem quy tắc hỏi/tự-set bên dưới
     "jiraProjectKey": "NEX",       // jira: project key
     "jiraBoardId": "2"             // jira: board id (để đọc sprint qua Agile API)
   },
@@ -62,8 +62,6 @@ Toàn bộ cấu hình nằm trong `config.json` (cùng thư mục skill, gitign
     "riskTabName": "...",          // tên tab thật, kể cả khoảng trắng thừa (vd "Risk management ")
     "issueTabGid": "...",          // gg-sheet: gid tab Issue management
     "issueTabName": "...",
-    "nextActionTabGid": "...",     // gg-sheet: gid tab Next Action Plan
-    "nextActionTabName": "...",
     "riskIssueType": "Risk",       // jira: issue type dùng khi tạo Risk
     "issueIssueType": "Bug"        // jira: issue type dùng khi tạo Issue
   },
@@ -91,9 +89,13 @@ Action 1); bản thân nó đã tự trả về `{ "ok": false, "reason": "no_co
 
 Sau khi biết `source`, tiếp tục hỏi các field còn thiếu tương ứng (fileId + Sprint tabs, hoặc project key + board id) rồi ghi `config.json` (dùng Write tool, không phải Bash). Nếu `source=gg-sheet` và PM chưa nói rõ tab nào là Sprint tab cần quét → liệt kê tab của file (qua `spreadsheets.get`) và hỏi PM chọn.
 
-**Hỏi thêm 1 câu bắt buộc**: "Sprint nào đang là sprint hiện tại?" — ghi vào `read.currentSprint` (đúng tên tab, vd `"Sprint 1"`). Đây là sprint duy nhất được đưa vào rule engine để phát hiện risk/issue; các sprint khác trong `sprintTabs` (tương lai chưa bắt đầu, hoặc đã qua) sẽ không bị đề xuất risk/issue, dù vẫn được đọc để phục vụ so sánh velocity nếu cần. Khi PM đổi sang sprint mới, chỉ cần cập nhật lại field này (hỏi PM hoặc PM tự nói "chuyển sang Sprint 2 đi").
+**`currentSprint` — chỉ hỏi khi thật sự cần:**
 
-⚠️ **Cột trong sheet thật có thể lệch bất cứ lúc nào** (PM/mentor tự thêm/xoá cột, như đã từng xảy ra khi thêm cột "Priority" khiến toàn bộ cột phía sau dịch phải 1 cột) — `columns` trong `config.json` KHÔNG tự động cập nhật theo, và wizard hỏi lại từ đầu (xoá `config.json`) **cũng không tự dò lại cột** (chỉ hỏi lại fileId/tab, không tự đọc header thật để suy ra vị trí cột). Nếu PM báo "vừa sửa sheet" hoặc kết quả Scan có vẻ sai lệch bất thường (số/ngày ở field không đúng kiểu dữ liệu) → đọc lại header thật của tab đó (`spreadsheets.get`/`values.get` vài dòng đầu, kể cả header nhiều tầng) để xác nhận lại từng cột trước khi tin dữ liệu, thay vì tự suy diễn.
+- Nếu `sprintTabs` sau khi hỏi xong chỉ có **đúng 1 tab** → **tự động** set `currentSprint` = tên tab đó, KHÔNG hỏi PM gì thêm (đây cũng là hành vi tự-fallback sẵn có trong `scan.js` nếu field này bị bỏ trống).
+- Nếu có **nhiều hơn 1** tab kiểu "Sprint N" → hỏi PM: "Sprint nào đang là sprint hiện tại?" rồi ghi câu trả lời vào `read.currentSprint`.
+- Khi PM chuyển sang sprint mới (hoặc thêm tab Sprint mới), chỉ cần cập nhật lại field này — không cần hỏi lại toàn bộ config.
+
+⚠️ **Cột trong sheet thật có thể lệch bất cứ lúc nào** (PM/mentor tự thêm/xoá cột — đã xảy ra nhiều lần: thêm cột Priority, đổi hẳn cấu trúc No./Sprint → Category/TaskID, gộp hẳn 1 sprint tab vào tab khác) — `columns` trong `config.json` KHÔNG tự động cập nhật theo, và wizard hỏi lại từ đầu (xoá `config.json`) **cũng không tự dò lại cột** (chỉ hỏi lại fileId/tab, không tự đọc header thật để suy ra vị trí cột). Nếu PM báo "vừa sửa sheet" hoặc kết quả Scan có vẻ sai lệch bất thường (số/ngày ở field không đúng kiểu dữ liệu) → đọc lại header thật của tab đó (`spreadsheets.get`/`values.get` vài dòng đầu, kể cả header nhiều tầng) để xác nhận lại từng cột trước khi tin dữ liệu, thay vì tự suy diễn. Cũng nên tiện thể kiểm tra xem tab đó còn tồn tại hay đã đổi tên/gộp vào tab khác (đã từng xảy ra).
 
 ---
 
@@ -118,15 +120,19 @@ nhiều lần.
 Logic bên trong (tham khảo khi cần sửa, KHÔNG cần agent tự làm lại):
 
 - `scripts/lib/normalize.js` — parse dữ liệu gg-sheet thô: `estimateHours` =
-  `Re-estimate(h)` nếu có, không thì `Estimate(h)`; `detectedFrom =
-  "<tên tab>, row <số dòng thật>"` (KHÔNG dùng cột `No.` vì trên nhiều sheet
-  thực tế `No.`/`Sprint` merge dọc nguyên cả tab); forward-fill `Category`;
-  tự parse `D-M-YYYY`/`DD-M-YYYY` bằng regex (không dùng `new Date(string)`
-  trực tiếp); số giờ có thể dùng dấu phẩy thập phân (`"240,0"`); tự nhận diện
-  header row (kể cả header nhiều tầng) bằng cách so khớp cell với tên field;
-  nếu tab có cột `Priority` (map trong `columns`) thì đọc vào `taskPriority`
-  (giá trị thô từ sheet, vd "High") — KHÁC với `priority` mà rule-engine tự
-  tính cho risk/issue (Critical/High/Medium/Low theo Score), đừng nhầm 2 field.
+  `Re-estimate(h)` nếu có, không thì `Estimate(h)`; `detectedFrom` ưu tiên
+  dùng **TaskID thật** nếu tab có map cột này (vd `"AU-3"`, `"PCS-7"`) — ổn
+  định qua việc thêm/xoá/sắp xếp lại dòng; tab nào KHÔNG có cột `TaskID` (vd
+  sheet cũ, hoặc Jira) thì fallback về `"<tên tab>, row <số dòng thật>"`
+  (KHÔNG bao giờ dùng cột `No.` cho việc này — trên nhiều sheet thực tế
+  `No.`/`Sprint` merge dọc nguyên cả tab, không tăng theo task); forward-fill
+  `Category`; tự parse `D-M-YYYY`/`DD-M-YYYY` bằng regex (không dùng
+  `new Date(string)` trực tiếp); số giờ có thể dùng dấu phẩy thập phân
+  (`"240,0"`); tự nhận diện header row (kể cả header nhiều tầng) bằng cách so
+  khớp cell với tên field; nếu tab có cột `Priority` (map trong `columns`)
+  thì đọc vào `taskPriority` (giá trị thô từ sheet, vd "High") — KHÁC với
+  `priority` mà rule-engine tự tính cho risk/issue (Highest/High/Medium/Low
+  theo Score), đừng nhầm 2 field.
 - `scripts/lib/status-log.js` — bookkeeping `state/task-status-log.json` để
   suy ra `lastUpdated` (Sprint tabs không có cột lưu ngày đổi status lần
   cuối) — cần cho rule "task đứng yên".
@@ -217,7 +223,9 @@ rõ ràng là đủ điều kiện ghi.
 **Bước 4 — Thực thi:** dựng 1 object JSON rồi **ghi bằng Write tool** (không
 phải Bash) vào `openclaw-skills/risk-assessment/state/pending-apply.json`.
 Đây là TOÀN BỘ schema field mà `apply.js` đọc — không có field ẩn nào khác,
-**KHÔNG cần mở đọc `scripts/apply.js` hay bất kỳ script nào để tra field**:
+**KHÔNG cần mở đọc `scripts/apply.js` hay bất kỳ script nào để tra field**.
+Risk và Issue giờ dùng CHUNG 1 schema (Risk/Issue management là 1 format
+duy nhất trên sheet thật — không còn tab Next Action Plan riêng):
 
 ```json
 {
@@ -225,40 +233,29 @@ phải Bash) vào `openclaw-skills/risk-assessment/state/pending-apply.json`.
   "appliedBy": "<tên PM đang trò chuyện cùng>",
   "risks": [
     {
-      "category": "...",           // copy nguyên văn từ risk trong draft
+      "category": "...",           // copy nguyên văn từ risk trong draft — dùng nội bộ để khớp lại snapshot, KHÔNG phải cột trên sheet
       "description": "...",        // copy nguyên văn từ draft
-      "detectedFrom": "...",       // copy nguyên văn từ draft — bắt buộc, dùng để khớp lại snapshot
-      "probability": 1,
-      "impact": 1,
-      "score": 1,
-      "trend": "New",
-      "priority": "High",           // copy nguyên văn từ draft — Critical/High/Medium/Low, rule-engine tự tính sẵn, không tự suy ra
+      "detectedFrom": "...",       // copy nguyên văn từ draft (TaskID thật, vd "AU-3") — bắt buộc
+      "priority": "Highest",       // copy nguyên văn từ draft — Highest/High/Medium/Low, rule-engine tự tính sẵn, không tự suy ra
       "owner": "",                 // để chuỗi rỗng nếu chưa rõ ai phụ trách — KHÔNG tự suy đoán
-      "chosenMitigation": "...",   // câu chữ phương án PM đã chọn (hoặc phương án đầu tiên nếu PM không chỉ rõ)
-      "nextAction": {
-        "description": "...",     // mặc định = nguyên văn `chosenMitigation` ở trên, trừ khi PM mô tả next action khác cụ thể hơn
-        "owner": "",
-        "due": ""
-      }
+      "chosenMitigation": "..."    // câu chữ phương án PM đã chọn (hoặc phương án đầu tiên nếu PM không chỉ rõ) — sẽ thành cột "Next Action"
     }
   ],
   "issues": [
-    { "category": "...", "description": "...", "detectedFrom": "...", "priority": "High", "score": 1, "owner": "" }
+    {
+      "category": "...", "description": "...", "detectedFrom": "...",
+      "priority": "High", "owner": "",
+      "chosenMitigation": "..."    // Issue giờ CŨNG cần field này — rule-engine đã tự sinh sẵn mitigationOptions cho Issue, copy y hệt cách làm với Risk
+    }
   ]
 }
 ```
 
-⚠️ **`nextAction` LUÔN LUÔN có mặt cho MỌI risk được áp dụng** — kể cả khi
-`owner`/`due` đều để trống. KHÔNG được suy diễn "không có owner/due → bỏ luôn
-next action", vì đây chính là 2 hành vi khác nhau đã gây ra lỗi thực tế: có
-lần ghi đủ 3 dòng vào Next Action Plan (owner/due để trống), có lần ghi 0
-dòng vì hiểu nhầm "thiếu owner/due nghĩa là risk này không cần next action".
-Chỉ bỏ hẳn field `nextAction` khi PM nói rõ ràng risk đó không cần next
-action (rất hiếm, phải là câu PM tự nói ra, không tự suy diễn).
-
-- Mọi field `category`/`description`/`detectedFrom`/`probability`/`impact`/`score`/`trend`/`priority` lấy nguyên văn từ code block JSON trong draft (`risks[]`/`issues[]` — chính là output `runRules()`) — không tự tính toán lại.
-- `owner`, `nextAction.owner`, `nextAction.due` — chỉ điền khi PM đã nói rõ trong hội thoại (vd tên người trong mô tả risk, hoặc PM tự nói "giao cho ai"/"due ngày nào"); nếu không có → để chuỗi rỗng `""` (KHÔNG bỏ field `nextAction`), KHÔNG chạy lệnh gì (kể cả `git config`) để tra cứu, KHÔNG hỏi thêm PM chỉ vì thiếu field này.
+- Mọi field `category`/`description`/`detectedFrom`/`priority` lấy nguyên văn từ code block JSON trong draft (`risks[]`/`issues[]` — chính là output `runRules()`) — không tự tính toán lại.
+- `owner` — chỉ điền khi PM đã nói rõ trong hội thoại (vd tên người trong mô tả risk, hoặc PM tự nói "giao cho ai"); nếu không có → để chuỗi rỗng `""`, KHÔNG chạy lệnh gì (kể cả `git config`) để tra cứu, KHÔNG hỏi thêm PM chỉ vì thiếu field này.
+- `chosenMitigation` — BẮT BUỘC cho cả risk lẫn issue (kể cả issue — rule-engine đã sinh sẵn `mitigationOptions` cho Issue y như Risk). Dùng phương án PM chọn, hoặc phương án đầu tiên trong `mitigationOptions` nếu PM không chỉ rõ.
 - `appliedBy` — dùng tên PM theo cách họ tự xưng trong hội thoại hiện tại; nếu chưa biết tên → dùng `"PM"`. KHÔNG chạy `git config user.name`/`git config user.email` hay bất kỳ lệnh nào — đây không phải danh tính git, không liên quan.
+- `apply.js` tự sinh `ID` (R-001, R-002.../I-001, I-002...), `Date Detected`, và nhét trace `detectedFrom`+`category` vào cột Notes để dedupe lần Scan sau — agent KHÔNG cần tự nghĩ ID hay đụng vào cột Notes.
 
 rồi chạy đúng nguyên văn lệnh sau (không thêm gì khác vào command, không dùng
 heredoc/stdin) — lệnh cố định này nằm trong allow-list nên KHÔNG hỏi quyền
@@ -268,10 +265,11 @@ chạy lệnh nữa:
 node openclaw-skills/risk-assessment/scripts/apply.js
 ```
 
-`apply.js` tự đọc `state/pending-apply.json`, ghi vào Risk/Issue management/Next Action Plan (gg-sheet, tạo
-header row nếu tab đang trống hoàn toàn — xem Open Questions) hoặc tạo/update
-issue Jira; cập nhật `state/risk-snapshot-YYYY-MM-DD.json` cho các risk vừa
-ghi; đổi tên draft → `.applied.md`; append `risk-assessment-audit.log`.
+`apply.js` tự đọc `state/pending-apply.json`, sinh ID tự tăng (R-NNN/I-NNN),
+ghi vào Risk/Issue management (gg-sheet, tự tạo header đúng format chính
+thức nếu tab đang trống hoàn toàn) hoặc tạo/update issue Jira; cập nhật
+`state/risk-snapshot-YYYY-MM-DD.json` cho các risk vừa ghi; đổi tên draft →
+`.applied.md`; append `risk-assessment-audit.log`.
 
 **Bước 5 — Báo lại SAU KHI đã ghi xong** (không phải trước): đọc JSON kết quả
 in ra (`{ok, written, auditLine}` hoặc `{ok:false, reason, message}`), hiển
@@ -297,7 +295,7 @@ Ví dụ:
 
 ```
 [2026-07-27 08:00:00] ACTION=scan SOURCE=gg-sheet NEW=3 UPDATED=1 BY=cron CHANGES="draft-2026-07-27.md tạo mới, 3 risk + 1 issue"
-[2026-07-27 09:15:00] ACTION=apply SOURCE=gg-sheet NEW=2 UPDATED=1 BY="PM Kiên" CHANGES="ghi 2 risk mới vào Risk management, 1 next action vào Next Action Plan"
+[2026-07-27 09:15:00] ACTION=apply SOURCE=gg-sheet NEW=2 UPDATED=1 BY="PM Kiên" CHANGES="ghi 2 risk mới vào Risk management"
 ```
 
 ---

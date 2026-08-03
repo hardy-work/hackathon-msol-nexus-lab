@@ -1,6 +1,6 @@
 # risk-assessment — Cách dùng
 
-Skill giúp PM **phát hiện rủi ro/issue dự án hằng ngày** từ dữ liệu tiến độ (Google Sheet hoặc Jira, tùy project), đề xuất phương án xử lý bằng ngôn ngữ tự nhiên, và (sau khi PM duyệt) ghi vào Risk management / Issue management / Next Action Plan.
+Skill giúp PM **phát hiện rủi ro/issue dự án hằng ngày** từ dữ liệu tiến độ (Google Sheet hoặc Jira, tùy project), đề xuất phương án xử lý bằng ngôn ngữ tự nhiên, và (sau khi PM duyệt) ghi vào Risk management / Issue management (không còn tab Next Action Plan riêng — "Next Action" nằm ngay trong dòng Risk/Issue).
 
 Chưa cấu hình gì cả — cứ gõ thẳng yêu cầu, skill sẽ tự hỏi bạn nguồn dữ liệu (gg-sheet hay Jira) nếu cần.
 

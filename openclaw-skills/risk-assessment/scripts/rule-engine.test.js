@@ -63,14 +63,14 @@ test('rule 2: assignee overload on a single day → risk', () => {
   assert.match(overload.description, /LongVN/);
 });
 
-test('risk always carries a priority band (Critical/High/Medium/Low), same scale as issue', () => {
+test('risk always carries a priority band (Highest/High/Medium/Low), same scale as issue', () => {
   const tasks = [
     baseTask({ id: 'T1', assignee: 'LongVN', planStart: '2026-07-27', planEnd: '2026-07-27', estimateHours: 12, detectedFrom: 'Sprint 1, No.1' }),
   ];
   const { risks } = runRules({ tasks, thresholds: THRESHOLDS, today: TODAY });
   const overload = risks.find((r) => r.category === 'Resource');
   assert.equal(overload.score, 6);
-  assert.equal(overload.priority, 'Critical'); // score 6 >= highScoreThreshold 6
+  assert.equal(overload.priority, 'Highest'); // score 6 >= highScoreThreshold 6
 });
 
 test('rule 2: assignee within capacity → no overload risk', () => {
@@ -176,7 +176,7 @@ test('rule 7: stable velocity across sprints → no risk', () => {
 test('score = probability × impact, and highScoreThreshold marks High', () => {
   const tasks = [baseTask({ planEnd: '2026-07-10', isDone: false, detectedFrom: 'Sprint 1, No.1' })];
   const { issues } = runRules({ tasks, thresholds: THRESHOLDS, today: TODAY });
-  assert.equal(issues[0].priority, 'Critical');
+  assert.equal(issues[0].priority, 'Highest');
 });
 
 test('rule 8: task past Plan Start with no actual effort logged → risk', () => {

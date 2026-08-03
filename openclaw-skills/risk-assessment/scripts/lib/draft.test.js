@@ -15,9 +15,9 @@ test('buildNarrative: high-score risk goes under "Cần chú ý ngay"', () => {
 });
 
 test('buildNarrative: risk with priority shows [Priority] tag, matching issue style', () => {
-  const risks = [{ riskId: null, category: 'Resource', description: 'Quá tải', detectedFrom: 'Sprint 1, No.1', score: 6, priority: 'Critical', trend: 'Stable', mitigationOptions: [] }];
+  const risks = [{ riskId: null, category: 'Resource', description: 'Quá tải', detectedFrom: 'Sprint 1, No.1', score: 6, priority: 'Highest', trend: 'Stable', mitigationOptions: [] }];
   const text = buildNarrative({ risks, issues: [], resolvedRisks: [], thresholds: THRESHOLDS });
-  assert.match(text, /\[Critical\] Quá tải/);
+  assert.match(text, /\[Highest\] Quá tải/);
 });
 
 test('buildNarrative: risk without priority renders without a stray tag', () => {

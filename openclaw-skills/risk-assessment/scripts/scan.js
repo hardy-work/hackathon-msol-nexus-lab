@@ -28,6 +28,7 @@ const { buildNarrative, buildDraftFile, dedupeAgainstExisting } = require('./lib
 const { getValuesWithApiKey, getValuesWithToken } = require('./lib/sheets-client.js');
 const { getAccessToken } = require('./lib/google-auth.js');
 const { searchIssues } = require('./lib/jira-client.js');
+const { parseNotesTrace } = require('./lib/sheet-format.js');
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -106,7 +107,15 @@ async function readJiraTasks(config) {
   return jiraIssuesToTasks(issues);
 }
 
-/** Bước 4 (SKILL.md): đọc Risk/Issue management THẬT để loại đề xuất trùng detectedFrom+category. */
+/**
+ * Bước 4 (SKILL.md): đọc Risk/Issue management THẬT để loại đề xuất trùng
+ * detectedFrom+category. Format chính thức của 2 tab này (ID | Date Detected
+ * | Description | Priority | Related Assignee/Task | Next Action | Status |
+ * Notes) không có cột Category/Detected From riêng — scripts/apply.js đã
+ * nhét trace máy-đọc-được vào cột Notes lúc ghi (xem notesTrace() trong
+ * scripts/lib/sheet-format.js), ở đây parse lại đúng trace đó để tái tạo key
+ * dedupe.
+ */
 async function readExistingKeys(config, tabReader) {
   const keys = new Set();
   const tabNames = [config.output.riskTabName, config.output.issueTabName].filter(Boolean);
@@ -119,11 +128,11 @@ async function readExistingKeys(config, tabReader) {
     }
     if (!rows || rows.length < 2) continue; // trống hoặc chỉ có header/không có header
     const header = rows[0].map((h) => (h || '').toString().trim());
-    const catIdx = header.indexOf('Category');
-    const detIdx = header.findIndex((h) => /detected from/i.test(h));
-    if (catIdx === -1 || detIdx === -1) continue;
+    const notesIdx = header.findIndex((h) => /notes/i.test(h));
+    if (notesIdx === -1) continue;
     for (const row of rows.slice(1)) {
-      if (row[catIdx] && row[detIdx]) keys.add(`${row[catIdx]}__${row[detIdx]}`);
+      const trace = parseNotesTrace(row[notesIdx]);
+      if (trace) keys.add(`${trace.category}__${trace.detectedFrom}`);
     }
   }
   return keys;
@@ -168,13 +177,20 @@ async function main() {
     return;
   }
 
-  // Chỉ phân tích risk/issue cho sprint hiện tại (nếu đã cấu hình) — task ở
-  // sprint khác (vd sprint tương lai chưa bắt đầu) không đưa vào rule engine.
-  // Lưu ý: ruleVelocityDrop cần task của ≥2 sprint để so sánh nên sẽ không
-  // bao giờ bắn khi bị scope về đúng 1 sprint hiện tại — đây là đánh đổi
-  // chấp nhận được, không phải bug.
-  if (config.read.currentSprint) {
-    tasks = tasks.filter((t) => t.sprint === config.read.currentSprint);
+  // Chỉ phân tích risk/issue cho sprint hiện tại — task ở sprint khác (vd
+  // sprint tương lai chưa bắt đầu) không đưa vào rule engine. Nếu PM chưa
+  // set `currentSprint` nhưng config chỉ có ĐÚNG 1 sprint tab → tự động coi
+  // tab đó là sprint hiện tại, không cần hỏi (chỉ hỏi khi có >1 tab, xem
+  // SKILL.md mục Config). Lưu ý: ruleVelocityDrop cần task của ≥2 sprint để
+  // so sánh nên sẽ không bao giờ bắn khi bị scope về đúng 1 sprint hiện tại
+  // — đây là đánh đổi chấp nhận được, không phải bug.
+  const currentSprint =
+    config.read.currentSprint ||
+    (config.source === 'gg-sheet' && config.read.sprintTabs && config.read.sprintTabs.length === 1
+      ? config.read.sprintTabs[0].name
+      : null);
+  if (currentSprint) {
+    tasks = tasks.filter((t) => t.sprint === currentSprint);
   }
 
   const yesterdaySnapshotPath = path.join(ROOT, 'state', `risk-snapshot-${shiftDate(todayStr, -1)}.json`);

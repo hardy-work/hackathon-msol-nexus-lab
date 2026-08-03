@@ -43,14 +43,16 @@ function daysBetween(fromIso, toIso) {
   return Math.round((new Date(toIso) - new Date(fromIso)) / MS_PER_DAY);
 }
 
+// Vocabulary khớp đúng dropdown "Priority" trong tab Config của sheet thật:
+// Highest / High / Medium / Low (không phải Critical/High/Medium/Low).
 function priorityFromScore(score, th) {
-  if (score >= th.highScoreThreshold) return 'Critical';
+  if (score >= th.highScoreThreshold) return 'Highest';
   if (score >= th.highScoreThreshold - 2) return 'High';
   if (score >= 2) return 'Medium';
   return 'Low';
 }
 
-function makeIssue({ category, description, detectedFrom, probability, impact, today, th }) {
+function makeIssue({ category, description, detectedFrom, probability, impact, mitigationOptions, today, th }) {
   const score = probability * impact;
   return {
     issueId: null,
@@ -61,6 +63,7 @@ function makeIssue({ category, description, detectedFrom, probability, impact, t
     priority: priorityFromScore(score, th),
     score,
     owner: null,
+    mitigationOptions: mitigationOptions || [], // dùng cho cột "Next Action" khi ghi vào Issue management
     status: 'Open',
     raisedDate: today,
     targetResolution: null,
@@ -105,6 +108,10 @@ function ruleOverdue(tasks, today, th) {
           detectedFrom: t.detectedFrom,
           probability: 3,
           impact,
+          mitigationOptions: [
+            `Xác nhận lại deadline mới với PM/khách hàng`,
+            `Bổ sung người hỗ trợ đẩy nhanh tiến độ`,
+          ],
           today,
           th,
         })
@@ -159,6 +166,10 @@ function ruleEffortOverrun(tasks, today, th) {
           detectedFrom: t.detectedFrom,
           probability: 2,
           impact: ratio > th.estimateVarianceRatio * 1.5 ? 3 : 2,
+          mitigationOptions: [
+            `Re-estimate lại phần việc còn lại`,
+            `Trao đổi với ${t.assignee || 'assignee'} về khó khăn phát sinh`,
+          ],
           today,
           th,
         })

@@ -75,8 +75,15 @@ function rowsToTasks({ rows, columns, tabName, statusDoneValues }) {
     const status = (get(row, 'Status') || '').toString().trim();
     const estimateHours = parseHoursNumber(get(row, 'Re-estimate(h)')) ?? parseHoursNumber(get(row, 'Estimate(h)'));
 
+    // Ưu tiên dùng TaskID thật (vd "AU-3") làm detectedFrom nếu tab có mapping
+    // cột này — ổn định qua việc thêm/xoá/sắp xếp lại dòng, khác hẳn "row N"
+    // (vốn lệch ngay khi ai đó chèn thêm 1 dòng phía trên). Tab không có cột
+    // TaskID (vd Jira, hoặc sheet cũ) thì fallback về kiểu cũ.
+    const taskId = get(row, 'TaskID');
+    const detectedFrom = taskId && String(taskId).trim() ? String(taskId).trim() : `${tabName}, row ${rowNumber}`;
+
     tasks.push({
-      id: get(row, 'No.') || null,
+      id: get(row, 'No.') || taskId || null,
       title: String(title).trim(),
       assignee: get(row, 'Assignee') ? String(get(row, 'Assignee')).trim() : null,
       status,
@@ -92,7 +99,7 @@ function rowsToTasks({ rows, columns, tabName, statusDoneValues }) {
       // risk/issue dựa theo Score. Đặt tên khác để khỏi lẫn 2 khái niệm.
       taskPriority: get(row, 'Priority') ? String(get(row, 'Priority')).trim() : null,
       lastUpdated: null, // điền bởi scripts/lib/status-log.js
-      detectedFrom: `${tabName}, row ${rowNumber}`,
+      detectedFrom,
     });
   });
 
