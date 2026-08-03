@@ -36,6 +36,10 @@ function request(url, opt = {}) {
       );
     });
     req.on('error', reject);
+    req.setTimeout(30000, () => {
+      req.destroy();
+      reject(new Error('HTTP request timeout (30s)'));
+    });
     if (opt.body) req.write(opt.body);
     req.end();
   });
@@ -111,6 +115,10 @@ function uploadFile(name, parentId, filePath, mimetype) {
       }
     );
     req.on('error', reject);
+    req.setTimeout(30000, () => {
+      req.destroy();
+      reject(new Error(`Upload ${name} timeout (30s)`));
+    });
     req.write(body);
     req.end();
   });
@@ -170,6 +178,7 @@ function linkRuns(files) {
     { name: fill(config.folderName) || `Evidence ${today}`, mimeType: 'application/vnd.google-apps.folder' }
   );
   console.log(`Folder: ${folder.name}`);
+  if (!DRY) console.log(`  Link: ${folder.webViewLink}`);
 
   // Ảnh nằm trong folder con riêng để file sheet không lẫn giữa hàng chục ảnh.
   const imgFolder = await api(
