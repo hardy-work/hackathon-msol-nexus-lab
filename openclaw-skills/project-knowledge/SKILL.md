@@ -21,6 +21,14 @@ python3 scripts/run.py \
 
 Wrapper mặc định chạy deterministic, không gọi mạng và không gọi LLM. Dùng `--llm` chỉ khi runtime Claude đã được cấu hình và cần câu hỏi mở; nếu không, giữ mặc định để bảo toàn tính tái lập.
 
+Khi `--llm` được bật, các câu hỏi không trả được ở bậc 1 sẽ đi qua Haiku Router
+(`scripts/router.py`). Haiku chỉ phân loại `structured`, `document`, `semantic`,
+`graph`, `open`, `action` hoặc `unsupported`; nó không sinh câu trả lời. Route `graph`
+được dùng cho quan hệ nhiều bước giữa task/người/milestone/status. Route `open`
+hoặc route cần tổng hợp mới chuyển context đã chọn cho Sonnet. Nếu Claude/Haiku
+không chạy được, router tự lui về heuristic và flow keyword/LLM cũ, không làm
+thay đổi kết quả deterministic.
+
 Khi tích hợp Claude, đọc adapter tại `adapters/claude/CLAUDE.md`; adapter chỉ thay lớp runtime, không thay contract facts/citation.
 
 ## Hợp đồng trả lời
@@ -35,6 +43,11 @@ Skill trả JSON gồm:
 - `tier`: bậc truy vấn đã trả lời;
 - `project`: project đang tra cứu;
 - `suggested_actions`: proposal read-only, luôn yêu cầu approval và mặc định rỗng.
+- `route` (tuỳ chọn): route, confidence và nguồn của cheap router khi câu hỏi
+  cần định tuyến; câu trả lời bậc 1 không gọi model nên không có trường này.
+- `freshness`: trạng thái `fresh`, `stale` hoặc `unknown` của tầng derived;
+  kèm `knowledge_version` và `knowledge_as_of` để biết câu trả lời dựa trên
+  phiên bản corpus nào.
 
 Hiển thị citation cùng câu trả lời khi đưa lên giao diện chat. Giữ nguyên `not_in_kb` và `confident_no` như skill trả về, không đổi thành một loại “không có” chung.
 
@@ -46,6 +59,10 @@ Hiển thị citation cùng câu trả lời khi đưa lên giao diện chat. Gi
 4. Không thực hiện write action. Nếu người dùng muốn sửa Jira/Excel, trả lời context hiện có và chuyển yêu cầu cho action skill có permission/approval.
 5. Khi `derived/facts.duckdb` chưa tồn tại, yêu cầu chạy `bash scripts/run_all.sh` rồi thử lại.
 6. Nếu người dùng yêu cầu ghi/cập nhật, chỉ tạo `suggested_actions`; không thực hiện action.
+   Proposal phải giữ `required_permission=project_action:write` và chuyển cho action
+   skill bên ngoài để kiểm tra actor/role và xin approval.
+7. Nếu `freshness.state=stale`, phải cảnh báo người dùng chạy `bash scripts/run_all.sh`
+   trước khi dùng câu trả lời cho quyết định mới.
 
 ## Demo flow
 
@@ -63,6 +80,19 @@ gọi trong các eval để bắt output thiếu citation, lẫn runtime marker 
 `not_in_kb` thành phủ định chắc chắn.
 
 Smoke test cho contract/paraphrase nằm ở `scripts/skill_selftest.py`.
+Smoke test route offline nằm ở `scripts/router_selftest.py`; có thể xem route mà
+không gọi Claude bằng `python3 scripts/router.py --offline "câu hỏi"`.
+Kiểm tra freshness bằng `python3 scripts/versioning.py check`; metadata được tạo
+tự động trong `derived/corpus_version.json` bởi `scripts/run_all.sh`.
+
+Các câu hỏi quan hệ nhiều bước (task–assignee–role–milestone/status) được ưu
+tiên qua `derived/graph.json`. Graph chỉ là index dẫn xuất; mọi task vẫn giữ
+`src` từ `raw/nexus-sprint1.facts.json`, và không tự suy ra dependency nếu nguồn
+chưa khai báo.
+
+Stage 0/1 có `scripts/inventory.py` để kiểm kê format/hash và đánh dấu duplicate
+cho người duyệt canonical. Inventory không tự xoá hoặc chọn tài liệu; Gate 1
+vẫn là cổng bất biến của `originals/`.
 
 Config chỉ khai báo vocabulary `tech_stack`; chưa có quan hệ người–tech-stack.
 Vì vậy câu hỏi “ai làm JavaScript?” phải trả `not_in_kb`, không được suy ra từ

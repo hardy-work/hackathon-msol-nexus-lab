@@ -14,6 +14,8 @@ python3 scripts/lint.py >/dev/null
 python3 scripts/numeric_guard.py >/dev/null
 python3 scripts/response_style.py >/dev/null
 python3 scripts/skill_selftest.py
+python3 scripts/versioning.py check --summary
+python3 scripts/graph_selftest.py
 python3 scripts/eval.py | tail -n 12
 python3 scripts/eval_extended.py | tail -n 3
 python3 scripts/eval_coverage.py | tail -n 3
@@ -29,6 +31,8 @@ queries=(
   "Re-est của Sprint 1 là bao nhiêu giờ?"
   "TùngDV có task nào trong Sprint 1 không?"
   "Có issue nào trong Issue management không?"
+  "Liệt kê các task thuộc Authentication"
+  "Những người liên quan đến Authentication là ai?"
 )
 for query in "${queries[@]}"; do
   echo

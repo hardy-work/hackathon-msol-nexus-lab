@@ -14,6 +14,10 @@ python3 adapters/slack/slack_bridge.py \
 
 The output is a Slack-compatible response payload containing `blocks`, a
 thread target when available, and machine-readable metadata under `metadata`.
+By default the bridge is deterministic/offline. Set
+`PROJECT_KNOWLEDGE_LLM=1` to enable the Haiku router and Sonnet fallback for
+open questions; if the model runtime is unavailable it safely falls back to
+the deterministic path.
 
 ## Supported inputs
 
@@ -26,9 +30,21 @@ The parser strips `<@BOT_ID>` mentions and keeps `channel_id`, `user_id`,
 Slack's signing secret and reject stale timestamps before invoking the bridge;
 `parse_event.py` includes the HMAC helper for that boundary.
 
+For a minimal local gateway, run:
+
+```bash
+python3 adapters/slack/slack_http.py
+```
+
+It listens on `/slack/events`, validates `SLACK_SIGNING_SECRET`, and returns
+the formatted response directly. If `SLACK_BOT_TOKEN` is configured, it posts
+the Block Kit response asynchronously with `chat.postMessage`; no credentials
+are stored in the skill.
+
 ## Response rules
 
-- Keep `status`, `confidence`, `citations`, `reason`, and `tier` in `metadata`.
+- Keep `status`, `confidence`, `citations`, `reason`, `tier`, and optional
+  `route` telemetry in `metadata`.
 - Render citations as Slack context bullets; do not hide provenance.
 - Render `suggested_actions` as approval buttons only. The bridge never calls
   Jira, Excel, mail, or another write API.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -16,8 +17,12 @@ RUN = SKILL_ROOT / "scripts" / "run.py"
 
 
 def query_project(text: str) -> dict:
+    use_llm = os.getenv("PROJECT_KNOWLEDGE_LLM", "0").lower() in {"1", "true", "yes", "on"}
+    args = [sys.executable, str(RUN), "--project", "nexus", "--query", text]
+    if use_llm:
+        args.append("--llm")
     proc = subprocess.run(
-        [sys.executable, str(RUN), "--project", "nexus", "--query", text],
+        args,
         cwd=SKILL_ROOT, text=True, capture_output=True, check=False,
     )
     try:

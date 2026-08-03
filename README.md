@@ -160,13 +160,23 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 bash demo/run_demo.sh
 ```
 
 The normal entrypoint is `scripts/run.py`. It is deterministic and does not
-need network or Claude credentials. Gate 3b review and the optional LLM answer
-tier are opt-in only.
+need network or Claude credentials. With `--llm`, unresolved queries use a
+cheap Haiku router first and send selected wiki context to Sonnet; Gate 3b
+review remains opt-in.
+
+The pipeline also builds a task relationship graph and records corpus
+version/freshness metadata. Query JSON reports `fresh`, `stale`, or `unknown`
+so a changed workbook cannot silently look like a current answer. Run
+`scripts/run_all.sh` after replacing the workbook.
+
+The stage-by-stage mapping and remaining data boundaries are documented in
+[`openclaw-skills/project-knowledge/FLOW_STATUS.md`](openclaw-skills/project-knowledge/FLOW_STATUS.md).
 
 `demo/run_slack_demo.sh` exercises the Slack-shaped adapter locally without a
-token. A production Slack transport still belongs at the gateway boundary
-(OpenClaw Slack integration or a Bolt/HTTP receiver) and must verify the
-signing secret before forwarding events to this read-only skill.
+token. A minimal signed HTTP boundary is available at
+`adapters/slack/slack_http.py`; set `SLACK_SIGNING_SECRET` and run it on
+`/slack/events`. `SLACK_BOT_TOKEN` is optional and is used only to post the
+formatted Block Kit response. The Project Knowledge skill remains read-only.
 
 To expose it to an OpenClaw workspace, link the skill directory and restart the
 gateway:

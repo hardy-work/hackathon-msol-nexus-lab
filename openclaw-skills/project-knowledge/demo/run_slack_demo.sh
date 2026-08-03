@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 python3 adapters/slack/slack_selftest.py
+python3 adapters/slack/slack_http_selftest.py
 echo
 echo "[slack-demo] app_mention response"
 python3 adapters/slack/slack_bridge.py \

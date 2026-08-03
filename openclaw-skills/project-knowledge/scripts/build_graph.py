@@ -20,6 +20,7 @@ Tầng dẫn xuất (§0): KHÔNG commit, dựng lại được từ wiki/. Xoá
 import json
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 import yaml
@@ -34,6 +35,16 @@ DIM_REL = {"role": "has_role", "project": "in_project",
            "domain": "in_domain", "assignee": "is"}
 
 
+def slug(value):
+    value = unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-") or "unknown"
+
+
+def row_values(row):
+    return {cell["header"].strip().casefold(): cell
+            for cell in row.get("cells", {}).values() if cell.get("value") not in (None, "")}
+
+
 def frontmatter(text):
     m = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.S)
     if not m:
@@ -46,6 +57,18 @@ def frontmatter(text):
 
 def build():
     nodes, edges, dim_nodes = {}, [], {}
+
+    def dimension_node(dim, value):
+        vid = f"{dim}:{slug(value)}"
+        dim_nodes[vid] = {"id": vid, "type": "dimension", "dim": dim, "value": value}
+        return vid
+
+    def edge(source, target, rel, src=None):
+        item = {"from": source, "to": target, "rel": rel}
+        if src:
+            item["src"] = src
+        edges.append(item)
+
     for p in sorted(WIKI.rglob("*.md")):
         if p.name in ("index.md", "log.md"):
             continue
@@ -58,7 +81,7 @@ def build():
         }
         # cạnh mentions từ [[link]] (thân bài + frontmatter)
         for tgt in set(LINK.findall(body) + LINK.findall(str(fm))):
-            edges.append({"from": pid, "to": tgt, "rel": "mentions"})
+            edge(pid, tgt, "mentions")
         # cạnh theo DIMENSION
         for dim, rel in DIM_REL.items():
             val = fm.get(dim)
@@ -66,16 +89,81 @@ def build():
                 continue
             for one in (val if isinstance(val, list) else [val]):
                 vid = f"{dim}:{one}"
-                dim_nodes[vid] = {"id": vid, "type": "dimension",
-                                  "dim": dim, "value": one}
-                edges.append({"from": pid, "to": vid, "rel": rel})
+                vid = dimension_node(dim, one)
+                edge(pid, vid, rel)
+
+    # Dựng node task từ facts có provenance.  Wiki entity pages chỉ đủ để nối
+    # người/role; task rows mới cho phép đi nhiều bước task -> người -> sprint /
+    # status / milestone. Không suy ra dependency nếu workbook không khai báo.
+    task_facts = ROOT / "raw" / "nexus-sprint1.facts.json"
+    task_count = 0
+    if task_facts.exists():
+        payload = json.loads(task_facts.read_text(encoding="utf-8"))
+        people_by_name = {str(n.get("name")): pid for pid, n in nodes.items()
+                          if n.get("type") == "entity-person"}
+        current_category = None
+        current_category_src = None
+        for row in payload.get("rows", []):
+            cells = row_values(row)
+            task_cell = cells.get("taskid")
+            name_cell = cells.get("task")
+            if not task_cell or not task_cell.get("value"):
+                continue
+            task_id = str(task_cell["value"])
+            task_node = f"task:{slug(task_id)}"
+            task_name = str(name_cell.get("value", task_id)) if name_cell else task_id
+            attrs = {
+                "task_id": task_id,
+                "name": task_name,
+                "sprint": 1,
+                "source": task_cell.get("src"),
+            }
+            if cells.get("category milestone", {}).get("value"):
+                current_category = cells["category milestone"]["value"]
+                current_category_src = cells["category milestone"].get("src")
+            if current_category:
+                attrs["category"] = current_category
+            for header, key in (("role", "role"),
+                                ("assignee", "assignee"), ("status", "status"),
+                                ("priority", "priority")):
+                if header in cells:
+                    attrs[key] = cells[header].get("value")
+            nodes[task_node] = {"id": task_node, "type": "task", **attrs}
+            edge(task_node, dimension_node("sprint", "Sprint 1"), "in_sprint",
+                 task_cell.get("src"))
+            for key, rel, dim in (("category", "in_milestone", "category"),
+                                  ("role", "has_role", "role"),
+                                  ("status", "has_status", "task_status"),
+                                  ("priority", "has_priority", "priority")):
+                if attrs.get(key):
+                    source = cells.get(key, {}).get("src")
+                    if key == "category":
+                        source = current_category_src
+                    edge(task_node, dimension_node(dim, attrs[key]), rel, source)
+            assignee = attrs.get("assignee")
+            if assignee:
+                person = people_by_name.get(assignee)
+                if person:
+                    edge(task_node, person, "assigned_to", cells["assignee"].get("src"))
+                else:
+                    edge(task_node, dimension_node("assignee", assignee), "assigned_to",
+                         cells["assignee"].get("src"))
+            for header, rel in (("blocked by", "blocked_by"), ("depends on", "depends_on"),
+                                ("dependency", "depends_on")):
+                dependency = cells.get(header, {}).get("value")
+                if dependency:
+                    for dep_id in re.findall(r"[A-Za-z]+-\d+", str(dependency)):
+                        edge(task_node, f"task:{slug(dep_id)}", rel,
+                             cells[header].get("src"))
+            task_count += 1
 
     graph = {
         "nodes": list(nodes.values()) + list(dim_nodes.values()),
         "edges": edges,
-        "meta": {"pages": len(nodes), "dimension_nodes": len(dim_nodes),
+        "meta": {"pages": sum(n.get("type") != "task" for n in nodes.values()),
+                 "task_nodes": task_count, "dimension_nodes": len(dim_nodes),
                  "edges": len(edges),
-                 "note": "dẫn xuất từ wiki/ (typed links + DIMENSION); không commit"},
+                 "note": "dẫn xuất từ wiki/raw facts (typed links + DIMENSION); không commit"},
     }
     DERIVED.mkdir(exist_ok=True)
     (DERIVED / "graph.json").write_text(
@@ -86,8 +174,8 @@ def build():
 def main():
     g = build()
     m = g["meta"]
-    print(f"✓ derived/graph.json — {m['pages']} trang + {m['dimension_nodes']} nút DIMENSION, "
-          f"{m['edges']} cạnh")
+    print(f"✓ derived/graph.json — {m['pages']} trang + {m.get('task_nodes', 0)} task + "
+          f"{m['dimension_nodes']} nút DIMENSION, {m['edges']} cạnh")
     if "--stats" in sys.argv:
         by_rel = {}
         for e in g["edges"]:

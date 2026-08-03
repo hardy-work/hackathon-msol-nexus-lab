@@ -19,6 +19,7 @@ import re
 import json
 import sys
 import unicodedata
+import contextlib
 from pathlib import Path
 
 import duckdb
@@ -26,11 +27,15 @@ import duckdb
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import numeric_guard
 import models
+import router
+import versioning
+import graph_retrieval
 
 # Bậc 2 NGỮ NGHĨA (vector bge-m3 trên TRANG WIKI). Lười nạp: model ~2GB nên CHỈ nạp
 # khi thật sự dùng (câu mở, LLM bật). Không có chỉ mục / thiếu thư viện -> None,
 # hệ tự lui về keyword thuần, không sập.
 _SEM = False
+_GRAPH = False
 
 
 def SEM():
@@ -38,9 +43,12 @@ def SEM():
     if _SEM is False:
         try:
             from embed_index import Semantic
-            _SEM = Semantic()
+            # Transformers/tqdm may print model-loading progress.  Keep the
+            # JSON entrypoint stdout-clean; diagnostics belong on stderr.
+            with contextlib.redirect_stdout(sys.stderr), contextlib.redirect_stderr(sys.stderr):
+                _SEM = Semantic()
         except Exception as e:
-            print(f"{D}(bậc 2 vector tắt: {type(e).__name__}){OFF}")
+            print(f"{D}(bậc 2 vector tắt: {type(e).__name__}){OFF}", file=sys.stderr)
             _SEM = None
     return _SEM
 
@@ -49,6 +57,13 @@ def semantic_pages(q, k=6):
     sem = SEM()
     if sem is None:
         return []
+
+
+def GRAPH():
+    global _GRAPH
+    if _GRAPH is False:
+        _GRAPH = graph_retrieval.load(ROOT)
+    return _GRAPH
     try:
         return [p for _, p in sem.search(q, k=k)]
     except Exception:
@@ -371,9 +386,10 @@ def sig(s):
 
 
 class Result:
-    def __init__(self, tier, outcome, answer, cites=None, reason="", sql=""):
+    def __init__(self, tier, outcome, answer, cites=None, reason="", sql="", route=None):
         self.tier, self.outcome, self.answer = tier, outcome, answer
         self.cites, self.reason, self.sql = cites or [], reason, sql
+        self.route = route
 
     def show(self):
         col = {CO: G, NO: R, NF: Y}[self.outcome]
@@ -391,6 +407,7 @@ class KB:
     def __init__(self):
         if not DB.exists():
             sys.exit("chưa có derived/facts.duckdb — chạy: python3 scripts/build_db.py")
+        self.freshness = versioning.check(ROOT)
         self.con = duckdb.connect(str(DB), read_only=True)
         self.people = self.con.execute(
             "SELECT assignee,name,role,task_count,estimate_h,actual_h,page,src_task,src_actual "
@@ -1041,10 +1058,13 @@ CÂU HỎI: {q}
 
 ===== CÁC TRANG WIKI =====
 {ctx}
+
+===== GRAPH CONTEXT (nếu có) =====
+{graph}
 """
 
 
-def tier3(kb, q, pages, timeout=120):
+def tier3(kb, q, pages, graph_context="", timeout=120):
     """Bậc 3: LLM đọc đúng những trang WIKI bậc 2 tìm được. Không cho nó tự đi tìm,
     và (realign A) KHÔNG đọc raw — chỉ trang đã qua Gate 3."""
     import subprocess
@@ -1054,7 +1074,8 @@ def tier3(kb, q, pages, timeout=120):
         # prompt qua STDIN (nhiều trang wiki dễ vượt trần dòng lệnh ~32KB của Windows).
         out = subprocess.run(
             [models.CLAUDE, "-p", "--model", models.LIGHT, "--allowedTools", ""],
-            input=TIER3_PROMPT.format(q=q, ctx=ctx), capture_output=True, text=True,
+            input=TIER3_PROMPT.format(q=q, ctx=ctx, graph=graph_context or "(không có)"),
+            capture_output=True, text=True,
             encoding="utf-8", timeout=timeout, cwd=ROOT)
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
         return Result(3, NF, "Bậc 3 không chạy được.", reason=f"{type(e).__name__}: {e}")
@@ -1094,16 +1115,52 @@ def ask(kb, q, llm=True):
 
     Bậc 3 BẬT MẶC ĐỊNH. Bậc 2 tự nó chỉ trả về "có trang liên quan", đó không phải
     câu trả lời. Tắt bằng llm=False (eval dùng, để tất định và nhanh)."""
+    decision = None
+    graph_context = ""
+    graph_citations = ()
+
+    def finish(result):
+        """Attach routing telemetry without changing the answer contract."""
+        if decision is not None:
+            result.route = decision
+        return result
+
+    graph = GRAPH()
+    if graph is not None and graph_retrieval.is_relation_query(q):
+        direct = graph.direct_answer(q)
+        if direct is not None:
+            result = Result(2, CO, direct.answer, cites=list(direct.citations),
+                            reason=direct.reason,
+                            route=router.Decision("graph", 1.0, direct.reason, "graph"))
+            return gate4(result)
+        graph_context, graph_citations = graph.context(q)
+
     r = tier1(kb, q)
     if r:
-        return gate4(r)
+        return finish(gate4(r))
 
     # Vẫn còn trong BẬC 1: quét bảng đã nạp. Phải chạy TRƯỚC bậc 2 — sơ đồ quy định
     # bậc 1 (tất định) luôn thử trước, và bậc 2 chỉ trả về "có trang liên quan" chứ
     # không phải câu trả lời, nên để nó chen lên trước là mất câu trả lời có thật.
     fb = doc_fallback(kb, q)
     if fb:
-        return gate4(fb)
+        return finish(gate4(fb))
+
+    # Haiku is called only after the deterministic path has failed.  This keeps
+    # normal PM lookups offline and cheap, while allowing ambiguous/open queries
+    # to select the right retrieval tier.  A fallback decision deliberately uses
+    # the legacy policy below, so a missing Claude binary cannot change answers.
+    if llm:
+        decision = router.classify(q)
+    model_route = (decision.route if decision and decision.source == "haiku" else None)
+    if model_route == "action":
+        return finish(Result(
+            1, NF,
+            "Đây là yêu cầu ghi/cập nhật dữ liệu, không phải câu hỏi tra cứu.",
+            reason="Haiku định tuyến sang action skill; cần permission và approval trước khi ghi.",
+        ))
+    if model_route == "graph" and graph is not None:
+        graph_context, graph_citations = graph.context(q)
 
     r2 = tier2(kb, q)
     pages = list(r2.cites or getattr(r2, "pages", []))
@@ -1116,13 +1173,21 @@ def ask(kb, q, llm=True):
             pages.insert(0, pg)
     # BẬC 2 = keyword + vector, hợp nhất bằng RRF (chỉ khi LLM bật; eval tất định
     # thì bỏ qua, khỏi nạp model 2GB). Ép giữ trang định danh đóng (người được nhắc).
-    if llm:
+    use_semantic = llm and (model_route is None or model_route in ("semantic", "open"))
+    if use_semantic:
         pin = [kb.person(s)[6] for s in kb.find_people(q)]
         sem = semantic_pages(q, k=6)
         if sem:
             pages = rrf_merge([pages, sem], keep=6, pin=pin)
-    if llm and pages:
-        r3 = gate4(tier3(kb, q, pages))
+    # A structured route that missed Tier 1 may still have useful wiki context
+    # (for example, a paraphrase).  Let Sonnet summarize those keyword hits;
+    # only action/unsupported routes suppress model generation.
+    allow_sonnet = llm and (model_route is None or model_route in
+                            ("structured", "document", "semantic", "open"))
+    if allow_sonnet and (pages or graph_context):
+        r3 = gate4(tier3(kb, q, pages, graph_context=graph_context))
+        if graph_citations:
+            r3.cites = list(dict.fromkeys([*r3.cites, *graph_citations]))
         # Bậc 3 nói KHÔNG TÌM THẤY thì vẫn dùng câu của nó — nó nêu ĐÍCH DANH cái
         # đang thiếu, hữu ích hơn câu chung chung của bậc 2. Nhưng phải gắn kèm
         # lời cảnh báo của bậc 2, vì LLM không được phép tự nói câu đó.
@@ -1130,10 +1195,10 @@ def ask(kb, q, llm=True):
             r3.reason = (r3.reason + " Đây là 'kho không biết', KHÔNG phải 'không có' — "
                          "chỉ bậc 1 với DIMENSION đóng + coverage đã ký mới được nói "
                          "'chắc chắn không'.")
-        return r3
+        return finish(r3)
     if r2.outcome == CO:   # bậc 3 tắt: đừng vờ như đã trả lời
         r2.outcome = NF
-    return gate4(r2)
+    return finish(gate4(r2))
 
 
 # Câu NỐI TIẾP RÚT GỌN: chỉ nhắc tên người, ý còn lại lấy từ câu trước.

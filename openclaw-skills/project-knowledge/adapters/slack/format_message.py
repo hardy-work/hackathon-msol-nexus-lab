@@ -75,6 +75,14 @@ def format_result(result: dict[str, Any], thread_ts: str = "") -> dict[str, Any]
             "project": result.get("project", "nexus"),
         },
     }
+    if result.get("freshness"):
+        response["metadata"]["freshness"] = result["freshness"]
+        response["metadata"]["knowledge_version"] = result.get("knowledge_version")
+        response["metadata"]["knowledge_as_of"] = result.get("knowledge_as_of")
+    if result.get("route"):
+        # Keep router telemetry in metadata for the gateway/audit sink without
+        # exposing model internals in the user-facing answer.
+        response["metadata"]["route"] = result["route"]
     if thread_ts:
         response["thread_ts"] = thread_ts
     return response

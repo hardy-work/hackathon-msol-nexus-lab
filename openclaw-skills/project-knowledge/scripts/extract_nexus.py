@@ -31,6 +31,9 @@ ASSIGNEE = {
 
 
 def write_raw(raw_id, sheet, kind, body, payload):
+    # Normalize generated Markdown so a rebuild is byte-stable.  Empty sheets
+    # otherwise accumulate an extra blank line and appear as source changes.
+    body = body.rstrip()
     (RAW / f"{raw_id}.md").write_text(
         f"---\nraw_id: {raw_id}\ndoc_id: {DOC_ID}\nsheet: {sheet!r}\n"
         f"kind: {kind}\ngenerated_by: scripts/extract_nexus.py\n---\n\n"

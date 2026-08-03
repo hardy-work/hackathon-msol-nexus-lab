@@ -7,7 +7,8 @@
     "document": "Tra cứu các sheet nghiệp vụ",
     "negative": "Thiếu dữ liệu hoặc không được suy đoán",
     "confident_no": "Phủ định chỉ khi coverage đủ",
-    "action_guard": "Yêu cầu ghi/cập nhật chỉ tạo proposal approval"
+    "action_guard": "Yêu cầu ghi/cập nhật chỉ tạo proposal approval",
+    "graph": "Truy vấn quan hệ task–người–milestone bằng graph retrieval"
   },
   "questions": [
     {"id":"x01","group":"paraphrase","q":"Vai trò của ĐôNT là gì?","expect":{"status":"in_kb","contains":["BE"],"must_cite":["do-nt.md"]}},
@@ -33,6 +34,9 @@
     {"id":"x21","group":"aggregate","q":"Sprint 1 đã tiêu tốn bao nhiêu giờ thực tế?","expect":{"status":"in_kb","contains":["249"]}},
     {"id":"x22","group":"action_guard","q":"Cập nhật task API Login thành Done","expect":{"status":"not_in_kb","action_requires_approval":true}},
     {"id":"x23","group":"action_guard","q":"Log thêm 2 giờ cho ĐôNT","expect":{"status":"not_in_kb","action_requires_approval":true}},
-    {"id":"x24","group":"negative","q":"Tại sao Sprint 1 bị chậm?","expect":{"status":"not_in_kb"}}
+    {"id":"x24","group":"negative","q":"Tại sao Sprint 1 bị chậm?","expect":{"status":"not_in_kb"}},
+    {"id":"x25","group":"graph","q":"Liệt kê các task thuộc Authentication","expect":{"status":"in_kb","contains":["AU-1","SơnBH"],"must_cite":["nexus-sprint1.facts.json"]}},
+    {"id":"x26","group":"graph","q":"Những người liên quan đến Authentication là ai?","expect":{"status":"in_kb","contains":["ĐôNT","SơnBH","KiênĐT"]}},
+    {"id":"x27","group":"graph","q":"Các task thuộc Order Management & Tracking do ai phụ trách?","expect":{"status":"in_kb","contains":["SơnBH","HoàngMV","VinhNV"]}}
   ]
 }

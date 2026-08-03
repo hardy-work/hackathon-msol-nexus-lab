@@ -24,7 +24,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Tra cứu Nexus Project Knowledge skill")
     parser.add_argument("--project", default="nexus", help="project id, demo hiện hỗ trợ nexus")
     parser.add_argument("--query", required=True, help="câu hỏi cần tra cứu")
-    parser.add_argument("--llm", action="store_true", help="bật bậc LLM cho câu hỏi mở")
+    parser.add_argument("--llm", action="store_true",
+                        help="bật Haiku router và bậc Sonnet cho câu hỏi mở")
     args = parser.parse_args()
 
     if args.project.lower() != "nexus":
@@ -69,6 +70,28 @@ def main() -> int:
             "project": args.project,
             "suggested_actions": suggested_actions(args.query, status, result.cites),
         }
+        freshness = getattr(kb, "freshness", None)
+        if freshness is not None:
+            payload["freshness"] = freshness
+            payload["knowledge_version"] = freshness.get("version")
+            payload["knowledge_as_of"] = freshness.get("as_of")
+            if freshness.get("state") == "stale":
+                warning = "Dữ liệu dẫn xuất có thể đã cũ; hãy chạy scripts/run_all.sh trước khi demo."
+                payload["reason"] = f"{payload['reason']} {warning}".strip()
+            elif freshness.get("state") == "unknown":
+                warning = "Chưa xác nhận freshness của dữ liệu; hãy chạy scripts/run_all.sh trước khi demo."
+                payload["reason"] = f"{payload['reason']} {warning}".strip()
+        # Route telemetry is optional: deterministic Tier 1 answers do not need
+        # a model call, while unresolved queries expose how the cheap router
+        # selected the next retrieval tier.  Keep it machine-readable for Slack
+        # and later audit/latency evaluation.
+        if result.route is not None:
+            payload["route"] = {
+                "name": result.route.route,
+                "confidence": result.route.confidence,
+                "source": result.route.source,
+                "reason": result.route.reason,
+            }
     except Exception as exc:  # keep the agent contract machine-readable
         payload = {
             "status": "error",
@@ -95,6 +118,8 @@ def suggested_actions(query: str, status: str, citations: list[str]) -> list[dic
         "type": "project_action",
         "status": "proposed",
         "requires_approval": True,
+        "required_permission": "project_action:write",
+        "approval_flow": "external_action_skill",
         "description": "Chuyển yêu cầu ghi/cập nhật sang action skill có permission; Project Knowledge không tự thay đổi dữ liệu.",
         "request": query,
         "context_status": status,
