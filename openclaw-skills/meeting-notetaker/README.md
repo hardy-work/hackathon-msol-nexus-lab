@@ -9,10 +9,15 @@ Everything this skill needs lives in this one folder:
 
 This skill also depends on the standalone backend server
 [`soniox-bridge`](../../services/soniox-bridge/) (transcription; replaces
-self-hosted Whisper — see its README for why and how to deploy) and,
-optionally, [`live-translate`](../../services/live-translate/) (the shared
-live transcript + translation web view). Both live under
-[`services/`](../../services/) and deploy independently of this skill.
+self-hosted Whisper — see its README for why and how to deploy) and
+[`live-translate`](../../services/live-translate/) (the shared live transcript
++ translation web view). Both live under [`services/`](../../services/) and
+deploy independently of this skill. **`live-translate` is required, not
+optional** — `get_transcript` reads exclusively from its assembled transcript
+(sourced from the B-full continuous Soniox stream via `vexa-bot-patch/`).
+Vexa's own `/transcripts` endpoint is never called; Vexa is only used for bot
+orchestration now (`join_meeting`/`bot_status`/`stop_meeting`/`list_meetings`),
+since its confirm layer used to drop text at ~30s turn seams.
 
 ## Install
 

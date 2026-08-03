@@ -82,7 +82,7 @@ one before doing anything else.
    poll. Vexa's bot does not reliably notice when it's alone in an empty
    room — if **3 consecutive polls (~6 minutes)** show no new segments,
    treat that as everyone having left: call `stop_meeting` yourself, treat
-   the meeting as ended, and proceed to steps 5-7 as normal. Then, before
+   the meeting as ended, and proceed to steps 5-8 as normal. Then, before
    step 9's delivery, ask the user to confirm they still want the
    summary sent (the "meeting ended" call is a heuristic, not a certainty
    — a long silent stretch during a real, ongoing meeting is possible) —
@@ -91,13 +91,19 @@ one before doing anything else.
 5. **Fetch the transcript.** Once the bot is no longer active, call
    `get_transcript(platform, native_meeting_id)`. If it comes back empty,
    wait 30s and retry once — the final transcript can lag slightly behind
-   the bot leaving. Delegate steps 6-7 (dedup/noise-filter/context-correct,
-   and drafting the summary prose) to a sub-agent using the **Haiku**
-   model rather than doing them inline yourself — give it the raw segments
-   plus steps 6-7's exact instructions below, and have it return the
-   filtered transcript and the drafted summary together. This matters even
-   for short transcripts (Haiku is the intended model for this analysis
-   work), not just to manage context size on long ones.
+   the bot leaving. Also call `stop_meeting(platform, native_meeting_id)`
+   right here (safe even if it already left) — don't hold the bot's seat
+   while steps 6-8 run, since step 7 may need to wait on a reply. Delegate
+   step 6 (dedup/noise-filter/context-correct, plus flagging gaps for step
+   7) to a sub-agent using the **Haiku** model rather than doing it inline
+   yourself — give it the raw segments plus step 6's exact instructions
+   below, and have it return the filtered transcript and the gap list
+   together. This matters even for short transcripts (Haiku is the
+   intended model for this analysis work), not just to manage context size
+   on long ones. Once step 7 is resolved (an answer arrives, or times
+   out), delegate step 8 (drafting the summary prose) to a sub-agent the
+   same way, giving it the filtered transcript plus whatever step 7
+   answers you got.
 
 6. **Filter ASR noise.** ASR transcription can still hallucinate on silence
    or background noise. Before writing
@@ -133,10 +139,56 @@ one before doing anything else.
    it as a note near the top of the summary, the same way you'd disclose
    any other edit to the source material — don't silently rewrite the
    transcript. When you're not confident, leave the original text as-is
-   rather than guessing.
+   rather than guessing — but don't just leave it silently either: hand it
+   to step 7 as a gap candidate instead.
 
-7. **Summarize.** From the filtered, speaker-labeled transcript, write a
-   summary with this structure:
+7. **Identify gaps and confirm with the meeting caller.** From the filtered
+   transcript, flag points where something is unclear, ambiguous, or
+   missing badly enough that guessing wrong would change the note,
+   key points, decisions, or action items:
+   - A decision or action item is mentioned but its owner, scope, or due
+     date is unstated or ambiguous.
+   - A segment is garbled or incoherent enough that its meaning can't be
+     inferred from surrounding context (unlike step 6's confident
+     corrections).
+   - A step 6 correction candidate you weren't confident enough to
+     auto-apply.
+   - A topic is clearly being discussed and then the transcript jumps
+     (a timestamp gap, or an abrupt subject change with no resolution),
+     suggesting lost audio, with no way to tell how it concluded.
+   - A named reference (a document, ticket ID, number, person) is
+     mistranscribed or cut off in a way that could change an action
+     item's meaning.
+
+   If nothing rises to this bar, skip this step entirely and go straight
+   to step 8 — don't manufacture questions to pad a list. Only raise real
+   gaps that would actually change the output.
+
+   If there are gaps, reply in the same channel/thread the user invoked
+   you from, addressed to the person who asked you to join this meeting,
+   with a numbered list of concrete questions, e.g.:
+
+   ```
+   📝 Trước khi tổng hợp note, mình cần xác nhận vài điểm bot nghe chưa rõ / thiếu transcript:
+   1. ...
+   2. ...
+   Bạn confirm/bổ sung giúp mình để note được chính xác nhé.
+   ```
+
+   Then wait for their reply in that thread before moving to step 8 — this
+   is a real dependency, not a fire-and-forget notice. If there's no reply
+   after a reasonable wait (~15-20 minutes — poll/schedule it the same way
+   step 4 does), proceed to step 8 on the best-effort transcript, but
+   explicitly mark the still-unresolved points in the summary (e.g. "chưa
+   được xác nhận") instead of silently guessing or waiting forever.
+
+   Fold whatever they confirm into the context you hand to step 8 — use it
+   to fill the gap, resolve the ambiguous correction, or fix the action
+   item's owner/date. Weave it into the relevant section rather than
+   appending their raw reply as a separate block.
+
+8. **Summarize.** From the filtered, speaker-labeled transcript — plus any
+   step 7 confirmations — write a summary with this structure:
 
    ```markdown
    # <meeting name or platform> — <date>
@@ -194,10 +246,6 @@ one before doing anything else.
    not confirmed, auto-detected") so anyone reading the note later knows
    how much to trust it.
 
-8. **Clean up.** Call `stop_meeting(platform, native_meeting_id)` to make
-   sure the bot isn't still holding a seat in the call (safe to call even if
-   it already left).
-
 9. **Deliver.** Save the summary to
    `{baseDir}/notes/<YYYY-MM-DD>-<native_meeting_id>.md`. If the meeting
    ended normally (bot left, or you stopped it on the user's explicit
@@ -206,7 +254,9 @@ one before doing anything else.
    open the file to see what happened in the meeting). If the meeting was
    ended by the step 4 empty-room heuristic, ask first — e.g. "Cuộc họp có
    vẻ đã kết thúc (không có ai nói suốt 6 phút) — gửi kết quả tổng hợp cho
-   bạn nhé?" — and only send the summary after they confirm.
+   bạn nhé?" — and only send the summary after they confirm. `stop_meeting`
+   was already called back in step 5, so there's nothing left to clean up
+   here.
 
 ## Edge cases
 
@@ -220,6 +270,10 @@ one before doing anything else.
 - **Everyone else leaves the meeting:** see step 4's silence heuristic —
   auto-stop the bot, but confirm with the user before delivering (step 9)
   since it's a heuristic, not a certainty.
+- **No reply to step 7's gap-confirmation questions:** don't block
+  delivery forever — after the ~15-20 minute wait, draft the summary from
+  the best-effort transcript and mark the unresolved points explicitly
+  instead of guessing.
 
 ## Known limitation: transcription accuracy
 
@@ -227,7 +281,10 @@ Transcription runs through [`soniox-bridge`](../../services/soniox-bridge/)
 (Soniox's real-time API), which replaced an earlier self-hosted Whisper
 attempt after it repeatedly crashed the host under CPU/memory load — Soniox
 needs no local model and tested cleanly on real English and Vietnamese
-speech. Even so, when telling the user about a completed note, don't imply
+speech. `get_transcript` (step 5) reads exclusively from the B-full
+continuous per-speaker Soniox stream, via `live-translate` — Vexa's own
+confirm-layer transcript is never used, since it drops text at ~30s turn
+seams. Even so, when telling the user about a completed note, don't imply
 the summary is fully accurate — say the key points are best-effort and point
 them at the full transcript for anything they need to rely on precisely
 (task IDs, exact names, decisions with consequences). See
