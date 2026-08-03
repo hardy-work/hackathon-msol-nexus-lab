@@ -1,0 +1,23 @@
+{
+  "corpus": "nexus-plan",
+  "groups": {
+    "in_kb": "Thông tin có trong workbook Nexus",
+    "not_in_kb": "Thông tin không có hoặc chưa đủ dữ liệu",
+    "confident_no": "Phủ định có đủ coverage",
+    "numeric": "Số phải truy được từ facts_ref"
+  },
+  "questions": [
+    {"id":"q01","group":"in_kb","q":"ĐôNT làm vai trò gì trong dự án Nexus?","expect":{"answer":"BE","must_cite":["do-nt.md"]}},
+    {"id":"q02","group":"in_kb","q":"Dự án Nexus có những vai trò nào?","expect":{"answer_set":["BE","FE"]}},
+    {"id":"q03","group":"in_kb","q":"Liệt kê những người có task trong Sprint 1.","expect":{"answer_set":["ĐôNT","SơnBH","KiênĐT","VinhNV","LongVN","HoàngMV"]}},
+    {"id":"q04","group":"in_kb","q":"Task API Login trong Sprint 1 do ai phụ trách?","expect":{"answer":"SơnBH","must_cite":["Sprint 1"]}},
+    {"id":"q05","group":"in_kb","q":"Authentication bắt đầu ngày nào trong Master schedule?","expect":{"answer":"2026-07-27","must_cite":["Master schedule"]}},
+    {"id":"q06","group":"not_in_kb","q":"Có issue nào trong Issue management không?","expect":{"behavior":"not_found"}},
+    {"id":"q07","group":"confident_no","q":"TùngDV có task nào trong Sprint 1 không?","expect":{"behavior":"confident_no"}},
+    {"id":"q08","group":"confident_no","q":"Dự án Nexus có ai làm DevOps không?","expect":{"behavior":"confident_no"}},
+    {"id":"q09","group":"numeric","q":"SơnBH có bao nhiêu task trong Sprint 1?","expect":{"value":10}},
+    {"id":"q10","group":"numeric","q":"ĐôNT đã bỏ ra bao nhiêu giờ trong Sprint 1?","expect":{"value":43}},
+    {"id":"q11","group":"numeric","q":"Summary project ghi Re-est (h) của Sprint 1 là bao nhiêu?","expect":{"value":480}},
+    {"id":"q12","group":"not_in_kb","q":"Chi phí tiền của dự án Nexus là bao nhiêu?","expect":{"behavior":"not_found"}}
+  ]
+}

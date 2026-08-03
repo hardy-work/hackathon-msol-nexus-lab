@@ -1,0 +1,349 @@
+{
+  "kind": "rows",
+  "sheet": "Master schedule",
+  "headers": {
+    "A": "Scope",
+    "B": "Start date",
+    "C": "End date",
+    "D": "PIC",
+    "E": "Status",
+    "F": "July W1",
+    "G": "W2",
+    "H": "W3",
+    "I": "W4",
+    "J": "August W1",
+    "K": "W2",
+    "L": "W3",
+    "M": "W4",
+    "N": "Note"
+  },
+  "rows": [
+    {
+      "row": 5,
+      "cells": {
+        "A": {
+          "header": "Scope",
+          "value": "Authentication",
+          "value_num": null,
+          "src": "Master schedule!A5"
+        },
+        "B": {
+          "header": "Start date",
+          "value": "2026-07-27",
+          "value_num": null,
+          "src": "Master schedule!B5"
+        },
+        "C": {
+          "header": "End date",
+          "value": "2026-07-28",
+          "value_num": null,
+          "src": "Master schedule!C5"
+        },
+        "D": {
+          "header": "PIC",
+          "value": "MOR",
+          "value_num": null,
+          "src": "Master schedule!D5"
+        },
+        "E": {
+          "header": "Status",
+          "value": "Open",
+          "value_num": null,
+          "src": "Master schedule!E5"
+        }
+      }
+    },
+    {
+      "row": 6,
+      "cells": {
+        "A": {
+          "header": "Scope",
+          "value": "User Profile Management",
+          "value_num": null,
+          "src": "Master schedule!A6"
+        },
+        "B": {
+          "header": "Start date",
+          "value": "2026-07-29",
+          "value_num": null,
+          "src": "Master schedule!B6"
+        },
+        "C": {
+          "header": "End date",
+          "value": "2026-07-31",
+          "value_num": null,
+          "src": "Master schedule!C6"
+        },
+        "D": {
+          "header": "PIC",
+          "value": "MOR",
+          "value_num": null,
+          "src": "Master schedule!D6"
+        },
+        "E": {
+          "header": "Status",
+          "value": "Open",
+          "value_num": null,
+          "src": "Master schedule!E6"
+        }
+      }
+    },
+    {
+      "row": 7,
+      "cells": {
+        "A": {
+          "header": "Scope",
+          "value": "Product Catalog & Search",
+          "value_num": null,
+          "src": "Master schedule!A7"
+        },
+        "B": {
+          "header": "Start date",
+          "value": "2026-08-03",
+          "value_num": null,
+          "src": "Master schedule!B7"
+        },
+        "C": {
+          "header": "End date",
+          "value": "2026-08-05",
+          "value_num": null,
+          "src": "Master schedule!C7"
+        },
+        "D": {
+          "header": "PIC",
+          "value": "MOR",
+          "value_num": null,
+          "src": "Master schedule!D7"
+        },
+        "E": {
+          "header": "Status",
+          "value": "Open",
+          "value_num": null,
+          "src": "Master schedule!E7"
+        }
+      }
+    },
+    {
+      "row": 8,
+      "cells": {
+        "A": {
+          "header": "Scope",
+          "value": "Shopping Cart & Checkout",
+          "value_num": null,
+          "src": "Master schedule!A8"
+        },
+        "B": {
+          "header": "Start date",
+          "value": "2026-08-03",
+          "value_num": null,
+          "src": "Master schedule!B8"
+        },
+        "C": {
+          "header": "End date",
+          "value": "2026-08-07",
+          "value_num": null,
+          "src": "Master schedule!C8"
+        },
+        "D": {
+          "header": "PIC",
+          "value": "MOR",
+          "value_num": null,
+          "src": "Master schedule!D8"
+        },
+        "E": {
+          "header": "Status",
+          "value": "Open",
+          "value_num": null,
+          "src": "Master schedule!E8"
+        }
+      }
+    },
+    {
+      "row": 9,
+      "cells": {
+        "A": {
+          "header": "Scope",
+          "value": "Order Management & Tracking",
+          "value_num": null,
+          "src": "Master schedule!A9"
+        },
+        "B": {
+          "header": "Start date",
+          "value": "2026-08-06",
+          "value_num": null,
+          "src": "Master schedule!B9"
+        },
+        "C": {
+          "header": "End date",
+          "value": "2026-08-07",
+          "value_num": null,
+          "src": "Master schedule!C9"
+        },
+        "D": {
+          "header": "PIC",
+          "value": "MOR",
+          "value_num": null,
+          "src": "Master schedule!D9"
+        },
+        "E": {
+          "header": "Status",
+          "value": "Open",
+          "value_num": null,
+          "src": "Master schedule!E9"
+        }
+      }
+    }
+  ],
+  "numeric_cells": {
+    "B5:2026": {
+      "value": 2026,
+      "text": "2026",
+      "src": "Master schedule!B5"
+    },
+    "B5:07": {
+      "value": 7,
+      "text": "07",
+      "src": "Master schedule!B5"
+    },
+    "B5:27": {
+      "value": 27,
+      "text": "27",
+      "src": "Master schedule!B5"
+    },
+    "C5:2026": {
+      "value": 2026,
+      "text": "2026",
+      "src": "Master schedule!C5"
+    },
+    "C5:07": {
+      "value": 7,
+      "text": "07",
+      "src": "Master schedule!C5"
+    },
+    "C5:28": {
+      "value": 28,
+      "text": "28",
+      "src": "Master schedule!C5"
+    },
+    "B6:2026": {
+      "value": 2026,
+      "text": "2026",
+      "src": "Master schedule!B6"
+    },
+    "B6:07": {
+      "value": 7,
+      "text": "07",
+      "src": "Master schedule!B6"
+    },
+    "B6:29": {
+      "value": 29,
+      "text": "29",
+      "src": "Master schedule!B6"
+    },
+    "C6:2026": {
+      "value": 2026,
+      "text": "2026",
+      "src": "Master schedule!C6"
+    },
+    "C6:07": {
+      "value": 7,
+      "text": "07",
+      "src": "Master schedule!C6"
+    },
+    "C6:31": {
+      "value": 31,
+      "text": "31",
+      "src": "Master schedule!C6"
+    },
+    "B7:2026": {
+      "value": 2026,
+      "text": "2026",
+      "src": "Master schedule!B7"
+    },
+    "B7:08": {
+      "value": 8,
+      "text": "08",
+      "src": "Master schedule!B7"
+    },
+    "B7:03": {
+      "value": 3,
+      "text": "03",
+      "src": "Master schedule!B7"
+    },
+    "C7:2026": {
+      "value": 2026,
+      "text": "2026",
+      "src": "Master schedule!C7"
+    },
+    "C7:08": {
+      "value": 8,
+      "text": "08",
+      "src": "Master schedule!C7"
+    },
+    "C7:05": {
+      "value": 5,
+      "text": "05",
+      "src": "Master schedule!C7"
+    },
+    "B8:2026": {
+      "value": 2026,
+      "text": "2026",
+      "src": "Master schedule!B8"
+    },
+    "B8:08": {
+      "value": 8,
+      "text": "08",
+      "src": "Master schedule!B8"
+    },
+    "B8:03": {
+      "value": 3,
+      "text": "03",
+      "src": "Master schedule!B8"
+    },
+    "C8:2026": {
+      "value": 2026,
+      "text": "2026",
+      "src": "Master schedule!C8"
+    },
+    "C8:08": {
+      "value": 8,
+      "text": "08",
+      "src": "Master schedule!C8"
+    },
+    "C8:07": {
+      "value": 7,
+      "text": "07",
+      "src": "Master schedule!C8"
+    },
+    "B9:2026": {
+      "value": 2026,
+      "text": "2026",
+      "src": "Master schedule!B9"
+    },
+    "B9:08": {
+      "value": 8,
+      "text": "08",
+      "src": "Master schedule!B9"
+    },
+    "B9:06": {
+      "value": 6,
+      "text": "06",
+      "src": "Master schedule!B9"
+    },
+    "C9:2026": {
+      "value": 2026,
+      "text": "2026",
+      "src": "Master schedule!C9"
+    },
+    "C9:08": {
+      "value": 8,
+      "text": "08",
+      "src": "Master schedule!C9"
+    },
+    "C9:07": {
+      "value": 7,
+      "text": "07",
+      "src": "Master schedule!C9"
+    }
+  }
+}

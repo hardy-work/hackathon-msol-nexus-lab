@@ -16,6 +16,11 @@ openclaw-skills/*/oauth-client*.json
 openclaw-skills/*/oauth-token*.json
 **/__pycache__/
 
+# Project Knowledge build/runtime artifacts — corpus and wiki are source data,
+# DuckDB/vector indexes are rebuilt locally.
+openclaw-skills/project-knowledge/.venv/
+openclaw-skills/project-knowledge/derived/
+
 # Per-project/per-deployment skill config — never commit real config.json, only config.example.json
 openclaw-skills/gg-sheet/config.json
 openclaw-skills/slack-evidence-sheet/config.json

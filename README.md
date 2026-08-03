@@ -73,6 +73,11 @@ servers / backend services it depends on.
   Needs a `.env` in this folder with `GOOGLE_SHEETS_API_KEY` only (read-only,
   no Service Account needed) — see `.env.example`.
 
+- [`openclaw-skills/project-knowledge/`](openclaw-skills/project-knowledge/) —
+  read-only Nexus project knowledge skill. It answers questions from the
+  committed Nexus Plan corpus with DuckDB/facts, wiki citations, confidence and
+  explicit `not_in_kb`/`confident_no` semantics. It never writes Jira, Sheets or
+  Slack. The corpus is self-contained; `derived/` indexes are rebuilt locally.
 - [`openclaw-skills/slack-evidence-sheet/`](openclaw-skills/slack-evidence-sheet/) —
   turns one Slack evidence-collection thread into a brand-new Google Sheet: one
   row per person, with their email, the time they posted, and their attached
@@ -141,6 +146,35 @@ lifecycle), see its own README:
    ```
 6. Deploy the transcription backend — see
    [`services/soniox-bridge/README.md`](services/soniox-bridge/README.md).
+
+### Project Knowledge skill
+
+For the offline Nexus Q&A demo, install its pinned Python dependencies and run
+the skill-local demo:
+
+```bash
+cd openclaw-skills/project-knowledge
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 bash demo/run_demo.sh
+```
+
+The normal entrypoint is `scripts/run.py`. It is deterministic and does not
+need network or Claude credentials. Gate 3b review and the optional LLM answer
+tier are opt-in only.
+
+`demo/run_slack_demo.sh` exercises the Slack-shaped adapter locally without a
+token. A production Slack transport still belongs at the gateway boundary
+(OpenClaw Slack integration or a Bolt/HTTP receiver) and must verify the
+signing secret before forwarding events to this read-only skill.
+
+To expose it to an OpenClaw workspace, link the skill directory and restart the
+gateway:
+
+```bash
+mkdir -p ~/.openclaw/workspace/skills
+ln -s "$(pwd)" ~/.openclaw/workspace/skills/project-knowledge
+```
 
 `.env` and `.mcp.json` are gitignored (they hold API keys) — always copy
 from the `.example` files rather than committing real ones.
