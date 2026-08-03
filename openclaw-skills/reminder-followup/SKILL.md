@@ -1,5 +1,5 @@
 ---
-name: daily-report
+name: reminder-followup
 description: Nhắc report task hàng ngày qua cron, và follow-up tag người chưa report ngay trong thread tin nhắc.
 user-invocable: true
 metadata:
@@ -96,12 +96,18 @@ thành viên kênh (`conversations.members`) nữa — ai không có trong roste
 không bao giờ bị nhắc, dù đang ở trong kênh.
 
 Đọc roster theo channel id của job đang chạy. File không tồn tại / rỗng / parse
-lỗi → **dừng job, log lỗi, không nhắc gì cả** — không fallback sang member kênh,
-không tự đoán danh sách, không dùng `<!channel>` để nhắc bừa cả kênh.
+lỗi / sau khi bỏ bot còn 0 người → **chưa có roster**: không nhắc ai, không
+fallback sang member kênh, không tự đoán danh sách, không dùng `<!channel>` để
+nhắc bừa cả kênh.
+
+**Chưa có roster thì phải HỎI, không được im.** Job B reply ngay vào thread của
+Job A hôm nay để xin danh sách — xem "Chưa có roster → hỏi trong thread" bên
+dưới. Tuyệt đối **không** được trả về `tat ca da report`: chưa khai ai và mọi
+người đã report xong là hai chuyện khác hẳn nhau, gộp lại là báo cáo sai.
 
 ### Setup kênh mới → phải hỏi danh sách nhân viên
 
-Khi được yêu cầu bật daily-report cho một kênh **chưa có** file roster (hoặc
+Khi được yêu cầu bật reminder-followup cho một kênh **chưa có** file roster (hoặc
 được yêu cầu thêm/bớt người), **hỏi người dùng danh sách nhân viên trước** —
 không tự lấy thành viên kênh, không tự đoán, không tạo file rỗng rồi chạy.
 
@@ -247,9 +253,9 @@ gỡ bằng `openclaw cron edit <id> --clear-model`.
 giờ/phút nếu khác, vd 09:30 → `30 9 * * *`):**
 
 ```bash
-openclaw cron create "0 11 * * *" \
-  "Việc A skill daily-report: đăng tin nhắc report, lưu message ts vào state." \
-  --name daily-report-reminder --tz "$REMINDER_TIMEZONE" \
+openclaw cron create "0 9 * * *" \
+  "Việc A skill reminder-followup: đăng tin nhắc report, lưu message ts vào state." \
+  --name reminder-followup-0900 --tz "$REMINDER_TIMEZONE" \
   --session isolated --announce \
   --channel slack --to "channel:$SLACK_REPORT_CHANNEL_ID"
 ```
@@ -270,7 +276,7 @@ trả về vào state để Job B khỏi phải quét.
 
 Hai mốc này **không** nhét được vào một cron expression: `0,30 16,17 * * *` sẽ
 dính thêm 16:00 và 17:30. Nên là **2 job riêng, dùng chung y hệt một prompt** —
-`daily-report-followup-1630` và `daily-report-followup-1700`. Sửa prompt thì
+`reminder-followup-1630` và `reminder-followup-1700`. Sửa prompt thì
 **phải sửa cả 2**, lệch nhau là hai lượt nhắc hành xử khác nhau.
 
 **Đừng dùng `--every`.** Mốc của `--every` bị neo lại theo thời điểm sửa job, nên
@@ -280,8 +286,8 @@ ngoài ra nó chạy cả ban đêm chỉ để `SKIP`, tốn token vô ích.
 ```bash
 for slot in "1630:${FOLLOWUP_CRON_1:-30 16 * * *}" "1700:${FOLLOWUP_CRON_2:-0 17 * * *}"; do
   openclaw cron create --cron "${slot#*:}" \
-    --message "Việc B skill daily-report: tag người chưa report / sai format vào thread tin nhắc hôm nay." \
-    --name "daily-report-followup-${slot%%:*}" --tz "$REMINDER_TIMEZONE" \
+    --message "Việc B skill reminder-followup: tag người chưa report / sai format vào thread tin nhắc hôm nay." \
+    --name "reminder-followup-${slot%%:*}" --tz "$REMINDER_TIMEZONE" \
     --session isolated \
     --channel slack --to "channel:$SLACK_REPORT_CHANNEL_ID"
   # cron create mặc định bật announce -> phải tắt, không thì dòng trạng thái
@@ -353,11 +359,47 @@ tool Slack:
 
 ```
 REPLIED | chua report: <N> | sai format: <M>
-SKIP | <lý do: qua gio cutoff / khong tim thay thread hom nay / tat ca da report>
+ASKED | chua co roster
+SKIP | <lý do: qua gio cutoff / khong tim thay thread hom nay / tat ca da report
+        / chua co roster, da hoi roi>
 ERROR | <mô tả ngắn>
 ```
 
 Dòng này **không** ra Slack vì Job B để `delivery: none`.
+
+## Chưa có roster → hỏi trong thread
+
+Kênh chưa khai roster mà cứ im lặng log `ERROR` là hỏng: `delivery: none` nên
+không ai đọc được dòng đó, trong khi Job A vẫn đăng tin nhắc mỗi sáng → nhìn
+bên ngoài y như đang chạy tốt, thực ra chả nhắc được ai suốt nhiều ngày.
+
+Nên khi **chưa có roster**, Job B reply đúng 1 lần vào thread hôm nay, **không
+tag ai** (chưa biết ai mà tag), không đăng tin mới ra kênh:
+
+```
+📋 Mình chưa có danh sách người phải report cho kênh này, nên hôm nay chưa nhắc được ai.
+
+Nhờ mọi người tag mình kèm danh sách, mỗi dòng 1 người:
+<user_id> | <tên>
+
+(Lấy user ID: Slack → profile người đó → More → Copy member ID)
+```
+
+Câu **"tag mình kèm danh sách"** là bắt buộc, không được bỏ: luật "Im lặng trong
+thread" khiến bot bỏ qua mọi tin không tag nó — ai đó dán danh sách trần vào
+thread thì bot **không hề thấy**. Phải nói rõ là phải tag.
+
+**Chống hỏi lặp:** trước khi đăng, soi lại reply trong thread (kể cả tin của
+chính bot) xem đã có tin nào chứa `chưa có danh sách người phải report` chưa. Có
+rồi → `SKIP | chua co roster, da hoi roi`. Không có bước này thì 16:30 và 17:00
+hỏi 2 lần y hệt nhau mỗi ngày.
+
+Guard ngày vẫn giữ nguyên: không tìm thấy thread hôm nay thì dừng ở bước 2, câu
+hỏi này **không** phải cái cớ để đăng tin mới ra kênh.
+
+Có người tag kèm danh sách → xử lý theo "Setup kênh mới → phải hỏi danh sách
+nhân viên" ở trên: ghi file roster, báo lại đã ghi bao nhiêu người. Lượt cron
+kế tiếp là nhắc được ngay, không cần restart Gateway.
 
 ## Tổng hợp theo yêu cầu (không qua cron)
 

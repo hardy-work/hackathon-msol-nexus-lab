@@ -23,11 +23,11 @@ openclaw-skills/*/*-audit.log
 .DS_Store
 
 # Runtime-generated output — not source, don't commit
-openclaw-skills/daily-report/state/
+openclaw-skills/reminder-followup/state/
 
 # Roster chứa tên/user id nhân viên thật — chỉ commit file mẫu
-openclaw-skills/daily-report/roster/*.json
-!openclaw-skills/daily-report/roster/*.example.json
+openclaw-skills/reminder-followup/roster/*.json
+!openclaw-skills/reminder-followup/roster/*.example.json
 openclaw-skills/meeting-notetaker/notes/
 **/jira-audit.log
 %h/

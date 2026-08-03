@@ -1,4 +1,4 @@
-# daily-report
+# reminder-followup
 
 Nhắc nhở team report task hàng ngày trong Slack qua cron, và follow-up tag
 người chưa report ngay trong thread của tin nhắc. Xem [`SKILL.md`](SKILL.md)
@@ -44,7 +44,7 @@ tương ứng; skill dùng chung, không phải sửa `SKILL.md`.
 
 ```bash
 mkdir -p ~/.openclaw/workspace/skills
-ln -s "$(pwd)" ~/.openclaw/workspace/skills/daily-report
+ln -s "$(pwd)" ~/.openclaw/workspace/skills/reminder-followup
 ```
 
 ### 5. Đăng ký 2 cron job (1 lần duy nhất)
@@ -55,7 +55,7 @@ Xem chi tiết ở [`SKILL.md`](SKILL.md#cron-setup-1-lần-dùng-cron-expressio
 Lưu ý: **không** gán `--model` cho cron job — để nó dùng model mặc định của
 workspace, tránh vỡ khi allowlist `agents.defaults.models` thay đổi.
 Cách đơn giản nhất là nhắn trong Slack: `@<tên bot> thiết lập 2 cron job nhắc
-report theo skill daily-report` — agent sẽ tự chạy đúng 2 lệnh `openclaw cron
+report theo skill reminder-followup` — agent sẽ tự chạy đúng 2 lệnh `openclaw cron
 create` với giá trị lấy từ `.env`. Kiểm tra lại bằng `openclaw cron list`.
 
 ## Known limitations
