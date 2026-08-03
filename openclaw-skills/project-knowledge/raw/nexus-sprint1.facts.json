@@ -1,4 +1,6 @@
 {
+  "doc_id": "nexus-plan",
+  "version": 1,
   "kind": "table",
   "sheet": "Sprint 1",
   "headers": {

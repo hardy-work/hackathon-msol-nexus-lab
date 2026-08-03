@@ -20,6 +20,7 @@ openclaw-skills/*/oauth-token*.json
 # DuckDB/vector indexes are rebuilt locally.
 openclaw-skills/project-knowledge/.venv/
 openclaw-skills/project-knowledge/derived/
+.ingest-worktrees/
 
 # Per-project/per-deployment skill config — never commit real config.json, only config.example.json
 openclaw-skills/gg-sheet/config.json

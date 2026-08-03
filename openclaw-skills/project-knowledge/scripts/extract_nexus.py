@@ -13,11 +13,14 @@ from pathlib import Path
 import openpyxl
 
 from extract import cell_str, numeric_guard_ingest, scan_headers, scan_rows
+from document_registry import current
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "raw"
 ORIGINAL = ROOT / "originals/nexus-plan.xlsx"
 DOC_ID = "nexus-plan"
+DOC = current(DOC_ID)
+VERSION = int(DOC["version"])
 
 ASSIGNEE = {
     "TùngDV": "tung-dv",
@@ -36,11 +39,12 @@ def write_raw(raw_id, sheet, kind, body, payload):
     body = body.rstrip()
     (RAW / f"{raw_id}.md").write_text(
         f"---\nraw_id: {raw_id}\ndoc_id: {DOC_ID}\nsheet: {sheet!r}\n"
-        f"kind: {kind}\ngenerated_by: scripts/extract_nexus.py\n---\n\n"
+        f"version: {VERSION}\nkind: {kind}\ngenerated_by: scripts/extract_nexus.py\n---\n\n"
         f"# {raw_id}\n\nNguồn: `{sheet}` trong `originals/nexus-plan.xlsx`\n\n{body}\n",
         encoding="utf-8")
     (RAW / f"{raw_id}.facts.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        json.dumps({"doc_id": DOC_ID, "version": VERSION, **payload},
+                   ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def rows_source(wb, raw_id, sheet, header_rows, start, cols=None, skip=None):

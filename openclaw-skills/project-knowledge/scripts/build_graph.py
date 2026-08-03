@@ -24,6 +24,7 @@ import unicodedata
 from pathlib import Path
 
 import yaml
+import document_registry
 
 ROOT = Path(__file__).resolve().parent.parent
 WIKI = ROOT / "wiki"
@@ -77,6 +78,9 @@ def build():
         nodes[pid] = {
             "id": pid, "type": fm.get("page", "?"),
             "name": fm.get("name", pid),
+            "visibility": fm.get("visibility", "internal"),
+            "allowed_roles": fm.get("allowed_roles", []),
+            "allowed_users": fm.get("allowed_users", []),
             "dims": {d: fm[d] for d in DIM_REL if fm.get(d)},
         }
         # cạnh mentions từ [[link]] (thân bài + frontmatter)
@@ -98,6 +102,7 @@ def build():
     task_facts = ROOT / "raw" / "nexus-sprint1.facts.json"
     task_count = 0
     if task_facts.exists():
+        source_doc = document_registry.current("nexus-plan", ROOT)
         payload = json.loads(task_facts.read_text(encoding="utf-8"))
         people_by_name = {str(n.get("name")): pid for pid, n in nodes.items()
                           if n.get("type") == "entity-person"}
@@ -128,7 +133,13 @@ def build():
                                 ("priority", "priority")):
                 if header in cells:
                     attrs[key] = cells[header].get("value")
-            nodes[task_node] = {"id": task_node, "type": "task", **attrs}
+            nodes[task_node] = {
+                "id": task_node, "type": "task",
+                "visibility": source_doc.get("visibility", "internal"),
+                "allowed_roles": source_doc.get("allowed_roles", []),
+                "allowed_users": source_doc.get("allowed_users", []),
+                **attrs,
+            }
             edge(task_node, dimension_node("sprint", "Sprint 1"), "in_sprint",
                  task_cell.get("src"))
             for key, rel, dim in (("category", "in_milestone", "category"),

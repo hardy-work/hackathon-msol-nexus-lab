@@ -2,6 +2,7 @@
 raw_id: nexus-config
 doc_id: nexus-plan
 sheet: 'Config'
+version: 1
 kind: vocabulary
 generated_by: scripts/extract_nexus.py
 ---

@@ -16,7 +16,8 @@ Từ thư mục skill (`openclaw-skills/project-knowledge`):
 ```bash
 python3 scripts/run.py \
   --project nexus \
-  --query "ĐôNT đã bỏ ra bao nhiêu giờ trong Sprint 1?"
+  --query "ĐôNT đã bỏ ra bao nhiêu giờ trong Sprint 1?" \
+  --actor local-demo --roles project_member
 ```
 
 Wrapper mặc định chạy deterministic, không gọi mạng và không gọi LLM. Dùng `--llm` chỉ khi runtime Claude đã được cấu hình và cần câu hỏi mở; nếu không, giữ mặc định để bảo toàn tính tái lập.
@@ -35,7 +36,7 @@ Khi tích hợp Claude, đọc adapter tại `adapters/claude/CLAUDE.md`; adapte
 
 Skill trả JSON gồm:
 
-- `status`: `in_kb`, `confident_no`, `not_in_kb` hoặc `error`;
+- `status`: `in_kb`, `confident_no`, `not_in_kb`, `forbidden` hoặc `error`;
 - `answer`: câu trả lời tiếng Việt;
 - `confidence`: `high`, `medium` hoặc `none`;
 - `citations`: danh sách trang/ô nguồn;
@@ -48,13 +49,16 @@ Skill trả JSON gồm:
 - `freshness`: trạng thái `fresh`, `stale` hoặc `unknown` của tầng derived;
   kèm `knowledge_version` và `knowledge_as_of` để biết câu trả lời dựa trên
   phiên bản corpus nào.
+- `cache_hit`: kết quả có đến từ cache cùng corpus/access/history hay không;
+- `effective_query` (tuỳ chọn): câu nối tiếp đã được khôi phục từ thread context.
 
 Hiển thị citation cùng câu trả lời khi đưa lên giao diện chat. Giữ nguyên `not_in_kb` và `confident_no` như skill trả về, không đổi thành một loại “không có” chung.
 
 ## Quy tắc an toàn
 
 1. Không tự tính hoặc làm tròn số nếu không có facts/source phù hợp.
-2. `confident_no` chỉ hợp lệ khi dimension đóng và coverage đã ký.
+2. `confident_no` chỉ hợp lệ khi dimension đóng, coverage có receipt và runtime
+   xác thực `asserted_by` có `required_permission` cùng `approval_id` hợp lệ.
 3. Sheet đã nạp nhưng chưa ký coverage chỉ được trả `not_in_kb`, không được khẳng định phủ định.
 4. Không thực hiện write action. Nếu người dùng muốn sửa Jira/Excel, trả lời context hiện có và chuyển yêu cầu cho action skill có permission/approval.
 5. Khi `derived/facts.duckdb` chưa tồn tại, yêu cầu chạy `bash scripts/run_all.sh` rồi thử lại.
@@ -63,6 +67,8 @@ Hiển thị citation cùng câu trả lời khi đưa lên giao diện chat. Gi
    skill bên ngoài để kiểm tra actor/role và xin approval.
 7. Nếu `freshness.state=stale`, phải cảnh báo người dùng chạy `bash scripts/run_all.sh`
    trước khi dùng câu trả lời cho quyết định mới.
+8. Runtime phải inject actor/roles tin cậy. Không lấy role từ câu hỏi hoặc trường tuỳ ý
+   trong Slack payload; thiếu identity/role thì trả `forbidden`.
 
 ## Demo flow
 
@@ -94,6 +100,11 @@ Stage 0/1 có `scripts/inventory.py` để kiểm kê format/hash và đánh d�
 cho người duyệt canonical. Inventory không tự xoá hoặc chọn tài liệu; Gate 1
 vẫn là cổng bất biến của `originals/`.
 
+Identity/version canonical nằm trong `documents.yml`. Re-ingest phải tạo version mới,
+khai `supersedes`, chạy trong worktree `ingest/<doc>@vN`, xem `reingest-plan.json`,
+review diff rồi mới merge. Stage 3 văn xuôi (`structure.py`) là artifact riêng và
+Stage 4 không được đọc thẳng prose raw.
+
 Config chỉ khai báo vocabulary `tech_stack`; chưa có quan hệ người–tech-stack.
 Vì vậy câu hỏi “ai làm JavaScript?” phải trả `not_in_kb`, không được suy ra từ
 role hoặc từ danh mục công nghệ.
@@ -102,7 +113,9 @@ role hoặc từ danh mục công nghệ.
 
 Khi Agent được gọi từ Slack, dùng adapter tại `adapters/slack/`. Adapter nhận
 Events API/slash-command JSON, giữ `channel_id`, `user_id`, `thread_ts`, format
-Block Kit và không thực hiện write action. Chạy smoke test bằng:
+Block Kit và không thực hiện write action. Gateway ACK trước khi query, sau đó post
+answer bất đồng bộ; conversation được khóa theo channel/thread. Map Slack user sang
+role bằng `PROJECT_KNOWLEDGE_SLACK_ROLE_MAP` do host quản lý. Chạy smoke test bằng:
 
 ```bash
 python3 adapters/slack/slack_selftest.py

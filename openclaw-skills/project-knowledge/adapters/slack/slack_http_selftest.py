@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import time
 from pathlib import Path
 
@@ -15,6 +16,7 @@ HERE = Path(__file__).resolve().parent
 
 
 def main() -> int:
+    os.environ["PROJECT_KNOWLEDGE_SLACK_ROLE_MAP"] = '{"U_DEMO":["project_member"]}'
     app = json.loads((HERE / "fixtures/app_mention.json").read_text(encoding="utf-8"))
     response = process_payload(app)
     assert response["metadata"]["status"] == "in_kb"

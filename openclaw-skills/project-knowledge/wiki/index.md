@@ -31,11 +31,11 @@ Cập nhật ở Stage 4 (scripts/build_index.py). Trạng thái: **8 trang · 9
 
 _(chưa có)_
 
-## Phạm vi đã ký — `coverage.yml`
+## Phạm vi có approval receipt — `coverage.yml`
 
-| quan hệ | phạm vi | tính đến |
-|---|---|---|
-| `person_role` | Config!H2:K15 | Nexus Plan (2026-08-03) |
-| `person_task` | Sprint 1!A6:R65 | Nexus Plan (2026-08-03) |
+| quan hệ | phạm vi | tính đến | approval |
+|---|---|---|---|
+| `person_role` | Config!H2:K15 | Nexus Plan (2026-08-03) | `nexus-demo-person-role-20260803` |
+| `person_task` | Sprint 1!A6:R65 | Nexus Plan (2026-08-03) | `nexus-demo-person-task-20260803` |
 
-Ngoài các dòng trên, hệ thống **không** được trả lời "chắc chắn không".
+Receipt chỉ có hiệu lực khi runtime xác thực người ký, permission và approval id. Ngoài phạm vi đã xác thực, hệ thống **không** được trả lời "chắc chắn không".

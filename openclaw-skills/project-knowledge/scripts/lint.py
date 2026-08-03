@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 import yaml
+import document_registry
 
 ROOT = Path(__file__).resolve().parent.parent
 WIKI = ROOT / "wiki"
@@ -226,6 +227,9 @@ def lint_schema(schema, pages):
         for f in spec["required_fields"]:
             if f not in fm or fm[f] in (None, "", []):
                 err("lint-schema", rel, f"thiếu trường bắt buộc `{f}`")
+        if fm.get("visibility") not in {"public", "internal", "restricted"}:
+            err("lint-schema", rel,
+                f"visibility='{fm.get('visibility')}' không thuộc public/internal/restricted")
         for dim in spec["required_dimensions"] + spec.get("optional_dimensions", []):
             if dim not in fm:
                 if dim in spec["required_dimensions"]:
@@ -246,11 +250,22 @@ LINK = re.compile(r"\[\[([^\]]+)\]\]")
 
 def lint_refs(pages):
     slugs = {Path(rel).stem: rel for rel in pages}
+    current = document_registry.current_versions(ROOT)
 
     for rel, pg in pages.items():
         for rp in pg["fm"].get("raw_paths") or []:
-            if not (ROOT / rp).exists():
+            raw = ROOT / rp
+            if not raw.exists():
                 err("lint-refs", rel, f"raw_paths trỏ tới file không tồn tại: {rp}")
+                continue
+            text = raw.read_text(encoding="utf-8")
+            match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+            metadata = yaml.safe_load(match.group(1)) if match else {}
+            doc_id = metadata.get("doc_id") if metadata else None
+            version = metadata.get("version") if metadata else None
+            if doc_id in current and int(version or 0) != current[doc_id]:
+                err("lint-refs", rel,
+                    f"tham chiếu raw superseded `{rp}` ({doc_id}@v{version}); current=v{current[doc_id]}")
 
     # liên kết hai chiều: A nhắc B thì B phải nhắc lại A
     out = {rel: set(LINK.findall(pg["body"]) + LINK.findall(str(pg["fm"]))) for rel, pg in pages.items()}

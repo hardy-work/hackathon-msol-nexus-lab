@@ -2,6 +2,7 @@
 raw_id: nexus-people
 doc_id: nexus-plan
 sheet: '(rollup Sprint 1)'
+version: 1
 kind: rollup
 generated_by: scripts/extract_nexus.py
 ---

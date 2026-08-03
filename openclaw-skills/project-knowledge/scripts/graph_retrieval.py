@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import access_control
+
 
 def normalize(value: object) -> str:
     text = unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode()
@@ -82,10 +84,14 @@ class GraphIndex:
                 found.add(node["id"])
         return found
 
-    def _people_in_query(self, query: str) -> set[str]:
+    def _can_read(self, node: dict[str, Any], access) -> bool:
+        return access is None or access_control.can_read_metadata(access, node, self.root)
+
+    def _people_in_query(self, query: str, access=None) -> set[str]:
         q = normalize(query)
         return {node["id"] for node in self.nodes.values()
-                if node.get("type") == "entity-person" and normalize(node.get("name")) in q}
+                if node.get("type") == "entity-person" and self._can_read(node, access)
+                and normalize(node.get("name")) in q}
 
     def _task_hit(self, node: dict[str, Any]) -> GraphHit:
         values = {e["rel"]: self.nodes.get(e["to"], {}) for e in self.out.get(node["id"], [])}
@@ -107,13 +113,15 @@ class GraphIndex:
             source=source,
         )
 
-    def task_hits(self, query: str, limit: int = 60) -> list[GraphHit]:
+    def task_hits(self, query: str, limit: int = 60, access=None) -> list[GraphHit]:
         q = normalize(query)
         dimensions = self._dimension_ids(query)
-        people = self._people_in_query(query)
+        people = self._people_in_query(query, access)
         explicit_ids = {normalize(match) for match in re.findall(r"[A-Za-z]+-\d+", query)}
         hits: list[GraphHit] = []
         for node in self.tasks:
+            if not self._can_read(node, access):
+                continue
             outgoing = self.out.get(node["id"], [])
             targets = {e["to"] for e in outgoing}
             task_id = normalize(node.get("task_id", ""))
@@ -143,8 +151,8 @@ class GraphIndex:
                 hits.append(self._task_hit(node))
         return hits[:limit]
 
-    def context(self, query: str, limit: int = 12) -> tuple[str, tuple[str, ...]]:
-        hits = self.task_hits(query, limit=limit)
+    def context(self, query: str, limit: int = 12, access=None) -> tuple[str, tuple[str, ...]]:
+        hits = self.task_hits(query, limit=limit, access=access)
         if not hits:
             return "", ()
         lines = []
@@ -160,8 +168,8 @@ class GraphIndex:
                 citations.add(hit.source)
         return "\n".join(lines), tuple(sorted(citations))
 
-    def direct_answer(self, query: str) -> GraphAnswer | None:
-        hits = self.task_hits(query)
+    def direct_answer(self, query: str, access=None) -> GraphAnswer | None:
+        hits = self.task_hits(query, access=access)
         if not hits:
             return None
         q = normalize(query)

@@ -4,6 +4,7 @@ name: "LongVN"
 assignee: long-vn
 role: BE
 project: nexus
+visibility: internal
 task_count: { facts_ref: "raw/nexus-people.facts.json#long-vn.task_count" }
 estimate_h: { facts_ref: "raw/nexus-people.facts.json#long-vn.estimate_h" }
 actual_h: { facts_ref: "raw/nexus-people.facts.json#long-vn.actual_h" }

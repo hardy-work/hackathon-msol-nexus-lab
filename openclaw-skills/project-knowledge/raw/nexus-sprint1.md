@@ -2,6 +2,7 @@
 raw_id: nexus-sprint1
 doc_id: nexus-plan
 sheet: 'Sprint 1'
+version: 1
 kind: table
 generated_by: scripts/extract_nexus.py
 ---

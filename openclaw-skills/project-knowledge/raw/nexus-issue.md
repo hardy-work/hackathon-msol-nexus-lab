@@ -2,6 +2,7 @@
 raw_id: nexus-issue
 doc_id: nexus-plan
 sheet: 'Isssue management'
+version: 1
 kind: rows
 generated_by: scripts/extract_nexus.py
 ---

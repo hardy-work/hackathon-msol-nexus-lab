@@ -4,6 +4,7 @@ name: "HoàngMV"
 assignee: hoang-mv
 role: FE
 project: nexus
+visibility: internal
 task_count: { facts_ref: "raw/nexus-people.facts.json#hoang-mv.task_count" }
 estimate_h: { facts_ref: "raw/nexus-people.facts.json#hoang-mv.estimate_h" }
 actual_h: { facts_ref: "raw/nexus-people.facts.json#hoang-mv.actual_h" }

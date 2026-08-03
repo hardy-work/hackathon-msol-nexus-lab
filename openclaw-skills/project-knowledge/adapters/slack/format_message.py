@@ -10,6 +10,7 @@ STATUS_LABEL = {
     "in_kb": "CÓ",
     "confident_no": "CHẮC CHẮN KHÔNG",
     "not_in_kb": "KHÔNG TÌM THẤY",
+    "forbidden": "KHÔNG CÓ QUYỀN",
     "error": "LỖI",
 }
 
@@ -65,7 +66,7 @@ def format_result(result: dict[str, Any], thread_ts: str = "") -> dict[str, Any]
             })
 
     response: dict[str, Any] = {
-        "response_type": "in_channel",
+        "response_type": "ephemeral" if status in {"forbidden", "error"} else "in_channel",
         "blocks": blocks,
         "metadata": {
             "status": status,

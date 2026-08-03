@@ -18,7 +18,8 @@ from typing import Any
 
 METADATA_NAME = "corpus_version.json"
 EXCLUDED = {"MANIFEST.sha256", ".gitkeep", "log.md"}
-INPUT_FILES = ("originals", "raw", "wiki", "schema.yml", "coverage.yml")
+INPUT_FILES = ("originals", "raw", "structured", "wiki", "schema.yml",
+               "coverage.yml", "documents.yml", "access.yml")
 
 
 def _sha256(path: Path) -> str:

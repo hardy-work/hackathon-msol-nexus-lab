@@ -3,6 +3,7 @@ page: entity-person
 name: "TùngDV"
 assignee: tung-dv
 project: nexus
+visibility: internal
 task_count: { facts_ref: "raw/nexus-people.facts.json#tung-dv.task_count" }
 estimate_h: { facts_ref: "raw/nexus-people.facts.json#tung-dv.estimate_h" }
 actual_h: { facts_ref: "raw/nexus-people.facts.json#tung-dv.actual_h" }

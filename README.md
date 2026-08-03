@@ -164,10 +164,28 @@ need network or Claude credentials. With `--llm`, unresolved queries use a
 cheap Haiku router first and send selected wiki context to Sonnet; Gate 3b
 review remains opt-in.
 
+The query boundary is fail-closed. Inject a trusted identity and roles from the
+host runtime (SSO/Slack mapping), for example:
+
+```bash
+PROJECT_KNOWLEDGE_ACTOR=local-demo \
+PROJECT_KNOWLEDGE_ROLES=project_member \
+python3 scripts/run.py --project nexus --query "ĐôNT làm vai trò gì?"
+```
+
+Coverage receipts do not grant themselves authority. Production also injects
+`PROJECT_KNOWLEDGE_COVERAGE_GRANTS` and `PROJECT_KNOWLEDGE_APPROVAL_IDS` from an
+approval service; the offline test runner supplies demo-only values.
+
 The pipeline also builds a task relationship graph and records corpus
 version/freshness metadata. Query JSON reports `fresh`, `stale`, or `unknown`
 so a changed workbook cannot silently look like a current answer. Run
 `scripts/run_all.sh` after replacing the workbook.
+
+Document identity and supersession live in `documents.yml`. New document versions
+are ingested in an isolated `ingest/<doc>@vN` worktree using
+`scripts/ingest_flow.py`; the flow creates a raw diff/impact plan and never merges
+automatically.
 
 The stage-by-stage mapping and remaining data boundaries are documented in
 [`openclaw-skills/project-knowledge/FLOW_STATUS.md`](openclaw-skills/project-knowledge/FLOW_STATUS.md).
@@ -177,6 +195,9 @@ token. A minimal signed HTTP boundary is available at
 `adapters/slack/slack_http.py`; set `SLACK_SIGNING_SECRET` and run it on
 `/slack/events`. `SLACK_BOT_TOKEN` is optional and is used only to post the
 formatted Block Kit response. The Project Knowledge skill remains read-only.
+Set `PROJECT_KNOWLEDGE_SLACK_ROLE_MAP` to a trusted JSON user-to-roles mapping. The
+gateway acknowledges Slack before retrieval, posts asynchronously, and keeps
+bounded conversation context per channel/thread.
 
 To expose it to an OpenClaw workspace, link the skill directory and restart the
 gateway:

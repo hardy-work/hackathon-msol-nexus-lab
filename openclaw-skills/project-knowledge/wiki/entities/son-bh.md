@@ -4,6 +4,7 @@ name: "SơnBH"
 assignee: son-bh
 role: BE
 project: nexus
+visibility: internal
 task_count: { facts_ref: "raw/nexus-people.facts.json#son-bh.task_count" }
 estimate_h: { facts_ref: "raw/nexus-people.facts.json#son-bh.estimate_h" }
 actual_h: { facts_ref: "raw/nexus-people.facts.json#son-bh.actual_h" }

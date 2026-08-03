@@ -2,10 +2,17 @@
 """Build deterministic Nexus wiki pages from extracted facts."""
 import json
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from document_registry import current  # noqa: E402
+import build_index  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "raw"
 WIKI = ROOT / "wiki"
+DOC = current("nexus-plan")
+VERSION = int(DOC["version"])
 
 
 def main():
@@ -19,7 +26,9 @@ def main():
 page: source
 name: "Nexus Plan"
 doc_id: nexus-plan
+version: """ + str(VERSION) + """
 domain: nexus
+visibility: internal
 raw_paths:
 """ + "".join(f"  - {p}\n" for p in source_paths) + """---
 
@@ -58,6 +67,7 @@ page: entity-person
 name: "{info['label']}"
 assignee: {slug}
 {role_line}project: nexus
+visibility: internal
 task_count: {{ facts_ref: "raw/nexus-people.facts.json#{slug}.task_count" }}
 estimate_h: {{ facts_ref: "raw/nexus-people.facts.json#{slug}.estimate_h" }}
 actual_h: {{ facts_ref: "raw/nexus-people.facts.json#{slug}.actual_h" }}
@@ -78,7 +88,8 @@ Trang này chỉ phủ dữ liệu đã nạp từ workbook Nexus Plan. Các b�
 không được suy diễn thành “không có”.
 """
         (WIKI / f"entities/{slug}.md").write_text(body, encoding="utf-8")
-    print(f"✓ Nexus wiki: 1 source + {len(people)} entity pages")
+    count = build_index.build()
+    print(f"✓ Nexus wiki: 1 source + {len(people)} entity pages · index {count} pages")
 
 
 if __name__ == "__main__":

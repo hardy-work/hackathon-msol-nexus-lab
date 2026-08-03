@@ -2,6 +2,7 @@
 raw_id: nexus-risk
 doc_id: nexus-plan
 sheet: 'Risk management '
+version: 1
 kind: rows
 generated_by: scripts/extract_nexus.py
 ---

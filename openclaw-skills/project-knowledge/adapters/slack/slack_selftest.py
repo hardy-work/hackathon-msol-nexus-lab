@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import hashlib
 import hmac
+import os
 import subprocess
 import sys
 import time
@@ -18,8 +19,11 @@ BRIDGE = HERE / "slack_bridge.py"
 
 def call(name: str) -> dict:
     payload = (HERE / "fixtures" / name).read_text(encoding="utf-8")
+    env = os.environ.copy()
+    env.update({"PROJECT_KNOWLEDGE_ACTOR": "local-slack-test",
+                "PROJECT_KNOWLEDGE_ROLES": "project_member"})
     proc = subprocess.run([sys.executable, str(BRIDGE)], input=payload, text=True,
-                          capture_output=True, check=False)
+                          capture_output=True, check=False, env=env)
     if proc.returncode:
         raise RuntimeError(f"{name}: {proc.stderr}")
     return json.loads(proc.stdout)

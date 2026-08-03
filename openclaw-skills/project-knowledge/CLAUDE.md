@@ -66,12 +66,13 @@ nexus
 | `concept` | `wiki/concepts/` | — |
 | `case-study` | `wiki/case-studies/` | `domain` (`project` tuỳ chọn) |
 
-Mọi trang phải có `page`, `name`, `raw_paths`; source phải có thêm `doc_id`.
+Mọi trang phải có `page`, `name`, `raw_paths`, `visibility`; source phải có thêm
+`doc_id`, `version`. `visibility` chỉ nhận `public`, `internal`, `restricted`.
 
 ## 4. Sáu chặng & bốn cổng
 
 ```
-INTAKE → EXTRACT → PLAN → WIKI-INGEST → REVIEW → PUBLISH
+INVENTORY → INTAKE → EXTRACT → STRUCTURE → WIKI-INGEST → REVIEW → PUBLISH
 Gate 1 SHA256 · Gate 2 numeric ingest · Gate 3a lint · Gate 3b review · Gate 4 numeric answer
 ```
 
@@ -79,8 +80,10 @@ Gate 1 SHA256 · Gate 2 numeric ingest · Gate 3a lint · Gate 3b review · Gate
 
 ## 5. Quyền nói “CHẮC CHẮN KHÔNG”
 
-Chỉ được nói khi quan hệ được lưu thành hàng dữ liệu, hai vế là DIMENSION đóng và
-`coverage.yml` có bản ghi do người ký. Thiếu điều kiện thì nói “không tìm thấy”.
+Chỉ được nói khi quan hệ được lưu thành hàng dữ liệu, hai vế là DIMENSION đóng,
+`coverage.yml` có receipt đầy đủ và runtime xác thực độc lập permission + approval id
+của người ký. Sửa YAML trong repo không tự cấp authority. Thiếu điều kiện thì nói
+“không tìm thấy”.
 
 ## 6. Điều cấm
 
@@ -88,3 +91,5 @@ Chỉ được nói khi quan hệ được lưu thành hàng dữ liệu, hai v�
 - Không gõ số đo trực tiếp vào wiki.
 - Không tự thêm DIMENSION.
 - Không commit `derived/`.
+- Không thay canonical document tại chỗ; version mới phải khai `supersedes` và qua
+  ingest worktree được người review.

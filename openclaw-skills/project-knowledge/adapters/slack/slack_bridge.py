@@ -16,9 +16,16 @@ SKILL_ROOT = next(parent for parent in Path(__file__).resolve().parents
 RUN = SKILL_ROOT / "scripts" / "run.py"
 
 
-def query_project(text: str) -> dict:
+def query_project(text: str, *, actor: str = "", roles: list[str] | None = None,
+                  history: list[dict] | None = None) -> dict:
     use_llm = os.getenv("PROJECT_KNOWLEDGE_LLM", "0").lower() in {"1", "true", "yes", "on"}
     args = [sys.executable, str(RUN), "--project", "nexus", "--query", text]
+    if actor:
+        args.extend(["--actor", actor])
+    if roles is not None:
+        args.extend(["--roles", ",".join(roles)])
+    if history:
+        args.extend(["--history-json", json.dumps(history, ensure_ascii=False)])
     if use_llm:
         args.append("--llm")
     proc = subprocess.run(

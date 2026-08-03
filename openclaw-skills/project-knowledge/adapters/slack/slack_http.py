@@ -22,6 +22,12 @@ from format_message import format_result
 from parse_event import parse, verify_signature
 from slack_bridge import query_project
 
+SCRIPTS = next(parent / "scripts" for parent in __import__("pathlib").Path(__file__).resolve().parents
+               if (parent / "scripts" / "conversation.py").exists())
+import sys
+sys.path.insert(0, str(SCRIPTS))
+from conversation import ConversationStore
+
 
 def request_is_valid(headers: dict[str, str], body: bytes, secret: str) -> bool:
     """Validate Slack's timestamp/signature pair; unsigned is never implicit."""
@@ -47,7 +53,27 @@ def process_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "text": event.get("reason", "Hãy nhập câu hỏi dự án."),
             "metadata": {"status": "not_in_kb", "project": "nexus"},
         }
-    result = query_project(event["text"])
+    actor = event.get("user_id", "")
+    try:
+        role_map = json.loads(os.getenv("PROJECT_KNOWLEDGE_SLACK_ROLE_MAP", "{}"))
+    except json.JSONDecodeError:
+        role_map = {}
+    roles = role_map.get(actor)
+    # Host-wide roles are accepted only in explicit offline demo mode. A Slack
+    # user absent from the trusted map must fail closed in production.
+    demo_mode = os.getenv("PROJECT_KNOWLEDGE_DEMO_MODE", "0").lower() in {"1", "true", "yes"}
+    if roles is None and demo_mode:
+        roles = [r.strip() for r in os.getenv("PROJECT_KNOWLEDGE_ROLES", "").split(",") if r.strip()]
+    elif roles is None:
+        roles = []
+    session = f"slack:{event.get('channel_id', '')}:{event.get('thread_ts', '')}"
+    store = ConversationStore()
+    history = store.history(session)
+    result = query_project(event["text"], actor=actor, roles=roles, history=history)
+    store.append(session, "user", event["text"], {"event_ts": event.get("event_ts", "")})
+    store.append(session, "assistant", result.get("answer", ""),
+                 {"status": result.get("status", "error")})
+    store.close()
     response = format_result(result, thread_ts=event.get("thread_ts", ""))
     response["metadata"].update({
         "channel_id": event.get("channel_id", ""),
@@ -105,21 +131,28 @@ class SlackHandler(BaseHTTPRequestHandler):
                 self._json(401, {"error": "invalid_slack_signature"})
                 return
             payload = json.loads(body.decode("utf-8"))
-            response = process_payload(payload)
         except (ValueError, json.JSONDecodeError) as exc:
             self._json(400, {"error": f"invalid_json: {exc}"})
             return
 
-        # URL verification and local mode return the response directly.  When a
-        # bot token is present, posting is opt-in and runs in a worker so Slack
-        # receives the 200 acknowledgement promptly.
-        token = os.getenv("SLACK_BOT_TOKEN", "")
-        if token and response.get("blocks"):
-            channel = response.get("metadata", {}).get("channel_id", "")
-            threading.Thread(target=post_to_slack, args=(response, token, channel),
-                             daemon=True).start()
-            self._json(200, {"ok": True, "posted": True})
+        event = parse(payload)
+        if event["kind"] == "url_verification":
+            self._json(200, {"challenge": event["challenge"]})
             return
+
+        # ACK before retrieval/model work. Slack requires a prompt response;
+        # doing process_payload first made the previous implementation time out.
+        token = os.getenv("SLACK_BOT_TOKEN", "")
+        if token and event["kind"] == "query":
+            def work() -> None:
+                response = process_payload(payload)
+                channel = response.get("metadata", {}).get("channel_id", "")
+                post_to_slack(response, token, channel)
+
+            threading.Thread(target=work, daemon=True).start()
+            self._json(200, {"ok": True, "accepted": True})
+            return
+        response = process_payload(payload)
         self._json(200, response)
 
     def log_message(self, fmt: str, *args: object) -> None:

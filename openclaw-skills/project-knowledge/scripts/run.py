@@ -26,6 +26,12 @@ def main() -> int:
     parser.add_argument("--query", required=True, help="câu hỏi cần tra cứu")
     parser.add_argument("--llm", action="store_true",
                         help="bật Haiku router và bậc Sonnet cho câu hỏi mở")
+    parser.add_argument("--actor", default=None,
+                        help="trusted caller identity (normally injected by the host)")
+    parser.add_argument("--roles", default=None,
+                        help="comma-separated trusted roles (normally injected by the host)")
+    parser.add_argument("--history-json", default="[]",
+                        help="recent conversation messages as JSON")
     args = parser.parse_args()
 
     if args.project.lower() != "nexus":
@@ -46,9 +52,61 @@ def main() -> int:
     sys.path.insert(0, str(root / "scripts"))
     try:
         import answer
+        import access_control
+        import query_cache
 
-        kb = answer.KB()
-        result = answer.ask(kb, args.query, llm=args.llm)
+        try:
+            history = json.loads(args.history_json)
+            if not isinstance(history, list):
+                raise ValueError("history must be a list")
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise ValueError(f"--history-json không hợp lệ: {exc}") from exc
+
+        access = access_control.AccessContext.from_runtime(args.actor, args.roles)
+        allowed, access_reason = access_control.authorize_project(access, root)
+        if not allowed:
+            payload = {
+                "status": "forbidden",
+                "answer": "Bạn không có quyền đọc Project Knowledge của dự án này.",
+                "confidence": "none",
+                "citations": [],
+                "reason": access_reason,
+                "tier": 0,
+                "project": args.project,
+                "suggested_actions": [],
+            }
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 3
+
+        kb = answer.KB(access=access)
+        effective_query = args.query
+        previous_user = next(
+            (m for m in reversed(history) if m.get("role") == "user" and m.get("content")),
+            None,
+        )
+        if previous_user:
+            previous_people = kb.find_people(previous_user["content"])
+            previous_slug = previous_people[0] if len(previous_people) == 1 else None
+            effective_query = (answer.resolve_ellipsis(
+                kb, args.query, previous_user["content"], previous_slug
+            ) or args.query)
+
+        freshness = getattr(kb, "freshness", {}) or {}
+        version = (freshness.get("current_input_sha256") or freshness.get("input_sha256")
+                   or freshness.get("version") or "unknown")
+        key = query_cache.cache_key(args.project, effective_query, version,
+                                    access.fingerprint, args.llm, history)
+        cache = query_cache.QueryCache()
+        cached = cache.get(key)
+        if cached is not None:
+            cached["cache_hit"] = True
+            if effective_query != args.query:
+                cached["effective_query"] = effective_query
+            print(json.dumps(cached, ensure_ascii=False, indent=2))
+            cache.close()
+            return 0
+
+        result = answer.ask(kb, effective_query, llm=args.llm)
         status = {
             answer.CO: "in_kb",
             answer.NO: "confident_no",
@@ -92,6 +150,12 @@ def main() -> int:
                 "source": result.route.source,
                 "reason": result.route.reason,
             }
+        payload["cache_hit"] = False
+        if effective_query != args.query:
+            payload["effective_query"] = effective_query
+        if status != "error":
+            cache.put(key, version, payload)
+        cache.close()
     except Exception as exc:  # keep the agent contract machine-readable
         payload = {
             "status": "error",

@@ -17,12 +17,14 @@ cái trước chỉ mất thông tin; nói nhầm cái trước thành cái sau 
 """
 import re
 import json
+import os
 import sys
 import unicodedata
 import contextlib
 from pathlib import Path
 
 import duckdb
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import numeric_guard
@@ -30,6 +32,7 @@ import models
 import router
 import versioning
 import graph_retrieval
+import access_control
 
 # Bậc 2 NGỮ NGHĨA (vector bge-m3 trên TRANG WIKI). Lười nạp: model ~2GB nên CHỈ nạp
 # khi thật sự dùng (câu mở, LLM bật). Không có chỉ mục / thiếu thư viện -> None,
@@ -53,9 +56,17 @@ def SEM():
     return _SEM
 
 
-def semantic_pages(q, k=6):
+def semantic_pages(q, k=6, allowed=None):
     sem = SEM()
     if sem is None:
+        return []
+    try:
+        pages = [p for _, p in sem.search(q, k=max(k * 3, k))]
+        if allowed:
+            allowed = set(allowed)
+            pages = [p for p in pages if p in allowed]
+        return pages[:k]
+    except Exception:
         return []
 
 
@@ -64,10 +75,6 @@ def GRAPH():
     if _GRAPH is False:
         _GRAPH = graph_retrieval.load(ROOT)
     return _GRAPH
-    try:
-        return [p for _, p in sem.search(q, k=k)]
-    except Exception:
-        return []
 
 
 def rrf_merge(rank_lists, keep=6, pin=(), k0=60):
@@ -404,36 +411,50 @@ class Result:
 
 
 class KB:
-    def __init__(self):
+    def __init__(self, access=None):
         if not DB.exists():
             sys.exit("chưa có derived/facts.duckdb — chạy: python3 scripts/build_db.py")
         self.freshness = versioning.check(ROOT)
+        self.access = access
         self.con = duckdb.connect(str(DB), read_only=True)
-        self.people = self.con.execute(
+        people_rows = self.con.execute(
             "SELECT assignee,name,role,task_count,estimate_h,actual_h,page,src_task,src_actual "
-            "FROM person").fetchall()
+            ",visibility,allowed_roles,allowed_users FROM person").fetchall()
+        self.people = [row[:9] for row in people_rows if self.can_read_acl(*row[9:12])]
         self.roles = [r[0] for r in self.con.execute(
             "SELECT value FROM dim_value WHERE dimension='role'").fetchall()]
         self.vocab = {}
         for dim, value in self.con.execute(
                 "SELECT dimension,value FROM dim_value ORDER BY dimension,value").fetchall():
             self.vocab.setdefault(dim, []).append(value)
-        self.psprint = {(r[0], r[1]): r for r in self.con.execute(
-            "SELECT assignee,sprint,task_count,estimate_h,actual_h,src FROM person_sprint"
-        ).fetchall()}
+        sprint_rows = self.con.execute(
+            "SELECT assignee,sprint,task_count,estimate_h,actual_h,src,"
+            "visibility,allowed_roles,allowed_users FROM person_sprint").fetchall()
+        self.psprint = {(r[0], r[1]): r[:6] for r in sprint_rows
+                        if self.can_read_acl(*r[6:9])}
         self.sprint_metrics = {}
         metrics_file = RAW / "nexus-sprint1.facts.json"
         if metrics_file.exists():
             data = json.loads(metrics_file.read_text(encoding="utf-8"))
             self.sprint_metrics = data.get("summary_facts", {})
         self.cov = {r[0]: r for r in self.con.execute(
-            "SELECT relation,signed,complete_as_of,source,asserted_by FROM coverage").fetchall()}
+            "SELECT relation,complete_as_of,source,asserted_by,signed_date,approval_id,"
+            "required_permission,note FROM coverage").fetchall()}
+
+        metric_rows = self.con.execute(
+            "SELECT project,metric,value,unit,src,visibility,allowed_roles,allowed_users "
+            "FROM project_metric").fetchall()
+        self.project_metrics = {(r[0], r[1]): r[2:5] for r in metric_rows
+                                if self.can_read_acl(*r[5:8])}
 
         # bảng bán cấu trúc (6 sheet realign A): (doc,row) -> {sheet, cells:[(col,header,value,src)]}
         self.doc_rows = {}
-        for doc, sheet, rn, col, hdr, val, src in self.con.execute(
-            "SELECT doc,sheet,row_no,col,header,value,src FROM doc_cell "
-            "ORDER BY doc,row_no,col").fetchall():
+        doc_cells = self.con.execute(
+            "SELECT doc,sheet,row_no,col,header,value,src,visibility,"
+            "allowed_roles,allowed_users FROM doc_cell ORDER BY doc,row_no,col").fetchall()
+        for doc, sheet, rn, col, hdr, val, src, visibility, roles, users in doc_cells:
+            if not self.can_read_acl(visibility, roles, users):
+                continue
             d = self.doc_rows.setdefault(
                 (doc, rn), {"doc": doc, "sheet": sheet, "row": rn, "cells": []})
             d["cells"].append((col, hdr, val, src))
@@ -451,22 +472,60 @@ class KB:
             self.sigs.append((sig(name), a))   # "[BE] Du" -> "bedu"
             self.sigs.append((sig(a), a))      # "be-du"   -> "bedu"
 
+    def can_read_acl(self, visibility, roles_json="[]", users_json="[]"):
+        if self.access is None:
+            return True
+        try:
+            roles = json.loads(roles_json or "[]")
+            users = json.loads(users_json or "[]")
+        except json.JSONDecodeError:
+            return False
+        return access_control.can_read_metadata(self.access, {
+            "visibility": visibility,
+            "allowed_roles": roles,
+            "allowed_users": users,
+        })
+
     def signed(self, relation):
         c = self.cov.get(relation)
-        return bool(c and c[1])
+        if not c or not c[4] or not c[5] or not c[6] or str(c[3]).startswith("TODO"):
+            return False
+        try:
+            grants = json.loads(os.getenv("PROJECT_KNOWLEDGE_COVERAGE_GRANTS", "{}"))
+        except json.JSONDecodeError:
+            return False
+        approval_ids = {
+            x.strip() for x in os.getenv("PROJECT_KNOWLEDGE_APPROVAL_IDS", "").split(",")
+            if x.strip()
+        }
+        return c[5] in approval_ids and c[6] in set(grants.get(c[3], []))
 
     def cov_note(self, relation):
         c = self.cov[relation]
-        return f"coverage `{relation}` do {c[4]} ký, đầy đủ tính đến {c[2]} ({c[3]})"
+        return (f"coverage `{relation}` do {c[3]} ký, đầy đủ tính đến {c[1]} "
+                f"({c[2]}; approval `{c[5]}`)")
 
     def unsigned_downgrade(self, relation, what):
         c = self.cov.get(relation)
-        who = c[4] if c else "(không có bản ghi)"
+        who = c[3] if c else "(không có bản ghi)"
         return Result(1, NF, f"Kho không dám khẳng định: {what}",
                       reason=f"điều kiện ③ PHẠM VI chưa thoả — `coverage.yml` quan hệ "
-                             f"`{relation}` chưa có người ký (asserted_by = {who!r}). "
+                             f"`{relation}` chưa có approval được runtime xác thực "
+                             f"(asserted_by = {who!r}). "
                              f"Chưa ký thì chỉ được nói 'không tìm thấy', không được nói "
                              f"'chắc chắn không'.")
+
+    def can_read_page(self, rel):
+        """Apply page-level visibility after the project-level boundary."""
+        if self.access is None:  # trusted offline build/eval process
+            return True
+        path = ROOT / rel
+        if not path.exists():
+            return False
+        text = path.read_text(encoding="utf-8")
+        match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+        metadata = yaml.safe_load(match.group(1)) if match else {}
+        return access_control.can_read_metadata(self.access, metadata or {})
 
     def idf(self, term):
         """Độ hiếm của một từ trong kho. Đếm từ ĐƠN GIẢN (số dòng có chứa) — đây là
@@ -693,6 +752,12 @@ def tier1(kb, q):
     who = kb.find_people(q)
     if re.search(INTERPRETIVE, qa):
         return None          # nhường bậc 3
+    # Quan hệ nhiều bước vẫn "thử bậc 1" trước, nhưng bậc 1 chủ động từ chối
+    # câu không thuần số/trường để graph xử lý. Nếu không có guard này, doc_fallback
+    # dễ nuốt câu graph bằng một dòng Excel chỉ khớp từ khoá.
+    if graph_retrieval.is_relation_query(q) and not re.search(
+            r"bao nhieu|may|so\s+|ngay|effort|gio|status|trang thai|priority", qa):
+        return None
 
     sprints, others = qualifiers(qa)
     full_range = sprints == {1}                # Nexus hiện có một Sprint 1
@@ -992,8 +1057,7 @@ def tier1(kb, q):
                "tien do": "progress_overall", "toan bo he thong": "effort_all_system"}
     for kw, metric in metrics.items():
         if kw in qa:
-            row = kb.con.execute(
-                "SELECT value,unit,src FROM project_metric WHERE metric=?", [metric]).fetchone()
+            row = kb.project_metrics.get(("nexus", metric)) or kb.project_metrics.get((None, metric))
             if row:
                 v = f"{row[0]:.4%}" if row[1] == "ratio" else f"{row[0]} {row[1]}"
                 raw = f" (giá trị nguyên văn: `{row[0]}`)" if row[1] == "ratio" else ""
@@ -1002,12 +1066,58 @@ def tier1(kb, q):
     return None
 
 
-# ---------------------------------------------------------- BẬC 2 · từ khoá
+# ---------------------------------------------------------- BẬC 0 · catalog
 STOP = set("la gi co khong ko cua va cho nao bao nhieu the nhung mot cac o trong "
            "du an hay duoc nay do ai lam".split())
 
 
-def tier2(kb, q):
+def tier0_pages(kb, q, limit=64):
+    """Đọc duy nhất wiki/index.md và trả tên trang ứng viên.
+
+    Đây là catalog bậc 0 của flow: không đọc nội dung wiki, không quét tự do. Các
+    định danh đóng mà bậc 1 nhận ra (person/doc) được pin trước kết quả catalog.
+    """
+    index = ROOT / "wiki" / "index.md"
+    if not index.exists():
+        return []
+    page_map = {
+        p.stem: p.relative_to(ROOT).as_posix()
+        for p in (ROOT / "wiki").rglob("*.md")
+        if p.name not in ("index.md", "log.md")
+    }
+    pinned = []
+    for slug in kb.find_people(q):
+        page = kb.person(slug)[6]
+        if page in page_map.values() and kb.can_read_page(page):
+            pinned.append(page)
+    if docs_mentioned(q) or inferred_docs(q):
+        source = page_map.get("nexus-plan")
+        if source:
+            pinned.append(source)
+
+    terms = [t for t in re.findall(r"[a-z0-9]+", strip_accent(q))
+             if len(t) > 2 and t not in STOP]
+    scored = []
+    for pos, line in enumerate(index.read_text(encoding="utf-8").splitlines()):
+        links = LINK.findall(line) if "LINK" in globals() else re.findall(r"\[\[([^\]]+)\]\]", line)
+        if not links:
+            continue
+        blob = strip_accent(line)
+        hit = sum(1 for term in terms if term in blob)
+        for slug in links:
+            path = page_map.get(slug)
+            if path and kb.can_read_page(path):
+                scored.append((hit, -pos, path))
+    scored.sort(reverse=True)
+    out = []
+    for path in pinned + [row[2] for row in scored]:
+        if path not in out:
+            out.append(path)
+    return out[:limit]
+
+
+# ---------------------------------------------------------- BẬC 2 · từ khoá
+def tier2(kb, q, candidates=None):
     # GIỮ NGUYÊN DẤU và khớp theo biên từ. Bỏ dấu ở đây làm "chỉ" == "chi",
     # "phí" == "phi" -> khớp giả, và câu "không tìm thấy" biến thành "có". Đã bị một lần.
     terms = [t for t in re.findall(r"\w+", q.lower(), re.UNICODE)
@@ -1017,8 +1127,11 @@ def tier2(kb, q):
     pats = {t: re.compile(rf"(?<!\w){re.escape(t)}(?!\w)", re.UNICODE) for t in terms}
     best = []
     # wiki/ (tầng tuyển): khớp biên từ trên cả trang — xương sống eval phụ thuộc, giữ nguyên.
-    for p in sorted((ROOT / "wiki").rglob("*.md")):
-        if p.name == "log.md":
+    paths = [ROOT / rel for rel in (candidates or [])]
+    for p in paths:
+        rel = p.relative_to(ROOT).as_posix() if p.exists() else ""
+        if (not p.exists() or p.name in ("index.md", "log.md")
+                or not kb.can_read_page(rel)):
             continue
         body = p.read_text(encoding="utf-8").lower()
         hit = [t for t in terms if pats[t].search(body)]
@@ -1068,6 +1181,7 @@ def tier3(kb, q, pages, graph_context="", timeout=120):
     """Bậc 3: LLM đọc đúng những trang WIKI bậc 2 tìm được. Không cho nó tự đi tìm,
     và (realign A) KHÔNG đọc raw — chỉ trang đã qua Gate 3."""
     import subprocess
+    pages = [p for p in pages if kb.can_read_page(p)]
     ctx = "\n\n".join(
         f"--- {p} ---\n{(ROOT / p).read_text(encoding='utf-8')}" for p in pages)
     try:
@@ -1125,19 +1239,20 @@ def ask(kb, q, llm=True):
             result.route = decision
         return result
 
+    # Flow bắt buộc bậc 1 chạy trước mọi retrieval mờ/graph.
+    r = tier1(kb, q)
+    if r:
+        return finish(gate4(r))
+
     graph = GRAPH()
     if graph is not None and graph_retrieval.is_relation_query(q):
-        direct = graph.direct_answer(q)
+        direct = graph.direct_answer(q, access=kb.access)
         if direct is not None:
             result = Result(2, CO, direct.answer, cites=list(direct.citations),
                             reason=direct.reason,
                             route=router.Decision("graph", 1.0, direct.reason, "graph"))
             return gate4(result)
-        graph_context, graph_citations = graph.context(q)
-
-    r = tier1(kb, q)
-    if r:
-        return finish(gate4(r))
+        graph_context, graph_citations = graph.context(q, access=kb.access)
 
     # Vẫn còn trong BẬC 1: quét bảng đã nạp. Phải chạy TRƯỚC bậc 2 — sơ đồ quy định
     # bậc 1 (tất định) luôn thử trước, và bậc 2 chỉ trả về "có trang liên quan" chứ
@@ -1160,9 +1275,10 @@ def ask(kb, q, llm=True):
             reason="Haiku định tuyến sang action skill; cần permission và approval trước khi ghi.",
         ))
     if model_route == "graph" and graph is not None:
-        graph_context, graph_citations = graph.context(q)
+        graph_context, graph_citations = graph.context(q, access=kb.access)
 
-    r2 = tier2(kb, q)
+    catalog = tier0_pages(kb, q)
+    r2 = tier2(kb, q, candidates=catalog)
     pages = list(r2.cites or getattr(r2, "pages", []))
     # Bậc 2 chấm theo từ khoá nên tên ngắn bị lọc mất ("Du" 2 ký tự -> trượt trang
     # be-du.md). Nhưng ta BIẾT câu hỏi nhắc ai — `assignee` là DIMENSION đóng, khớp
@@ -1176,18 +1292,19 @@ def ask(kb, q, llm=True):
     use_semantic = llm and (model_route is None or model_route in ("semantic", "open"))
     if use_semantic:
         pin = [kb.person(s)[6] for s in kb.find_people(q)]
-        sem = semantic_pages(q, k=6)
+        sem = semantic_pages(q, k=6, allowed=catalog or None)
         if sem:
-            pages = rrf_merge([pages, sem], keep=6, pin=pin)
+            pages = rrf_merge([catalog, pages, sem], keep=6, pin=pin)
     # A structured route that missed Tier 1 may still have useful wiki context
     # (for example, a paraphrase).  Let Sonnet summarize those keyword hits;
     # only action/unsupported routes suppress model generation.
     allow_sonnet = llm and (model_route is None or model_route in
                             ("structured", "document", "semantic", "open"))
     if allow_sonnet and (pages or graph_context):
-        r3 = gate4(tier3(kb, q, pages, graph_context=graph_context))
+        r3 = tier3(kb, q, pages, graph_context=graph_context)
         if graph_citations:
             r3.cites = list(dict.fromkeys([*r3.cites, *graph_citations]))
+        r3 = gate4(r3)
         # Bậc 3 nói KHÔNG TÌM THẤY thì vẫn dùng câu của nó — nó nêu ĐÍCH DANH cái
         # đang thiếu, hữu ích hơn câu chung chung của bậc 2. Nhưng phải gắn kèm
         # lời cảnh báo của bậc 2, vì LLM không được phép tự nói câu đó.
@@ -1208,7 +1325,9 @@ ELLIPSIS = re.compile(r"^\s*(?:vay\s+|the\s+)?(?:con\s+)?(.+?)\s*(?:thi\s+sao)?\
 
 def flex_label(label):
     """Regex khớp một nhãn PIC bất kể ngoặc/dấu cách: '[QC] LAN' -> khớp cả '[QC]LAN'."""
-    toks = re.findall(r"[A-Za-z0-9.]+", label)
+    # Unicode is required here: ASCII tokenization turned `ĐôNT` into `NT`, so
+    # a follow-up rewrite produced the corrupt string `ĐôSơnBH`.
+    toks = re.findall(r"[^\W_]+", label, re.UNICODE)
     return re.compile(r"\[?\s*" + r"\s*\]?\s*".join(re.escape(t) for t in toks), re.I)
 
 
