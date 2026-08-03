@@ -78,6 +78,28 @@ servers / backend services it depends on.
   committed Nexus Plan corpus with DuckDB/facts, wiki citations, confidence and
   explicit `not_in_kb`/`confident_no` semantics. It never writes Jira, Sheets or
   Slack. The corpus is self-contained; `derived/` indexes are rebuilt locally.
+- [`openclaw-skills/slack-evidence-sheet/`](openclaw-skills/slack-evidence-sheet/) —
+  turns one Slack evidence-collection thread into a brand-new Google Sheet: one
+  row per person, with their email, the time they posted, and their attached
+  screenshots uploaded to a Google Drive folder. Columns/title come from
+  `config.json` so the next round only needs a config edit. Always previews the
+  roster and asks for confirmation before creating anything on Drive. Contains:
+  - `SKILL.md` — instructions the agent follows for the whole flow.
+  - `scripts/oauth-setup.js` — one-time browser consent to mint a refresh token.
+  - `scripts/get-token.sh` — refresh token → access token (same interface as
+    `gg-sheet`'s script).
+  - `scripts/slack-fetch.js` — reads the thread, resolves emails, downloads files.
+  - `scripts/build-sheet.js` — uploads to Drive, builds and formats the sheet.
+
+  Unlike `gg-sheet`, this one authenticates as an **OAuth user, not a Service
+  Account** — Service Accounts have no Drive storage quota, so they cannot
+  *create* files at all (`storageQuotaExceeded`), only edit existing ones. The
+  rule of thumb for this repo: **edit an existing file → Service Account; create
+  a new file → OAuth.** See the skill's README for the full reasoning.
+
+  Needs a `.env` in this folder with `SLACK_BOT_TOKEN`,
+  `GOOGLE_OAUTH_CLIENT_FILE`, `GOOGLE_OAUTH_TOKEN_FILE` (see `.env.example`),
+  plus a `config.json` copied from `config.example.json`.
 
 Assumes a Vexa instance is already running and reachable (see the machine at
 `192.168.4.15:18056` on the LAN, or your own self-hosted instance — see

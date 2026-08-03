@@ -175,6 +175,22 @@ Với mỗi task, xác định trạng thái thực tế bằng cách đối chi
 
 Trường hợp biên: task đạt các điều kiện effort (`Remaining(h)=0`, `Progress=100%`) nhưng `Status` không phải "Done" và cũng không phải "Open" (vd 1 giá trị trung gian khác của project) → không phải "Hoàn thành" (thiếu điều kiện Status), cũng không phải "Quên chưa đổi trạng thái" (không phải case Open) → xem như "hết effort nhưng Status chưa chuyển Done", hiển thị ở Bước 5 để PM tự đánh giá, không tự kết luận đúng/sai.
 
+### Task bị block (phụ thuộc task khác)
+
+Ngoài 4 trạng thái ở trên, kiểm tra thêm cột `Note` (R) của mỗi `T_i`: nếu `Note` chứa từ khóa kiểu "block" (không phân biệt hoa/thường, vd "bị block bởi", "block by", "blocked") → task này đang **bị chặn bởi 1 task khác** (Note thường ghi rõ task nào chặn).
+
+- Task **Chưa làm** (`Start Date Actual` trống) **và** `Note` báo đang bị block → KHÔNG tính là "chưa report" ở Bước 4 (đây là lý do chính đáng, không phải quên) — hiển thị riêng ở Bước 7 kèm lý do block (verbatim theo Note), không gộp chung nhóm "chưa report".
+- Đây chỉ là phát hiện dựa trên `Note` do PM/member tự ghi tay — sheet không có cột dependency chính thức, nên KHÔNG tự suy luận block nếu `Note` không nói rõ (vd 2 task cùng 1 feature BE/FE có thể phụ thuộc ngầm về nghiệp vụ, nhưng không ghi Note thì vẫn coi là bình thường, không tự đoán).
+
+**Khi 1 task thuộc phạm vi hôm nay đang bị block** (theo Note), ưu tiên đề xuất theo thứ tự sau (thay vì mặc định để assignee đó rảnh tay hôm nay):
+
+1. Tìm task **Open** kế tiếp của cùng assignee đó trong tab (theo thứ tự dòng) mà **không** có dấu hiệu bị block trong `Note` → đề xuất **hoán đổi lịch** giữa 2 task: task không-bị-block đẩy lên làm ngày hôm nay (Start/End Date Plan = ngày hôm nay), task đang bị block dời sang đúng vị trí ngày của task kia (Start/End Date Plan mới = ngày cũ của task không-bị-block) — chỉ hoán đổi khi 2 task cộng lại vẫn đúng capacity hiện có (cùng estimate, hoặc tổng giờ khớp lịch cũ), không tạo khoảng trống hay chồng giờ.
+2. Nếu hoán đổi được → các task Open còn lại phía sau **giữ nguyên ngày**, không cascade (tổng capacity 2 ngày liên quan không đổi, chỉ đảo thứ tự) — khác với reschedule do trễ (Bước 6), nên nói rõ với PM là "không ảnh hưởng các task khác" khi đề xuất.
+3. Nếu không tìm được task Open nào để hoán đổi (assignee chỉ có đúng task đang bị block trong ngày, hoặc mọi task kế tiếp cũng đang bị block) → rơi về cascade chuẩn như Bước 6 (dời nguyên chuỗi task Open phía sau theo capacity 8h/ngày).
+4. **Luôn cảnh báo PM** trước khi áp dụng hoán đổi: task được đẩy lên làm sớm có thể cũng đang phụ thuộc 1 task/API khác trên thực tế dù `Note` không ghi rõ — đề xuất PM xác nhận với chính assignee đó trước khi chốt, không tự khẳng định chắc chắn an toàn.
+
+Đây vẫn là **đề xuất tham khảo** như mọi đề xuất reschedule khác trong skill này — không tự ghi vào sheet. Nếu PM đồng ý, dùng skill `gg-sheet` để ghi thủ công từng ô `Start Date Plan`/`End Date Plan` bị hoán đổi (đây không phải cascade do overrun nên không áp công thức Action 2b), kèm ghi chú lại lý do vào `Note` của task bị dời.
+
 ### Validate dữ liệu member tự điền (dùng ở Bước 5)
 
 Chỉ validate 4 field member thực sự tự tay điền (`Re-estimate(h) Actual`, `Start Date Actual`, `End Date Actual`, `Actual Effort(h)`) — KHÔNG bao giờ yêu cầu member "điền Progress"/"điền Remaining" vì 2 field đó là công thức tự tính từ chính 4 field kia.
@@ -197,7 +213,7 @@ Với mỗi assignee, tìm các `T_i` có slot giao với hôm nay (từ Bước
 - Không có `T_i` nào giao với hôm nay (theo lịch, hôm nay assignee không có task nào đang chạy) → không xét assignee này ở mục report hôm nay (không phải lỗi, chỉ là không có gì tới lượt).
 - Có `T_i` giao với hôm nay:
   - `T_i` ở trạng thái **Đang làm** hoặc **Hoàn thành** (tức `Start Date Actual` đã điền) → **đã report**.
-  - `T_i` ở trạng thái **Chưa làm** (`Start Date Actual` trống) dù theo lịch phải đang chạy task đó hôm nay → **chưa report**.
+  - `T_i` ở trạng thái **Chưa làm** (`Start Date Actual` trống) dù theo lịch phải đang chạy task đó hôm nay → **chưa report** — **trừ khi** `Note` báo task đang bị block (xem mục "Task bị block" ở trên), trường hợp đó không tính vào nhóm chưa report, hiển thị riêng ở Bước 7.
 
 Không có cách tính "report thiếu giờ" chính xác như Jira (không có worklog theo giờ/ngày) — chỉ phân 2 nhóm: đã report / chưa report. Nếu PM muốn biết giờ đã làm hôm nay, dùng trực tiếp `Actual Effort(h)` của task đang giao với hôm nay (giá trị PM tự điền, không đảm bảo chính xác theo ngày).
 
@@ -242,6 +258,9 @@ Trình bày theo format — văn phong **tự nhiên, như PM nói chuyện vớ
   [nếu gần xong nhưng chưa khớp đủ checklist "Hoàn thành" → "ℹ️ gần xong nhưng chưa đủ để tính Done — còn thiếu <field còn thiếu/chưa khớp>"]
   [nếu thiếu/sai theo mục "Validate dữ liệu member tự điền" → "⚠️ thiếu/sai dữ liệu: <đúng field bị thiếu hoặc lệch công thức>, cần kiểm tra lại" — nêu đúng field, KHÔNG chỉ định một người cụ thể phải kiểm tra (không viết "nhờ X kiểm tra")]
   [nếu số liệu tự mâu thuẫn khác → 1 dòng ngắn nêu đúng số liệu lệch, không suy đoán lý do]
+  [nếu đang bị block theo Note (xem mục "Task bị block") → "⏸ đang chờ <task/lý do chặn theo Note>, chưa tính là thiếu report"
+  → Đề xuất hoán đổi: đẩy "<task Open kế tiếp không bị block>" lên làm hôm nay, dời task này sang <ngày mới> (không ảnh hưởng các task khác của <assignee>). Bạn xác nhận với <assignee> task đó thực sự làm được luôn trước khi mình đổi nhé.
+  [nếu không tìm được task nào để hoán đổi → "→ Không có task Open nào khác của <assignee> để đổi chỗ, cần cascade dời các task Open phía sau (xem mục Task trễ tiến độ/Bước 6)."]]
 
 **1 dòng = 1 task, KHÔNG gộp theo assignee** — 1 assignee có thể có nhiều task cùng thuộc phạm vi hôm nay (vd task hôm qua overrun tràn sang + task mới bắt đầu cùng ngày) → liệt kê mỗi task 1 dòng riêng, tên assignee lặp lại ở từng dòng nếu cần. Chỉ thêm dòng flag khi thực sự phát sinh, KHÔNG gộp thành mục riêng kiểu "❌ Chưa cập nhật (0 người)" hay "⚠️ Quên đổi trạng thái: không có" khi không có gì.
 
