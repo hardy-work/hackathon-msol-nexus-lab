@@ -1,6 +1,7 @@
 // Chạy 1 lần để lấy refresh token. Mở URL in ra, bấm Đồng ý, xong.
 // Dùng: node scripts/oauth-setup.js [clientJson] [outTokenJson]
 // Mặc định đọc GOOGLE_OAUTH_CLIENT_FILE / GOOGLE_OAUTH_TOKEN_FILE từ env.
+require('dotenv').config();
 const fs = require('fs');
 const http = require('http');
 const https = require('https');

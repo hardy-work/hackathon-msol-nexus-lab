@@ -14,19 +14,130 @@ Ranh giới chung cho repo: **skill chỉ sửa file có sẵn thì dùng Servic
 
 ### 1. Google — OAuth client
 
-Trong GCP Console (project nào cũng được, có thể dùng chung project với `gg-sheet`):
+#### Nếu chưa có GCP project
 
-1. Bật **Google Drive API** và **Google Sheets API** trong _APIs & Services → Library_.
-2. _Google Auth Platform → Get started_: điền app name + email, Audience chọn **Internal** nếu tài khoản thuộc Workspace, không thì **External**.
-3. Nếu chọn External → vào **Audience** bấm **Publish app**. Bỏ qua bước này thì refresh token chết sau 7 ngày.
-4. _Clients → Create client → Desktop app_ → **Download JSON**, lưu thành `oauth-client.json` trong thư mục skill này.
+Vào **https://console.cloud.google.com**:
 
-```bash
-cp .env.example .env      # điền SLACK_BOT_TOKEN, trỏ đúng 2 đường dẫn file
-node scripts/oauth-setup.js
-```
+1. Bấm **Select a Project** (ở top) → **New Project** → điền tên (ví dụ "evidence-bot")
+2. Chọn project vừa tạo
+3. Vào **APIs & Services → Library**, tìm và bật:
+   - **Google Drive API** → bấm **Enable**
+   - **Google Sheets API** → bấm **Enable**
 
-Script in ra 1 URL — mở trên trình duyệt, đăng nhập bằng **tài khoản sẽ sở hữu các file evidence**, bấm Đồng ý. Gặp màn "Google hasn't verified this app" thì bấm Advanced → Go to ... (bình thường với app tự tạo). Xong, `oauth-token.json` được ghi ra.
+#### Setup OAuth client
+
+Trong GCP Console (project vừa tạo hoặc project có sẵn):
+
+1. Vào **APIs & Services → OAuth consent screen**:
+   - Nếu chưa setup → bấm **Get started** → chọn Audience:
+     - **External** (nếu tài khoản không phải Google Workspace)
+     - **Internal** (nếu tài khoản thuộc Google Workspace công ty)
+   - Điền **App name** + **Email** → **Create**
+   
+   > Sau khi "OAuth configuration created!", tiếp tục các bước dưới
+
+2. Vào tab **Audience** (ở sidebar):
+   - Ở phần **Test users** → bấm **Add users**
+   - Điền email của account sẽ **sở hữu file evidence** (công cụ sẽ chạy nhân danh account này)
+
+3. Ở phần **Publishing status** → bấm nút xanh **"Publish app"**:
+   - ⚠️ Bắt buộc để refresh token không hết hạn sau 7 ngày
+   - Scope `drive.file` là non-sensitive nên publish ngay, không cần chờ Google kiểm duyệt
+   - Sau khi publish, status sẽ đổi thành "In production"
+
+4. Vào **APIs & Services → Credentials** (ở sidebar):
+   - Bấm **Create Credentials → OAuth client ID**
+   - Application type: **Desktop app** → **Create**
+   - Bấm nút **Download** (mũi tên ⬇️) → Copy JSON
+
+5. Lưu `oauth-client.json` vào thư mục skill:
+   ```bash
+   cd openclaw-skills/slack-evidence-sheet
+   # Dán JSON từ bước trên vào file oauth-client.json
+   cat > oauth-client.json << 'EOF'
+   {nội dung JSON tải được}
+   EOF
+   ```
+
+#### Setup .env và lấy refresh token
+
+6. Tạo file `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+
+7. Sửa `.env`, điền **SLACK_BOT_TOKEN** (bot cần scope: `channels:history`, `groups:history`, `files:read`, `users:read`, `users:read.email`):
+   ```
+   SLACK_BOT_TOKEN=xoxb-...
+   GOOGLE_OAUTH_CLIENT_FILE=./oauth-client.json
+   GOOGLE_OAUTH_TOKEN_FILE=./oauth-token.json
+   ```
+
+8. Cài package `dotenv` (để script tự load `.env`):
+   ```bash
+   npm install dotenv
+   ```
+
+9. Chạy script OAuth setup:
+   ```bash
+   node scripts/oauth-setup.js
+   ```
+   
+   Script sẽ:
+   - Tải `.env` tự động (từ package `dotenv`)
+   - Kiểm tra file `oauth-client.json`
+   - In ra 1 URL dài (bắt đầu bằng `https://accounts.google.com/...`)
+   - Dừng lại chờ bạn
+
+   Khi thấy URL, **copy → dán vào trình duyệt → Enter**
+
+10. Đăng nhập và cấp quyền:
+   - **Thấy màn "Sign in"** → chọn hoặc nhập email **BotNexusAcc** (account sẽ sở hữu file)
+   - **Nhập password**
+   - **Thấy màn "App requests access to..."** → bấm nút xanh **"Allow"** hoặc **"Agree"**
+   
+   > Nếu gặp **"Google hasn't verified this app"** → bấm **Advanced** → **Go to ...** (bình thường cho app tự tạo)
+
+11. Hoàn tất:
+   - Browser hiển thị **"Authorization successful"** hoặc tương tự
+   - Quay lại **terminal** → script đã tự viết file `oauth-token.json` ✅
+   - Nếu terminal vẫn chạy, bấm **Ctrl+C** để thoát
+   - Kiểm tra file được tạo:
+     ```bash
+     ls -la oauth-token.json
+     ```
+
+#### Setup Config cho từng đợt
+
+12. Copy config mẫu:
+   ```bash
+   cp config.example.json config.json
+   ```
+
+13. Sửa `config.json` theo nhu cầu của đợt:
+   ```json
+   {
+     "sheetTitle": "Evidence log {date}",      // Tên file sheet (hỗ trợ {date})
+     "folderName": "Evidence {date}",          // Tên folder Drive
+     "imageFolderName": "Ảnh evidence",        // Tên folder con chứa ảnh
+     "imageSharing": "anyone",                 // "anyone" = ai có link xem được, "restricted" = chỉ viewers
+     "viewers": [],                            // Email được share (để trống = chỉ mình bạn)
+     "imageDisplay": "link",                   // "link" = link tới Drive, "image" = nhúng ảnh vào ô
+     "columns": [                              // Các cột trong sheet
+       { "key": "stt", "header": "STT", "width": 50 },
+       { "key": "name", "header": "Tên", "width": 180 },
+       { "key": "email", "header": "Email", "width": 220 },
+       { "key": "sentAt", "header": "Giờ gửi", "width": 140 },
+       { "key": "images", "header": "Evidence", "width": 260 },
+       { "key": "note", "header": "Ghi chú", "width": 200 }
+     ]
+   }
+   ```
+
+   **Lưu ý:**
+   - `imageDisplay: "image"` chỉ hoạt động khi `imageSharing: "anyone"` (Google Sheets tải ảnh ẩn danh)
+   - Nếu chọn `imageSharing: "anyone"` → bất kỳ ai có link đều xem được ảnh, kể cả ngoài công ty
+   - Custom field: thêm `{ "key": "your-key", "header": "Tên cột", "width": 200 }` để tạo cột tùy biến
 
 ### 2. Slack — bot token
 

@@ -1,6 +1,7 @@
 // Upload ảnh lên Drive + tạo Google Sheet log evidence từ manifest của slack-fetch.js
 // Dùng: node scripts/build-sheet.js <manifest.json> <config.json> [--dry-run]
 // Cần: GOOGLE_OAUTH_TOKEN_FILE (xem scripts/oauth-setup.js)
+require('dotenv').config();
 const fs = require('fs');
 const https = require('https');
 

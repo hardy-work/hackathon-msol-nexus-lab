@@ -6,6 +6,7 @@
 // Vì sao gọi thẳng Slack Web API thay vì dùng tool `slack` của OpenClaw: Slack chỉ
 // đẩy file của message TAG bot tới bot, các file khác trong thread không truyền tới.
 // Gọi conversations.replies thì lấy được đủ cả thread.
+require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
