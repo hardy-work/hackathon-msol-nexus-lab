@@ -10,6 +10,22 @@ Ví dụ câu lệnh: _"tổng hợp thread này thành sheet log evidence"_ kè
 
 Ranh giới chung cho repo: **skill chỉ sửa file có sẵn thì dùng Service Account, skill tạo file mới thì dùng OAuth.**
 
+## Yêu cầu trước setup
+
+- **Node.js** v14+ (cài từ https://nodejs.org)
+- **npm** (đi kèm Node.js)
+- **Tài khoản Google** có Google Workspace hoặc tài khoản cá nhân
+- **Slack workspace** + bot token có đủ scope
+- **Git** (để clone repo)
+
+Kiểm tra:
+```bash
+node --version    # v14+
+npm --version     # có version
+```
+
+---
+
 ## Setup
 
 ### 1. Google — OAuth client
