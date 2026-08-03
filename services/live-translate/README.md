@@ -59,7 +59,7 @@ The gateway host is a Mac (services run under `launchd`, not systemd/docker).
 on that host:
 
 ```bash
-bash openclaw-skills/meeting-notetaker/live-translate/deploy/deploy.sh
+bash services/live-translate/deploy/deploy.sh
 ```
 
 It picks a Python ≥ 3.10, creates the venv + installs deps, sources `nvm` and
@@ -109,11 +109,13 @@ When the bot is asked to join from Slack, the room link is posted back into the
 thread automatically:
 
 1. Set `WEB_PUBLIC_URL` (and optionally `LIVE_TRANSLATE_LANG`, default `vi`) in
-   the **vexa-mcp** server's env (`../vexa-mcp/.env`) and restart it.
+   the **vexa-mcp** server's env
+   (`../../openclaw-skills/meeting-notetaker/vexa-mcp/.env`) and restart it.
 2. `join_meeting` then returns a `share_link`
    (`{WEB_PUBLIC_URL}/meet/{platform}/{id}?lang={LIVE_TRANSLATE_LANG}`).
 3. The `meeting-notetaker` skill posts that link into the Slack thread right
-   after the bot joins (see `../SKILL.md`, step 3).
+   after the bot joins (see
+   `../../openclaw-skills/meeting-notetaker/SKILL.md`, step 3).
 
 The link's target language is fixed and not switchable by viewers, matching the
 in-room UI. Keep `LIVE_TRANSLATE_LANG` (vexa-mcp) and this app's

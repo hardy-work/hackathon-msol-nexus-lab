@@ -13,13 +13,17 @@ servers / backend services it depends on.
   summary with action items. Contains:
   - `SKILL.md` — instructions the agent follows to run the whole flow.
   - `vexa-mcp/` — MCP server bridging Vexa's bot REST API.
-  - `soniox-bridge/` — transcription backend Vexa calls into.
   - `notes/` — generated meeting summaries.
 
-- [`openclaw-skills/jira-task/`](openclaw-skills/jira-task/) — creates and
-  updates Jira tasks in project NEX via natural language (Vietnamese/English)
-  for the MOR PM, always previewing changes and requiring confirmation before
-  writing to Jira. Contains:
+  Depends on two standalone backend servers under [`services/`](services/):
+  `soniox-bridge` (transcription) and `live-translate` (the shared live
+  transcript + translation web view). They deploy independently of this skill
+  — see [Services](#services) below.
+
+- [`openclaw-skills/jira-task-editor/`](openclaw-skills/jira-task-editor/) —
+  creates and updates Jira tasks in project NEX via natural language
+  (Vietnamese/English) for the MOR PM, always previewing changes and
+  requiring confirmation before writing to Jira. Contains:
   - `SKILL.md` — instructions the agent follows to create/update tasks.
 
   Needs a `.env` in this folder with `JIRA_EMAIL`, `JIRA_API_TOKEN`,
@@ -40,26 +44,64 @@ servers / backend services it depends on.
   `.env.example`) in this folder — self-contained, independent from
   `gg-sheet`/`jira-task` even when reading the same project.
 
-- [`openclaw-skills/daily-report/`](openclaw-skills/daily-report/) — reminds
-  the team to report task status in Slack, collects reports, answers
-  questions, and pushes reports to Google Sheets and/or Jira (reusing
-  `jira-task`) after confirmation. Connects to Slack via OpenClaw's official
-  Slack plugin (no custom bot code needed). Contains:
-  - `SKILL.md` — instructions the agent follows for reminders, report
-    collection, and pushing data.
-  - `sheets-bridge/` — MCP server bridging the Google Sheets API via a
-    service account.
+- [`openclaw-skills/jira-daily-report/`](openclaw-skills/jira-daily-report/) —
+  end-of-day report roll-up for the PM: who logged work today on the active
+  sprint, who didn't, who logged but forgot to update status on an
+  already-late issue, and a reschedule proposal for that member's other
+  sprint issues (assumes 100% effort, one task at a time). Read-only — never
+  writes to Jira; hand-off to `jira-task-editor` for any actual update.
+  Contains:
+  - `SKILL.md` — instructions the agent follows to build the report.
 
-  Needs a `.env` in this folder with `SLACK_REPORT_CHANNEL`,
-  `REMINDER_TIME`, `REMINDER_TIMEZONE`, `REMINDER_WEEKDAYS_ONLY` (see
-  `.env.example`), plus `sheets-bridge/.env` and the `jira-task/.env` vars
-  above for the Jira-linked path. See
-  [`openclaw-skills/daily-report/README.md`](openclaw-skills/daily-report/README.md)
-  for full setup including the OpenClaw Slack plugin.
+  Needs a `.env` in this folder with the same `JIRA_*` vars as
+  `jira-task-editor` plus optional `DAILY_WORK_HOURS` (defaults to 8) — see
+  `.env.example`.
+
+- [`openclaw-skills/gg-sheet/`](openclaw-skills/gg-sheet/) — adds, edits, and
+  deletes tasks in a project's Google Sheet schedule (tab/gid tracked in
+  `config.json`, not hardcoded to one project) for the MOR PM, always
+  previewing changes and requiring confirmation before writing. Calls the
+  Google Sheets API v4 directly (Service Account for writes, API key for
+  reads). Read-only for progress reporting — see `gg-sheet-daily-report`
+  below. Contains:
+  - `SKILL.md` — instructions the agent follows for add/edit/delete/reschedule.
+  - `config.json` — per-project sheet/tab config (gitignored; see
+    `config.example.json`).
+  - `scripts/get-token.sh` — mints a Service Account access token for writes.
+
+  Needs a `.env` in this folder with `GOOGLE_SHEETS_API_KEY` and
+  `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` (see `.env.example`), plus a Service
+  Account JSON key file shared as Editor on the target sheet.
+
+- [`openclaw-skills/gg-sheet-daily-report/`](openclaw-skills/gg-sheet-daily-report/) —
+  end-of-day report roll-up for the PM, mirroring `jira-daily-report` but for
+  the Google Sheet schedule managed by `gg-sheet`: which assignees updated
+  progress today vs. didn't, which today's tasks are out of effort but still
+  show an unchanged status, and a reschedule proposal (scanning the whole
+  tab) for assignees with overrun tasks. Read-only — never writes to the
+  sheet; hand off to `gg-sheet` (Action 2b: Re-schedule) for any actual
+  update. Shares `config.json` with `gg-sheet` rather than duplicating it.
+  Contains:
+  - `SKILL.md` — instructions the agent follows to build the report.
+
+  Needs a `.env` in this folder with `GOOGLE_SHEETS_API_KEY` only (read-only,
+  no Service Account needed) — see `.env.example`.
 
 Assumes a Vexa instance is already running and reachable (see the machine at
 `192.168.4.15:18056` on the LAN, or your own self-hosted instance — see
 [Vexa's README](https://github.com/Vexa-ai/vexa) to deploy one).
+
+## Services
+
+Standalone backend servers under [`services/`](services/) — not OpenClaw
+skills themselves, but persistent servers a skill depends on. Each deploys and
+runs independently of the skill-sync flow (its own build/run steps, own
+lifecycle), see its own README:
+
+- [`services/soniox-bridge/`](services/soniox-bridge/) — transcription backend
+  Vexa calls into, used by `meeting-notetaker`.
+- [`services/live-translate/`](services/live-translate/) — realtime meeting
+  transcript + translation web app, used by `meeting-notetaker`.
 
 ## Setup on a new machine
 
@@ -89,7 +131,7 @@ Assumes a Vexa instance is already running and reachable (see the machine at
    ln -s "$(pwd)/openclaw-skills/meeting-notetaker" ~/.openclaw/workspace/skills/meeting-notetaker
    ```
 6. Deploy the transcription backend — see
-   [`openclaw-skills/meeting-notetaker/soniox-bridge/README.md`](openclaw-skills/meeting-notetaker/soniox-bridge/README.md).
+   [`services/soniox-bridge/README.md`](services/soniox-bridge/README.md).
 
 `.env` and `.mcp.json` are gitignored (they hold API keys) — always copy
 from the `.example` files rather than committing real ones.
@@ -99,7 +141,7 @@ from the `.example` files rather than committing real ones.
 See the "Known limitation" section in
 [`SKILL.md`](openclaw-skills/meeting-notetaker/SKILL.md) (multilingual
 meetings, single-language-per-chunk) and in
-[`soniox-bridge/README.md`](openclaw-skills/meeting-notetaker/soniox-bridge/README.md)
+[`soniox-bridge/README.md`](services/soniox-bridge/README.md)
 (no per-request diarization, approximate confidence mapping).
 
 ## Adding a new skill
