@@ -1,0 +1,16 @@
+{
+  "sheetTitle": "Evidence log {date}",
+  "folderName": "Evidence {date}",
+  "imageFolderName": "Ảnh evidence",
+  "imageSharing": "anyone",
+  "viewers": [],
+  "imageDisplay": "link",
+  "columns": [
+    { "key": "stt", "header": "STT", "width": 50 },
+    { "key": "name", "header": "Tên", "width": 180 },
+    { "key": "email", "header": "Email", "width": 220 },
+    { "key": "sentAt", "header": "Giờ gửi", "width": 140 },
+    { "key": "images", "header": "Evidence", "width": 260 },
+    { "key": "note", "header": "Ghi chú", "width": 200 }
+  ]
+}
