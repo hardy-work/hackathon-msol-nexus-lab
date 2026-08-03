@@ -1,0 +1,15 @@
+# Nexus Plan demo coverage.  Đây là phạm vi được ký cho workbook chuẩn.
+- entity: nexus
+  relation: person_role
+  complete_as_of: "Nexus Plan (2026-08-03)"
+  source: "originals/nexus-plan.xlsx :: Config!H2:K15"
+  asserted_by: "Đô"
+  signed_date: "2026-08-03"
+
+- entity: nexus
+  relation: person_task
+  complete_as_of: "Nexus Plan (2026-08-03)"
+  source: "originals/nexus-plan.xlsx :: Sprint 1!A6:R65"
+  asserted_by: "Đô"
+  signed_date: "2026-08-03"
+  note: "Phạm vi chỉ gồm Sprint 1; Backlog hiện không có dòng dữ liệu."

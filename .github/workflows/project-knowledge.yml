@@ -1,0 +1,32 @@
+name: Project Knowledge checks
+
+on:
+  pull_request:
+    paths:
+      - "openclaw-skills/project-knowledge/**"
+      - ".github/workflows/project-knowledge.yml"
+  push:
+    branches: [main]
+    paths:
+      - "openclaw-skills/project-knowledge/**"
+      - ".github/workflows/project-knowledge.yml"
+
+jobs:
+  offline-demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: openclaw-skills/project-knowledge/requirements.txt
+      - name: Install skill dependencies
+        run: python -m pip install -r openclaw-skills/project-knowledge/requirements.txt
+      - name: Run deterministic Nexus demo
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: bash openclaw-skills/project-knowledge/demo/run_demo.sh
+      - name: Run Slack-shaped adapter demo
+        run: bash openclaw-skills/project-knowledge/demo/run_slack_demo.sh

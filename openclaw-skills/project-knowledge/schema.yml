@@ -1,0 +1,56 @@
+# Máy đọc của CLAUDE.md §2 + §3 cho corpus Nexus Plan.
+
+dimensions:
+  role:
+    source: "Config!K2:K15"
+    values: [BE, FE]
+
+  assignee:
+    source: "Config!H2:H15"
+    values:
+      tung-dv: "TùngDV"
+      do-nt: "ĐôNT"
+      son-bh: "SơnBH"
+      kien-dt: "KiênĐT"
+      vinh-nv: "VinhNV"
+      long-vn: "LongVN"
+      hoang-mv: "HoàngMV"
+
+  task_status:
+    source: "Config!I2:I15"
+    values: [Open, "In progress", Done, Pending, Cancel]
+
+  tech_stack:
+    source: "Config!G2:G15"
+    values: [HTML, CSS, JavaScript, React, Vue.js, C#, C++, Python, ROR, Java, Node.js, Django, DevOps, Fullstack]
+
+  project:
+    source: "CLAUDE.md §2 (chọn tay)"
+    values: [nexus]
+
+  domain:
+    source: "CLAUDE.md §2 (chọn tay)"
+    values: [nexus]
+
+aliases: {}
+
+page_types:
+  entity-person:
+    dir: wiki/entities
+    required_dimensions: [assignee, project]
+    optional_dimensions: [role]
+    required_fields: [page, name, raw_paths]
+  source:
+    dir: wiki/sources
+    required_dimensions: [domain]
+    optional_dimensions: [project]
+    required_fields: [page, name, raw_paths, doc_id]
+  concept:
+    dir: wiki/concepts
+    required_dimensions: []
+    required_fields: [page, name, raw_paths]
+  case-study:
+    dir: wiki/case-studies
+    required_dimensions: [domain]
+    optional_dimensions: [project]
+    required_fields: [page, name, raw_paths]
