@@ -199,6 +199,16 @@ Set `PROJECT_KNOWLEDGE_SLACK_ROLE_MAP` to a trusted JSON user-to-roles mapping. 
 gateway acknowledges Slack before retrieval, posts asynchronously, and keeps
 bounded conversation context per channel/thread.
 
+Production Slack delivery uses a durable idempotent queue with retry/dead-letter;
+see `adapters/slack/.env.example`. Mount `PROJECT_KNOWLEDGE_STATE_DIR` on persistent
+storage because it owns jobs, query cache, conversation retention and privacy-safe
+telemetry. `/health` reports aggregate queue/runtime status.
+
+The Slack process uses a long-lived runtime, so DuckDB, graph and BGE-M3 stay warm.
+Run `scripts/benchmark.py` for p50/p95 latency. `scripts/eval_onboarding.py` and
+`scripts/eval_production.py` cover onboarding, authorization, context, cache and
+concurrent request boundaries.
+
 To expose it to an OpenClaw workspace, link the skill directory and restart the
 gateway:
 

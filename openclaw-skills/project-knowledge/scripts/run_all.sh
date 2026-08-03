@@ -21,6 +21,9 @@ export PYTHONUTF8=1
 export PROJECT_KNOWLEDGE_ACTOR="${PROJECT_KNOWLEDGE_ACTOR:-local-demo}"
 export PROJECT_KNOWLEDGE_ROLES="${PROJECT_KNOWLEDGE_ROLES:-project_member}"
 export PROJECT_KNOWLEDGE_DEMO_MODE="${PROJECT_KNOWLEDGE_DEMO_MODE:-1}"
+# Test state is isolated from the persistent production volume and recreated
+# with derived/. This prevents a prior cache entry from hiding a regression.
+export PROJECT_KNOWLEDGE_STATE_DIR="$PWD/derived/test-runtime"
 export PROJECT_KNOWLEDGE_COVERAGE_GRANTS="${PROJECT_KNOWLEDGE_COVERAGE_GRANTS:-{\"Đô\":[\"project_knowledge:approve_coverage\"]}}"
 export PROJECT_KNOWLEDGE_APPROVAL_IDS="${PROJECT_KNOWLEDGE_APPROVAL_IDS:-nexus-demo-person-role-20260803,nexus-demo-person-task-20260803}"
 echo "Python: $("$PY" --version 2>&1) ($PY)"
@@ -48,6 +51,9 @@ echo; echo "══ CORPUS VERSION / FRESHNESS ══"; "$PY" scripts/versioning.
 echo; echo "══ EVAL ══";               (cd scripts && "$PY" eval.py)
 echo; echo "══ EXTENDED EVAL + STYLE ══"; "$PY" scripts/eval_extended.py
 echo; echo "══ COVERAGE EVAL ══"; "$PY" scripts/eval_coverage.py
+echo; echo "══ ONBOARDING EVAL ══"; "$PY" scripts/eval_onboarding.py
+echo; echo "══ PRODUCTION BOUNDARY EVAL ══"; "$PY" scripts/eval_production.py
+echo; echo "══ LONG-LIVED RUNTIME BENCHMARK ══"; "$PY" scripts/benchmark.py --iterations 1 --concurrency 2 --max-p95-ms 2000
 echo; echo "══ ROUTER CONTRACT (offline) ══"; "$PY" scripts/router_selftest.py
 echo; echo "══ VERSION/FRESHNESS (offline) ══"; "$PY" scripts/version_selftest.py
 echo; echo "══ DOCUMENT LIFECYCLE (offline) ══"; "$PY" scripts/lifecycle_selftest.py
@@ -55,6 +61,7 @@ echo; echo "══ RUNTIME ACCESS/CACHE/CONTEXT (offline) ══"; "$PY" scripts
 echo; echo "══ GRAPH RETRIEVAL (offline) ══"; "$PY" scripts/graph_selftest.py
 echo; echo "══ INVENTORY (offline) ══"; "$PY" scripts/inventory_selftest.py
 echo; echo "══ SLACK HTTP BOUNDARY (offline) ══"; "$PY" adapters/slack/slack_http_selftest.py
+echo; echo "══ SLACK DURABLE QUEUE (offline) ══"; "$PY" adapters/slack/slack_queue_selftest.py
 
 # Gate 3b (LLM soát nội dung) — OPT-IN. Tốn 1 lệnh `claude -p` mỗi trang (~1-2 phút) và
 # KHÔNG tất định, nên KHÔNG bật mặc định (demo cần nhanh + lặp lại được). Bật khi cần:

@@ -21,6 +21,8 @@ openclaw-skills/*/oauth-token*.json
 openclaw-skills/project-knowledge/.venv/
 openclaw-skills/project-knowledge/derived/
 .ingest-worktrees/
+openclaw-skills/project-knowledge/.runtime/
+openclaw-skills/project-knowledge/questions_onboarding.local.json
 
 # Per-project/per-deployment skill config — never commit real config.json, only config.example.json
 openclaw-skills/gg-sheet/config.json

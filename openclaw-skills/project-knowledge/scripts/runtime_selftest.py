@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import os
 import tempfile
+import json
+import sqlite3
 from pathlib import Path
 
 import access_control
 import answer
 from conversation import ConversationStore
 from query_cache import QueryCache, cache_key
+import telemetry
 
 
 def main() -> int:
@@ -33,14 +36,30 @@ def main() -> int:
         key_b = cache_key("nexus", "q", "v2", allowed.fingerprint, False)
         cache.put(key_a, "v1", {"answer": "a"})
         assert cache.get(key_a) == {"answer": "a"} and cache.get(key_b) is None
+        cache.con.execute("UPDATE cache SET expires_at=0 WHERE key=?", (key_a,))
+        cache.con.commit()
+        assert cache.get(key_a) is None
         cache.close()
 
+        os.environ["PROJECT_KNOWLEDGE_CONVERSATION_MAX_PER_THREAD"] = "8"
         store = ConversationStore(Path(temp) / "conversation.sqlite3")
-        store.append("thread", "user", "q")
-        store.append("thread", "assistant", "a")
-        assert [m["role"] for m in store.history("thread")] == ["user", "assistant"]
+        for index in range(12):
+            store.append("thread", "user" if index % 2 == 0 else "assistant", str(index))
+        assert len(store.history("thread", limit=20)) == 8
+        store.con.execute("UPDATE message SET created_at='2000-01-01 00:00:00'")
+        store.con.commit()
+        store.append("thread", "user", "new")
+        assert [m["content"] for m in store.history("thread", limit=20)] == ["new"]
         store.close()
-    print("✓ runtime self-test: 6/6 qua")
+        telemetry_path = Path(temp) / "telemetry.sqlite3"
+        telemetry.record("query", path=telemetry_path, query="secret question",
+                         actor="U-secret", status="in_kb", duration_ms=1)
+        con = sqlite3.connect(telemetry_path)
+        fields = json.loads(con.execute("SELECT fields FROM event").fetchone()[0])
+        con.close()
+        assert "query" not in fields and "actor" not in fields
+        assert telemetry.summary(telemetry_path)["events"] == 1
+    print("✓ runtime self-test: 11/11 qua")
     return 0
 
 

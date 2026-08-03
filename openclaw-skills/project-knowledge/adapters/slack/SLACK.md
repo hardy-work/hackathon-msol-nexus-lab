@@ -38,8 +38,26 @@ python3 adapters/slack/slack_http.py
 It listens on `/slack/events` and validates `SLACK_SIGNING_SECRET`. With
 `SLACK_BOT_TOKEN`, it acknowledges the event before retrieval/model work, then
 posts Block Kit asynchronously with `chat.postMessage`. Conversation context is
-stored per channel/thread in ignored `derived/`; no credentials are stored in
+stored per channel/thread in persistent `.runtime/`; no credentials are stored in
 the skill.
+
+Slack events are inserted into an idempotent SQLite queue before ACK. The unique
+`event_id` prevents duplicate replies, failures use exponential retry, and jobs
+move to `dead` after `SLACK_JOB_MAX_ATTEMPTS`. The formatted answer is persisted
+before posting, so a post retry does not rerun retrieval/model generation.
+
+The embedded worker is enabled by default. For a separate worker process:
+
+```bash
+SLACK_EMBEDDED_WORKER=0 python3 adapters/slack/slack_http.py
+python3 adapters/slack/slack_worker.py
+python3 adapters/slack/slack_worker.py --stats
+python3 adapters/slack/slack_worker.py --show 42
+python3 adapters/slack/slack_worker.py --requeue 42
+```
+
+Mount `PROJECT_KNOWLEDGE_STATE_DIR` on a persistent volume. `/health` exposes
+queue counts and one-hour aggregate telemetry without raw questions or actor IDs.
 
 ## Response rules
 

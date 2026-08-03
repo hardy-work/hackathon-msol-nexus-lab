@@ -91,6 +91,18 @@ không gọi Claude bằng `python3 scripts/router.py --offline "câu hỏi"`.
 Kiểm tra freshness bằng `python3 scripts/versioning.py check`; metadata được tạo
 tự động trong `derived/corpus_version.json` bởi `scripts/run_all.sh`.
 
+Slack dùng `runtime_engine.py` trong cùng process để tái sử dụng DuckDB/graph/BGE-M3.
+Benchmark bằng `python3 scripts/benchmark.py --iterations 3 --concurrency 4` và
+benchmark cache bằng cách thêm `--cache`. Runtime state nằm ngoài `derived/` tại
+`.runtime/` hoặc volume do `PROJECT_KNOWLEDGE_STATE_DIR` chỉ định.
+
+Bộ `eval_onboarding.py` kiểm 10 câu đại diện PM/dev mới. `eval_production.py` kiểm
+fail-closed authorization, external coverage approval, follow-up context, cache
+isolation, visibility và concurrent queries. Cả hai nằm trong `run_all.sh`.
+Để đánh giá câu hỏi thật mà không commit dữ liệu nội bộ, tạo
+`questions_onboarding.local.json` cùng schema với `questions_onboarding.json`; evaluator
+tự động gộp file local này và Git bỏ qua nó.
+
 Các câu hỏi quan hệ nhiều bước (task–assignee–role–milestone/status) được ưu
 tiên qua `derived/graph.json`. Graph chỉ là index dẫn xuất; mọi task vẫn giữ
 `src` từ `raw/nexus-sprint1.facts.json`, và không tự suy ra dependency nếu nguồn
@@ -121,6 +133,10 @@ role bằng `PROJECT_KNOWLEDGE_SLACK_ROLE_MAP` do host quản lý. Chạy smoke 
 python3 adapters/slack/slack_selftest.py
 bash demo/run_slack_demo.sh
 ```
+
+Production dùng durable queue `adapters/slack/job_queue.py`: Slack retry cùng
+`event_id` không tạo job mới, lỗi post có exponential retry và dead-letter. Có thể
+chạy worker riêng bằng `python3 adapters/slack/slack_worker.py`.
 
 ## Ranh giới tích hợp Agent
 

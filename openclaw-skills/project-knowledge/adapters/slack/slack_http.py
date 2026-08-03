@@ -21,12 +21,29 @@ from typing import Any
 from format_message import format_result
 from parse_event import parse, verify_signature
 from slack_bridge import query_project
+from job_queue import SlackJobQueue
 
 SCRIPTS = next(parent / "scripts" for parent in __import__("pathlib").Path(__file__).resolve().parents
                if (parent / "scripts" / "conversation.py").exists())
 import sys
 sys.path.insert(0, str(SCRIPTS))
 from conversation import ConversationStore
+import telemetry
+
+_worker_started = False
+_worker_lock = threading.Lock()
+
+
+def ensure_worker() -> None:
+    global _worker_started
+    if os.getenv("SLACK_EMBEDDED_WORKER", "1").lower() not in {"1", "true", "yes"}:
+        return
+    with _worker_lock:
+        if _worker_started:
+            return
+        from slack_worker import serve
+        threading.Thread(target=serve, daemon=True, name="project-knowledge-slack-worker").start()
+        _worker_started = True
 
 
 def request_is_valid(headers: dict[str, str], body: bytes, secret: str) -> bool:
@@ -144,16 +161,21 @@ class SlackHandler(BaseHTTPRequestHandler):
         # doing process_payload first made the previous implementation time out.
         token = os.getenv("SLACK_BOT_TOKEN", "")
         if token and event["kind"] == "query":
-            def work() -> None:
-                response = process_payload(payload)
-                channel = response.get("metadata", {}).get("channel_id", "")
-                post_to_slack(response, token, channel)
-
-            threading.Thread(target=work, daemon=True).start()
-            self._json(200, {"ok": True, "accepted": True})
+            job_id, created = SlackJobQueue().enqueue(payload)
+            ensure_worker()
+            telemetry.record("slack_enqueue", job_id=job_id, duplicate=not created)
+            self._json(200, {"ok": True, "accepted": True, "job_id": job_id,
+                             "duplicate": not created})
             return
         response = process_payload(payload)
         self._json(200, response)
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path != "/health":
+            self._json(404, {"error": "not_found"})
+            return
+        self._json(200, {"ok": True, "queue": SlackJobQueue().stats(),
+                         "telemetry": telemetry.summary(hours=1)})
 
     def log_message(self, fmt: str, *args: object) -> None:
         # Keep the gateway quiet in demo JSON output; operators can use a real
@@ -167,6 +189,7 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=int(os.getenv("SLACK_HTTP_PORT", "8787")))
     args = parser.parse_args()
     server = ThreadingHTTPServer((args.host, args.port), SlackHandler)
+    ensure_worker()
     print(f"Nexus Slack gateway listening on http://{args.host}:{args.port}/slack/events")
     try:
         server.serve_forever()

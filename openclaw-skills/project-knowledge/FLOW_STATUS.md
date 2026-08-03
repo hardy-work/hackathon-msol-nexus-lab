@@ -17,8 +17,11 @@
 | Version/freshness | `versioning.py` | Digest includes originals/raw/structured/wiki/schema/coverage/registry/access |
 | Q&A routing | `answer.py`, Haiku router | Tier 0 catalog → Tier 1 → graph → scoped keyword/vector → Sonnet synthesis |
 | Access + coverage | `access_control.py`, `access.yml` | Fail-closed actor/role; page ACL reaches DuckDB/graph/wiki; approval authority is external |
-| Cache + context | `query_cache.py`, `conversation.py` | Cache keyed by corpus/access/history; Slack threads retain bounded context |
-| Slack | local adapter + `slack_http.py` | HMAC verification; HTTP ACK precedes retrieval; answer posts asynchronously |
+| Cache + context | `query_cache.py`, `conversation.py` | Version/access/history key, TTL/max retention, persistent `.runtime/` volume |
+| Long-lived runtime | `runtime_engine.py`, `benchmark.py` | Reuses access-scoped DuckDB views, graph, BGE-M3 and cache connections |
+| Slack | HTTP + durable worker | HMAC, ACK-before-query, event dedup, retry/dead-letter, persisted response |
+| Telemetry | `telemetry.py`, `/health` | Query/queue latency and state without raw question, answer or actor identity |
+| Production eval | onboarding + production suites | Auth/context/cache/concurrency and 10 PM/new-dev representative questions |
 | Action boundary | `suggested_actions` | Approval/permission proposal only; action skill owns writes/RBAC |
 
 ## Data gaps that code cannot invent
