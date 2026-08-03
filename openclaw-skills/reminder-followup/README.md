@@ -47,6 +47,34 @@ mkdir -p ~/.openclaw/workspace/skills
 ln -s "$(pwd)" ~/.openclaw/workspace/skills/reminder-followup
 ```
 
+Symlink thôi là **chưa đủ**. Skill khai `requires.env` trong frontmatter, và
+OpenClaw đối chiếu với **biến môi trường của tiến trình Gateway** — nó *không*
+tự đọc file `.env` của skill. Thiếu bất kỳ biến nào là skill tụt xuống
+`△ needs setup` và **`Visible to model: no`**, tức là bot hoàn toàn không thấy
+`SKILL.md`; nó vẫn trả lời như thường nhưng nội dung là tự bịa.
+
+Nạp `.env` vào Gateway qua drop-in systemd
+`~/.config/systemd/user/openclaw-gateway.service.d/override.conf`:
+
+```
+[Service]
+EnvironmentFile=-/duong/dan/toi/openclaw-skills/reminder-followup/.env
+```
+
+```bash
+systemctl --user daemon-reload && systemctl --user restart openclaw-gateway.service
+openclaw skills info reminder-followup   # phải thấy "Visible to model: yes"
+```
+
+⚠️ **Đổi tên thư mục skill thì phải sửa lại đường dẫn này.** Dấu `-` đầu đường
+dẫn khiến systemd bỏ qua **im lặng** khi file không tồn tại — không log, không
+lỗi, service vẫn `active`. Đây đúng là lỗi đã xảy ra (2026-08-03): rename
+`daily-report` → `reminder-followup` làm đường dẫn chết, skill vô hình với bot
+suốt nhiều ngày mà nhìn bên ngoài vẫn như đang chạy tốt.
+
+Kiểm nhanh khi nghi ngờ: `openclaw skills check` (liệt kê skill còn thiếu
+requirement) và `openclaw skills info <tên>`.
+
 ### 5. Đăng ký 2 cron job (1 lần duy nhất)
 
 Skill chỉ mô tả *cách* nhắc/follow-up — cron job thật sự phải được tạo qua
@@ -63,9 +91,11 @@ create` với giá trị lấy từ `.env`. Kiểm tra lại bằng `openclaw cr
 - Chỉ nhắc + follow-up trong thread — không thu thập nội dung report, không
   đẩy đi Google Sheets hay Jira. Ai muốn theo dõi nội dung report thì tự đọc
   lại trong thread Slack.
-- Bot có kiểm **cấu trúc** dòng report (`NEX-số | trạng thái | giờ | ghi chú`)
-  để biết ai report cho có lệ, nhưng không đánh giá nội dung — reply không đủ
-  4 field bị tính là chưa report và sẽ bị nhắc sửa mẫu.
+- Bot có kiểm **cấu trúc** dòng report (`Id task | Re-estimate (h) | Start date
+  | End date | Actual Effort (h) | Status | note`, ngày dạng `DD-MM-YYYY`,
+  end date bắt buộc khi status là Done) để biết ai report cho có lệ, nhưng
+  không đánh giá nội dung — dòng thiếu field/sai dạng ngày bị tính là chưa
+  report và sẽ bị nhắc sửa mẫu.
 - Ai phải report lấy từ roster, nên roster phải được cập nhật tay khi có người
   vào/ra nhóm — bot không tự đồng bộ theo thành viên kênh.
 - Follow-up dựa vào đọc reply trong thread để biết ai đã report — nếu channel
