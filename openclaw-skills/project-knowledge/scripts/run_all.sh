@@ -69,6 +69,7 @@ echo; echo "══ VERSIONED ARTIFACTS (offline) ══"; "$PY" scripts/versione
 echo; echo "══ RUNTIME ACCESS/CACHE/CONTEXT (offline) ══"; "$PY" scripts/runtime_selftest.py
 echo; echo "══ GRAPH RETRIEVAL (offline) ══"; "$PY" scripts/graph_selftest.py
 echo; echo "══ INVENTORY (offline) ══"; "$PY" scripts/inventory_selftest.py
+echo; echo "══ AUTOMATIC FILE INTAKE (offline) ══"; "$PY" scripts/intake_selftest.py
 if [ "${PROJECT_KNOWLEDGE_RUN_SLACK_TESTS:-1}" = "1" ]; then
   echo; echo "══ SLACK HTTP BOUNDARY (offline) ══"; "$PY" adapters/slack/slack_http_selftest.py
   echo; echo "══ SLACK DURABLE QUEUE (offline) ══"; "$PY" adapters/slack/slack_queue_selftest.py

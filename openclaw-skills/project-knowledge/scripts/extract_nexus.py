@@ -18,10 +18,10 @@ from artifact_paths import artifact_path
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "raw"
-ORIGINAL = ROOT / "originals/nexus-plan.xlsx"
 DOC_ID = "nexus-plan"
 DOC = current(DOC_ID)
 VERSION = int(DOC["version"])
+ORIGINAL = ROOT / str(DOC["original"])
 
 ASSIGNEE = {
     "TùngDV": "tung-dv",
@@ -44,7 +44,7 @@ def write_raw(raw_id, sheet, kind, body, payload):
     md_path.write_text(
         f"---\nraw_id: {raw_id}\ndoc_id: {DOC_ID}\nsheet: {sheet!r}\n"
         f"version: {VERSION}\nkind: {kind}\ngenerated_by: scripts/extract_nexus.py\n---\n\n"
-        f"# {raw_id}\n\nNguồn: `{sheet}` trong `originals/nexus-plan.xlsx`\n\n{body}\n",
+        f"# {raw_id}\n\nNguồn: `{sheet}` trong `{DOC['original']}`\n\n{body}\n",
         encoding="utf-8")
     facts_path.write_text(
         json.dumps({"doc_id": DOC_ID, "version": VERSION, **payload},

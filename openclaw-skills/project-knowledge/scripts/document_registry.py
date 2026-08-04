@@ -60,8 +60,49 @@ def current(doc_id: str, root: Path = ROOT) -> dict[str, Any]:
 
 
 def by_version(doc_id: str, version: int, root: Path = ROOT) -> dict[str, Any]:
-    return next(doc for doc in load(root)
-                if doc.get("doc_id") == doc_id and int(doc.get("version")) == int(version))
+    for doc in load(root):
+        if doc.get("doc_id") == doc_id and int(doc.get("version")) == int(version):
+            return doc
+    raise KeyError(f"không tìm thấy version {doc_id}@v{version} trong documents.yml")
+
+
+def require_version_1(doc_id: str, root: Path = ROOT) -> dict[str, Any]:
+    """Require a registered v1 before any update can enter re-ingest."""
+    try:
+        return by_version(doc_id, 1, root)
+    except KeyError as exc:
+        raise ValueError(
+            f"không thể re-ingest {doc_id}: documents.yml chưa có version 1; "
+            "hãy đưa tài liệu qua initial ingest trước"
+        ) from exc
+
+
+def classify_intake(doc_id: str, root: Path = ROOT) -> dict[str, Any]:
+    """Choose initial-ingest, re-ingest, or fail closed for an incoming document."""
+    docs = [doc for doc in load(root) if str(doc.get("doc_id")) == str(doc_id)]
+    if not docs:
+        return {
+            "flow": "initial_ingest",
+            "doc_id": doc_id,
+            "version": 1,
+            "reason": "doc_id chưa có trong documents.yml",
+        }
+
+    require_version_1(doc_id, root)
+    try:
+        current_doc = current(doc_id, root)
+    except KeyError as exc:
+        raise ValueError(
+            f"không thể nhận tài liệu {doc_id}: registry không có đúng một version current"
+        ) from exc
+    from_version = int(current_doc["version"])
+    return {
+        "flow": "reingest",
+        "doc_id": doc_id,
+        "from_version": from_version,
+        "to_version": from_version + 1,
+        "reason": f"đã có version 1 và current đang là v{from_version}",
+    }
 
 
 def current_versions(root: Path = ROOT) -> dict[str, int]:

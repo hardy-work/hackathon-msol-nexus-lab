@@ -78,6 +78,11 @@ Gate 1 SHA256 · Gate 2 numeric ingest · Gate 3a lint · Gate 3b review · Gate
 
 `raw/` là provenance; truy vấn bảng dùng DuckDB, không đọc raw trực tiếp.
 
+File upload phải đi qua `scripts/intake.py` trên staging/worktree. Intake dùng
+SHA-256, identity tên/loại file và semantic digest của workbook để phân biệt
+duplicate, no-op, initial ingest và re-ingest. Re-ingest không sửa `v1`: nó đăng
+ký original `@vN`, khai `supersedes`, rồi mới cho các gate downstream chạy.
+
 ## 5. Quyền nói “CHẮC CHẮN KHÔNG”
 
 Chỉ được nói khi quan hệ được lưu thành hàng dữ liệu, hai vế là DIMENSION đóng,

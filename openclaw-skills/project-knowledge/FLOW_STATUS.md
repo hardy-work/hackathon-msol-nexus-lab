@@ -3,7 +3,7 @@
 | Flow stage | Implementation | Current boundary |
 |---|---|---|
 | Stage 0 · Inventory | `scripts/inventory.py` | Detects exact/near duplicates and halts on unregistered canonical choices |
-| Stage 1 · Intake | `originals/`, `documents.yml`, Gate 1 | Immutable SHA-256 identity, current version and supersedes chain |
+| Stage 1 · Intake | `scripts/intake.py`, `originals/`, `documents.yml`, Gate 1 | Hash + filename identity + semantic workbook digest; duplicate/no-op/initial/re-ingest decision; new version is registered only in the supplied staging root |
 | Stage 2 · Extract | `extract_nexus.py`, `extract_van.py` | Nexus `.xlsx` is live; DOCX/PDF/OCR is opt-in |
 | Stage 3 · Structure | `structure.py` → `structured/` | Independent prose pass; exact date/number/unit transform gate |
 | Stage 4 · Wiki ingest | `build_nexus_wiki.py`, `ingest_van.py` | Reads Stage 3 output; model has no filesystem tools; script validates then writes |

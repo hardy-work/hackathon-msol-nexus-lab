@@ -136,6 +136,20 @@ khai `supersedes`, chạy trong worktree `ingest/<doc>@vN`, xem `reingest-plan.j
 review diff rồi mới merge. Stage 3 văn xuôi (`structure.py`) là artifact riêng và
 Stage 4 không được đọc thẳng prose raw.
 
+Để nhận diện file upload mà không sửa canonical root, chạy intake trên staging/worktree:
+
+```bash
+python3 scripts/intake.py \
+  --file "/path/to/Nexus Plan.xlsx" \
+  --root "/path/to/ingest-worktree/openclaw-skills/project-knowledge" \
+  --apply
+```
+
+Intake trả `duplicate`, `no_op`, `initial_ingest` hoặc `reingest`. Khi semantic
+content thay đổi, nó giữ version cũ, copy original sang `@vN`, thêm `supersedes`
+và chuyển `current` sang version mới trong staging. Lệnh này không merge, publish
+hoặc reload runtime.
+
 Config chỉ khai báo vocabulary `tech_stack`; chưa có quan hệ người–tech-stack.
 Vì vậy câu hỏi “ai làm JavaScript?” phải trả `not_in_kb`, không được suy ra từ
 role hoặc từ danh mục công nghệ.

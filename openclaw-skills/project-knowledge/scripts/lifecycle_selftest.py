@@ -45,7 +45,44 @@ def main() -> int:
         assert len(plan["raw_diff"]) == 1
         assert plan["impacted_pages"][0]["strategy"] == "supersede_page"
         assert plan["branch"] == "ingest/plan@v2"
-    print("✓ lifecycle self-test: 4/4 qua")
+
+        decision = document_registry.classify_intake("plan", root)
+        assert decision["flow"] == "reingest"
+        assert decision["from_version"] == 2
+        assert decision["to_version"] == 3
+
+        new_decision = document_registry.classify_intake("new-plan", root)
+        assert new_decision == {
+            "flow": "initial_ingest",
+            "doc_id": "new-plan",
+            "version": 1,
+            "reason": "doc_id chưa có trong documents.yml",
+        }
+
+        broken_root = root / "broken"
+        broken_root.mkdir()
+        (broken_root / "originals").mkdir()
+        broken_original = b"v2-only"
+        (broken_root / "originals/plan-v2.docx").write_bytes(broken_original)
+        (broken_root / "documents.yml").write_text(
+            yaml.safe_dump({"documents": [
+                {"doc_id": "broken", "version": 2,
+                 "original": "originals/plan-v2.docx",
+                 "sha256": digest(broken_original), "current": True},
+            ]}, sort_keys=False), encoding="utf-8")
+        try:
+            document_registry.classify_intake("broken", broken_root)
+        except ValueError as exc:
+            assert "version 1" in str(exc)
+        else:
+            raise AssertionError("registry thiếu v1 không được vào re-ingest")
+        try:
+            reingest.build_plan(broken_root, "broken", 2, 3)
+        except ValueError as exc:
+            assert "version 1" in str(exc)
+        else:
+            raise AssertionError("re-ingest plan phải chặn registry thiếu v1")
+    print("✓ lifecycle self-test: 8/8 qua")
     return 0
 
 

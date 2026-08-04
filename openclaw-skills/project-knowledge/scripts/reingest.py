@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from document_registry import by_version
+from document_registry import by_version, require_version_1
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -91,6 +91,10 @@ def impacted_pages(root: Path, old_paths: list[str]) -> list[dict]:
 
 
 def build_plan(root: Path, doc_id: str, from_version: int, to_version: int) -> dict:
+    # A re-ingest is an update to an existing document identity.  Do not let a
+    # partially registered document (for example v2 without v1) enter this
+    # path: it must be repaired/initially ingested by a human first.
+    require_version_1(doc_id, root)
     old = by_version(doc_id, from_version, root)
     new = by_version(doc_id, to_version, root)
     if int(new.get("supersedes") or 0) != int(from_version):
