@@ -22,6 +22,7 @@
 | Slack | HTTP + durable worker | HMAC, ACK-before-query, event dedup, retry/dead-letter, persisted response |
 | Telemetry | `telemetry.py`, `/health` | Query/queue latency and state without raw question, answer or actor identity |
 | Production eval | onboarding + production suites | Auth/context/cache/concurrency and 10 PM/new-dev representative questions |
+| Demo showcase | `demo/run_demo.sh`, `scripts/demo_showcase.py` | Freshness-aware, one-process, offline 7-step story; human and JSON output |
 | Action boundary | `suggested_actions` | Approval/permission proposal only; action skill owns writes/RBAC |
 
 ## Data gaps that code cannot invent

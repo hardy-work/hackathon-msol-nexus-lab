@@ -53,6 +53,7 @@ echo; echo "══ EXTENDED EVAL + STYLE ══"; "$PY" scripts/eval_extended.py
 echo; echo "══ COVERAGE EVAL ══"; "$PY" scripts/eval_coverage.py
 echo; echo "══ ONBOARDING EVAL ══"; "$PY" scripts/eval_onboarding.py
 echo; echo "══ PRODUCTION BOUNDARY EVAL ══"; "$PY" scripts/eval_production.py
+echo; echo "══ DEMO SHOWCASE CONTRACT ══"; "$PY" scripts/demo_showcase.py --check --no-cache
 echo; echo "══ LONG-LIVED RUNTIME BENCHMARK ══"; "$PY" scripts/benchmark.py --iterations 1 --concurrency 2 --max-p95-ms 2000
 echo; echo "══ ROUTER CONTRACT (offline) ══"; "$PY" scripts/router_selftest.py
 echo; echo "══ VERSION/FRESHNESS (offline) ══"; "$PY" scripts/version_selftest.py
@@ -60,8 +61,10 @@ echo; echo "══ DOCUMENT LIFECYCLE (offline) ══"; "$PY" scripts/lifecycle
 echo; echo "══ RUNTIME ACCESS/CACHE/CONTEXT (offline) ══"; "$PY" scripts/runtime_selftest.py
 echo; echo "══ GRAPH RETRIEVAL (offline) ══"; "$PY" scripts/graph_selftest.py
 echo; echo "══ INVENTORY (offline) ══"; "$PY" scripts/inventory_selftest.py
-echo; echo "══ SLACK HTTP BOUNDARY (offline) ══"; "$PY" adapters/slack/slack_http_selftest.py
-echo; echo "══ SLACK DURABLE QUEUE (offline) ══"; "$PY" adapters/slack/slack_queue_selftest.py
+if [ "${PROJECT_KNOWLEDGE_RUN_SLACK_TESTS:-1}" = "1" ]; then
+  echo; echo "══ SLACK HTTP BOUNDARY (offline) ══"; "$PY" adapters/slack/slack_http_selftest.py
+  echo; echo "══ SLACK DURABLE QUEUE (offline) ══"; "$PY" adapters/slack/slack_queue_selftest.py
+fi
 
 # Gate 3b (LLM soát nội dung) — OPT-IN. Tốn 1 lệnh `claude -p` mỗi trang (~1-2 phút) và
 # KHÔNG tất định, nên KHÔNG bật mặc định (demo cần nhanh + lặp lại được). Bật khi cần:

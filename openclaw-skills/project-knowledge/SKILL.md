@@ -14,11 +14,14 @@ Trả lời câu hỏi về dự án từ kho Nexus đã được kiểm chứng
 Từ thư mục skill (`openclaw-skills/project-knowledge`):
 
 ```bash
-python3 scripts/run.py \
+python scripts/run.py \
   --project nexus \
   --query "ĐôNT đã bỏ ra bao nhiêu giờ trong Sprint 1?" \
   --actor local-demo --roles project_member
 ```
+
+Trên Linux nếu lệnh là `python3`, dùng `bash demo/run_demo.sh`; wrapper sẽ tự chọn
+trình Python thực sự chạy được.
 
 Wrapper mặc định chạy deterministic, không gọi mạng và không gọi LLM. Dùng `--llm` chỉ khi runtime Claude đã được cấu hình và cần câu hỏi mở; nếu không, giữ mặc định để bảo toàn tính tái lập.
 
@@ -72,11 +75,27 @@ Hiển thị citation cùng câu trả lời khi đưa lên giao diện chat. Gi
 
 ## Demo flow
 
-Chạy toàn bộ kịch bản:
+Chạy toàn bộ preflight và kịch bản trình bày:
 
 ```bash
 bash demo/run_demo.sh
 ```
+
+Runner tự chọn `python3`, `python` hoặc `py` có thể chạy, tự inject demo actor/role,
+và chỉ dựng lại corpus khi DB thiếu hoặc freshness bị stale. Showcase dùng một
+`KnowledgeRuntime` duy nhất, deterministic/offline, rồi kể 7 bước: structured fact,
+follow-up context, số có provenance, graph, `confident_no`, `not_in_kb` và write
+proposal cần approval. Muốn lấy report máy đọc mà không chạy lại các gate:
+
+```bash
+python scripts/demo_showcase.py
+python scripts/demo_showcase.py --check --no-cache
+python scripts/demo_showcase.py --json
+```
+
+Không bật `--llm` trong showcase chính. BGE-M3 được lazy-load và cold-start phụ
+thuộc mạnh vào máy; câu hỏi mở chỉ nên chạy như phần optional sau khi đã warm-up
+model và preflight xác nhận Claude CLI, auth/network cùng model id đều khả dụng.
 
 Kịch bản mẫu phải thể hiện đủ `in_kb`, `confident_no`, `not_in_kb` và câu trả lời số có citation. Bộ kiểm thử chuẩn nằm ở `questions.json` và chạy bằng `python3 scripts/eval.py`.
 Bộ phủ theo sheet/cột nằm ở `questions_coverage.json` và chạy bằng
