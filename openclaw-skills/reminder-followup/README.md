@@ -31,6 +31,11 @@ cp .env.example .env
 "About" của kênh) — bắt buộc cho bước 4 dưới đây (`openclaw cron create --to
 channel:<id>` cần ID, không nhận tên kênh).
 
+⚠️ **Quote mọi giá trị bắt đầu bằng `#`** (vd `SLACK_REPORT_CHANNEL="#nexus-lab"`).
+Không quote thì gateway hiểu `#` là bắt đầu comment và **bỏ qua cả dòng** —
+biến không tồn tại (chứ không phải rỗng), `openclaw skills check` báo thiếu
+mà không có gợi ý gì thêm. Root-caused 2026-08-04.
+
 ### 3. Khai roster cho nhóm
 
 Tạo `roster/<SLACK_REPORT_CHANNEL_ID>.json` liệt kê ai phải report — xem
@@ -53,7 +58,7 @@ tự đọc file `.env` của skill. Thiếu bất kỳ biến nào là skill t�
 `△ needs setup` và **`Visible to model: no`**, tức là bot hoàn toàn không thấy
 `SKILL.md`; nó vẫn trả lời như thường nhưng nội dung là tự bịa.
 
-Nạp `.env` vào Gateway qua drop-in systemd
+**Linux/systemd** — nạp `.env` qua drop-in
 `~/.config/systemd/user/openclaw-gateway.service.d/override.conf`:
 
 ```
@@ -72,8 +77,25 @@ lỗi, service vẫn `active`. Đây đúng là lỗi đã xảy ra (2026-08-03)
 `daily-report` → `reminder-followup` làm đường dẫn chết, skill vô hình với bot
 suốt nhiều ngày mà nhìn bên ngoài vẫn như đang chạy tốt.
 
-Kiểm nhanh khi nghi ngờ: `openclaw skills check` (liệt kê skill còn thiếu
-requirement) và `openclaw skills info <tên>`.
+**macOS/launchd** — không có `EnvironmentFile=` kiểu systemd. Thay vào đó,
+biến phải được thêm vào file `.env` gốc mà OpenClaw dùng để generate service
+env (thường là `~/.openclaw-<profile>/.env`, ví dụ `~/.openclaw-hackathon/.env`
+— **không phải** `.env` trong thư mục skill này, file đó chỉ để tham khảo/chạy
+tay), rồi chạy:
+
+```bash
+openclaw --profile <profile> gateway install --force   # regenerate service-env + reinstall launchd job
+openclaw --profile <profile> skills check               # xác nhận "Missing requirements: 0"
+```
+
+`gateway install --force` giữ nguyên port/token hiện có (không truyền `--port`/
+`--token` thì nó tự đọc lại config cũ) — an toàn để chạy lại mỗi khi thêm biến
+mới. Đây đúng là lỗi đã xảy ra (2026-08-04): tưởng tạo `.env` trong thư mục
+skill là đủ, skill vẫn `△ needs setup` cho tới khi biến được thêm vào file gốc
+và chạy `gateway install --force`.
+
+Kiểm nhanh khi nghi ngờ (cả 2 hệ điều hành): `openclaw skills check` (liệt kê
+skill còn thiếu requirement) và `openclaw skills info <tên>`.
 
 ### 5. Đăng ký 2 cron job (1 lần duy nhất)
 
