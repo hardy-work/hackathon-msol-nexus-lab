@@ -1,0 +1,16 @@
+{
+  "corpus": "nexus-plan",
+  "purpose": "Representative onboarding questions from a new PM/developer perspective.",
+  "questions": [
+    {"id":"o01","persona":"new_dev","q":"Những người có task trong Sprint đầu tiên là ai?","expect":{"status":"in_kb","contains":["ĐôNT","SơnBH","KiênĐT"]}},
+    {"id":"o02","persona":"new_dev","q":"Vai trò của ĐôNT là gì?","expect":{"status":"in_kb","contains":["BE"],"must_cite":["do-nt.md"]}},
+    {"id":"o03","persona":"new_dev","q":"Ai phụ trách API Login trong Sprint 1?","expect":{"status":"in_kb","contains":["SơnBH"]}},
+    {"id":"o04","persona":"new_dev","q":"API Login đang trạng thái gì?","expect":{"status":"in_kb","contains":["Done"],"must_cite":["Sprint 1!Q6"]}},
+    {"id":"o05","persona":"new_pm","q":"Authentication bắt đầu và kết thúc ngày nào?","expect":{"status":"in_kb","contains":["2026-07-27","2026-07-28"],"must_cite":["Master schedule"]}},
+    {"id":"o06","persona":"new_pm","q":"Tiến độ hiện tại của Sprint 1 là bao nhiêu?","expect":{"status":"in_kb","contains":["51,25%"],"must_cite":["Summary project!H4"]}},
+    {"id":"o07","persona":"new_pm","q":"Tổng effort thực tế của Sprint 1 là bao nhiêu?","expect":{"status":"in_kb","contains":["249"]}},
+    {"id":"o08","persona":"new_pm","q":"Risk management có rủi ro nào không?","expect":{"status":"not_in_kb"}},
+    {"id":"o09","persona":"new_dev","q":"Ai làm JavaScript?","expect":{"status":"not_in_kb","contains":["mapping người–tech-stack"]}},
+    {"id":"o10","persona":"new_pm","q":"Cập nhật task API Login thành Done","expect":{"status":"not_in_kb","action_requires_approval":true}}
+  ]
+}

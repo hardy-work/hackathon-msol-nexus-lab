@@ -1,0 +1,27 @@
+{
+  "corpus": "nexus-plan",
+  "purpose": "Bộ kiểm tra độ phủ theo sheet, cột và giới hạn dữ liệu của demo.",
+  "questions": [
+    {"id":"c01","group":"resource","q":"Resource plan có những người nào?","expect":{"status":"in_kb","contains":["Bùi Hồng Sơn"],"must_cite":["Resource plan"]}},
+    {"id":"c02","group":"resource","q":"Bùi Hồng Sơn có vai trò gì trong Resource plan?","expect":{"status":"in_kb","contains":["Developer(BE)"],"must_cite":["Resource plan!F8"]}},
+    {"id":"c03","group":"resource","q":"Bùi Hồng Sơn được xếp hạng nhân sự nào?","expect":{"status":"in_kb","contains":["Senior"],"must_cite":["Resource plan!E8"]}},
+    {"id":"c04","group":"schedule","q":"Có những scope nào trong Master schedule?","expect":{"status":"in_kb","contains":["Authentication","Order Management"],"must_cite":["Master schedule"]}},
+    {"id":"c05","group":"schedule","q":"User Profile Management bắt đầu ngày nào?","expect":{"status":"in_kb","contains":["2026-07-29"],"must_cite":["Master schedule!B6"]}},
+    {"id":"c06","group":"schedule","q":"PIC của Authentication là ai?","expect":{"status":"in_kb","contains":["MOR"],"must_cite":["Master schedule!D5"]}},
+    {"id":"c07","group":"schedule","q":"Authentication có deadline nào?","expect":{"status":"in_kb","contains":["2026-07-28"],"must_cite":["Master schedule!C5"]}},
+    {"id":"c08","group":"summary","q":"Summary project còn lại bao nhiêu giờ?","expect":{"status":"in_kb","contains":["234"],"must_cite":["Summary project!G4"]}},
+    {"id":"c09","group":"summary","q":"Tiến độ hiện tại của Sprint 1 là bao nhiêu?","expect":{"status":"in_kb","contains":["51,25%"],"must_cite":["Summary project!H4"]}},
+    {"id":"c10","group":"sprint","q":"API Login đang trạng thái gì?","expect":{"status":"in_kb","contains":["Done"],"must_cite":["Sprint 1!Q6"]}},
+    {"id":"c11","group":"sprint","q":"Có bao nhiêu task Done trong Sprint 1?","expect":{"status":"in_kb","contains":["30"],"must_cite":["nexus-sprint1.facts.json"]}},
+    {"id":"c12","group":"sprint","q":"Liệt kê các task mức ưu tiên Highest.","expect":{"status":"in_kb","contains":["API Login","Highest"],"must_cite":["Sprint 1"]}},
+    {"id":"c13","group":"sprint","q":"Task nào còn Remaining?","expect":{"status":"in_kb","contains":["Remaining (h)"],"must_cite":["Sprint 1"]}},
+    {"id":"c14","group":"schedule","q":"Có bao nhiêu scope trong master schedule?","expect":{"status":"in_kb","contains":["5"],"must_cite":["Master schedule"]}},
+    {"id":"c15","group":"config","q":"Config có những tech stack nào?","expect":{"status":"in_kb","contains":["JavaScript","React"],"must_cite":["vocabulary.tech_stack"]}},
+    {"id":"c16","group":"data_limit","q":"Ai làm JavaScript?","expect":{"status":"not_in_kb","contains":["mapping người–tech-stack"],"must_cite":["vocabulary.tech_stack"]}},
+    {"id":"c17","group":"data_limit","q":"Dự án dùng những tech stack nào?","expect":{"status":"not_in_kb","contains":["chưa có mapping"],"must_cite":["Config!G2:G15"]}},
+    {"id":"c18","group":"empty_sheet","q":"Backlog hiện có task nào không?","expect":{"status":"not_in_kb"}},
+    {"id":"c19","group":"empty_sheet","q":"Risk management có rủi ro nào không?","expect":{"status":"not_in_kb"}},
+    {"id":"c20","group":"empty_sheet","q":"Issue management có status gì?","expect":{"status":"not_in_kb"}},
+    {"id":"c21","group":"action_guard","q":"Cập nhật task API Login thành Done","expect":{"status":"not_in_kb","action_requires_approval":true}}
+  ]
+}

@@ -1,11 +1,16 @@
 """MCP server bridging Vexa's meeting-bot REST API (self-hosted).
 
 Lets an agent send a bot into a Google Meet / Zoom / Teams call, poll the
-live transcript, check bot status, and stop the bot when the meeting ends.
+transcript, check bot status, and stop the bot when the meeting ends. Vexa
+is used for bot orchestration only (join/status/stop/list) — transcript
+content comes exclusively from live-translate's B-full Soniox stream (see
+get_transcript).
 
 Config (env vars):
-  VEXA_BASE_URL  - e.g. http://<vexa-host>:18056 (default: http://localhost:18056)
-  VEXA_API_KEY   - API key issued by your Vexa instance (sent as X-API-Key)
+  VEXA_BASE_URL          - e.g. http://<vexa-host>:18056 (default: http://localhost:18056)
+  VEXA_API_KEY           - API key issued by your Vexa instance (sent as X-API-Key)
+  WEB_PUBLIC_URL         - live-translate's public base URL (share_link + transcript default)
+  LIVE_TRANSLATE_BASE_URL - overrides WEB_PUBLIC_URL for get_transcript, if they differ
 """
 
 import os
@@ -22,6 +27,10 @@ VEXA_API_KEY = os.environ.get("VEXA_API_KEY", "")
 # target for that link (not switchable by viewers, by design).
 WEB_PUBLIC_URL = os.environ.get("WEB_PUBLIC_URL", "").rstrip("/")
 LIVE_TRANSLATE_LANG = os.environ.get("LIVE_TRANSLATE_LANG", "vi")
+# Base URL get_transcript reads from first (see below). Defaults to
+# WEB_PUBLIC_URL since that's already the running live-translate instance;
+# only set this separately if the two ever diverge.
+LIVE_TRANSLATE_BASE_URL = os.environ.get("LIVE_TRANSLATE_BASE_URL", WEB_PUBLIC_URL).rstrip("/")
 
 mcp = FastMCP("vexa-bridge")
 
@@ -29,6 +38,9 @@ _client = httpx.Client(
     base_url=VEXA_BASE_URL,
     headers={"X-API-Key": VEXA_API_KEY},
     timeout=15.0,
+)
+_live_translate_client = (
+    httpx.Client(base_url=LIVE_TRANSLATE_BASE_URL, timeout=15.0) if LIVE_TRANSLATE_BASE_URL else None
 )
 
 _MEET_RE = re.compile(r"meet\.google\.com/([a-z]{3}-[a-z]{4}-[a-z]{3})", re.I)
@@ -109,8 +121,21 @@ def join_meeting(
 
 @mcp.tool()
 def get_transcript(platform: str, native_meeting_id: str) -> dict:
-    """Fetch the current (or final) transcript for a meeting, with speaker labels."""
-    return _request("GET", f"/transcripts/{platform}/{native_meeting_id}")
+    """Fetch the current (or final) transcript for a meeting, with speaker labels.
+
+    Reads exclusively from live-translate's assembled transcript — the B-full
+    continuous per-speaker Soniox stream. Vexa's own /transcripts endpoint is
+    never used: its confirm layer drops text at ~30s turn seams, and Soniox is
+    now the single source of truth for transcript content. Response shape:
+    {"segments": [{"speaker", "language", "text", "start", "end"}, ...]}."""
+    if _live_translate_client is None:
+        raise RuntimeError(
+            "LIVE_TRANSLATE_BASE_URL (or WEB_PUBLIC_URL) is not configured — "
+            "get_transcript has no transcript source without it."
+        )
+    resp = _live_translate_client.get(f"/api/rooms/{platform}/{native_meeting_id}/transcript")
+    resp.raise_for_status()
+    return resp.json()
 
 
 @mcp.tool()

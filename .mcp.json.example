@@ -7,14 +7,6 @@
         "VEXA_BASE_URL": "http://192.168.4.15:18056",
         "VEXA_API_KEY": "<YOUR_VEXA_API_KEY>"
       }
-    },
-    "sheets-bridge": {
-      "command": "<ABSOLUTE_PATH_TO_REPO>/openclaw-skills/daily-report/sheets-bridge/.venv/bin/python",
-      "args": ["<ABSOLUTE_PATH_TO_REPO>/openclaw-skills/daily-report/sheets-bridge/server.py"],
-      "env": {
-        "GOOGLE_SHEETS_CREDENTIALS_JSON": "<ABSOLUTE_PATH_TO_SERVICE_ACCOUNT_JSON>",
-        "GOOGLE_SHEETS_SPREADSHEET_ID": "<YOUR_SPREADSHEET_ID>"
-      }
     }
   }
 }

@@ -12,10 +12,21 @@ vexa-mcp/.env
 # Skill secrets — never commit real .env files, only .env.example
 openclaw-skills/*/.env
 openclaw-skills/*/service-account*.json
+openclaw-skills/*/oauth-client*.json
+openclaw-skills/*/oauth-token*.json
 **/__pycache__/
+
+# Project Knowledge build/runtime artifacts — corpus and wiki are source data,
+# DuckDB/vector indexes are rebuilt locally.
+openclaw-skills/project-knowledge/.venv/
+openclaw-skills/project-knowledge/derived/
+.ingest-worktrees/
+openclaw-skills/project-knowledge/.runtime/
+openclaw-skills/project-knowledge/questions_onboarding.local.json
 
 # Per-project/per-deployment skill config — never commit real config.json, only config.example.json
 openclaw-skills/gg-sheet/config.json
+openclaw-skills/slack-evidence-sheet/config.json
 
 # Audit logs (local activity trail, not source)
 openclaw-skills/*/*-audit.log
@@ -23,7 +34,12 @@ openclaw-skills/*/*-audit.log
 .DS_Store
 
 # Runtime-generated output — not source, don't commit
-openclaw-skills/daily-report/state/
+openclaw-skills/reminder-followup/state/
+
+# Roster chứa tên/user id nhân viên thật — chỉ commit file mẫu
+openclaw-skills/reminder-followup/roster/*.json
+!openclaw-skills/reminder-followup/roster/*.example.json
 openclaw-skills/meeting-notetaker/notes/
+openclaw-skills/slack-evidence-sheet/downloads/
 **/jira-audit.log
 %h/

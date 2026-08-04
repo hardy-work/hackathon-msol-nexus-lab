@@ -1,0 +1,130 @@
+{
+  "doc_id": "nexus-plan",
+  "version": 1,
+  "kind": "rows",
+  "sheet": "Summary project",
+  "headers": {
+    "B": "No",
+    "C": "Sprint",
+    "D": "Start date",
+    "E": "End date",
+    "F": "Re-est (h)",
+    "G": "Remaining Time (h)",
+    "H": "Progress",
+    "I": "Status",
+    "J": "Link Weekly  Report",
+    "K": "Note"
+  },
+  "rows": [
+    {
+      "row": 4,
+      "cells": {
+        "B": {
+          "header": "No",
+          "value": "1",
+          "value_num": 1,
+          "src": "Summary project!B4"
+        },
+        "C": {
+          "header": "Sprint",
+          "value": "Sprint 1",
+          "value_num": null,
+          "src": "Summary project!C4"
+        },
+        "D": {
+          "header": "Start date",
+          "value": "2026-07-27",
+          "value_num": null,
+          "src": "Summary project!D4"
+        },
+        "E": {
+          "header": "End date",
+          "value": "2026-08-07",
+          "value_num": null,
+          "src": "Summary project!E4"
+        },
+        "F": {
+          "header": "Re-est (h)",
+          "value": "480",
+          "value_num": 480,
+          "src": "Summary project!F4"
+        },
+        "G": {
+          "header": "Remaining Time (h)",
+          "value": "234",
+          "value_num": 234,
+          "src": "Summary project!G4"
+        },
+        "H": {
+          "header": "Progress",
+          "value": "51,25%",
+          "value_num": null,
+          "src": "Summary project!H4"
+        },
+        "I": {
+          "header": "Status",
+          "value": "In progress",
+          "value_num": null,
+          "src": "Summary project!I4"
+        }
+      }
+    }
+  ],
+  "numeric_cells": {
+    "B4:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Summary project!B4"
+    },
+    "C4:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Summary project!C4"
+    },
+    "D4:2026": {
+      "value": 2026,
+      "text": "2026",
+      "src": "Summary project!D4"
+    },
+    "D4:07": {
+      "value": 7,
+      "text": "07",
+      "src": "Summary project!D4"
+    },
+    "D4:27": {
+      "value": 27,
+      "text": "27",
+      "src": "Summary project!D4"
+    },
+    "E4:2026": {
+      "value": 2026,
+      "text": "2026",
+      "src": "Summary project!E4"
+    },
+    "E4:08": {
+      "value": 8,
+      "text": "08",
+      "src": "Summary project!E4"
+    },
+    "E4:07": {
+      "value": 7,
+      "text": "07",
+      "src": "Summary project!E4"
+    },
+    "F4:480": {
+      "value": 480,
+      "text": "480",
+      "src": "Summary project!F4"
+    },
+    "G4:234": {
+      "value": 234,
+      "text": "234",
+      "src": "Summary project!G4"
+    },
+    "H4:51,25": {
+      "value": 51.25,
+      "text": "51,25",
+      "src": "Summary project!H4"
+    }
+  }
+}

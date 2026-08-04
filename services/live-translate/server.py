@@ -508,6 +508,30 @@ async def room_info(platform: str, native_id: str) -> JSONResponse:
     )
 
 
+@app.get("/api/rooms/{platform}/{native_id}/transcript")
+async def room_transcript(platform: str, native_id: str) -> JSONResponse:
+    """Full assembled transcript for a room, for meeting-notetaker's get_transcript
+    to read instead of hitting Vexa directly. When `bfull` is true the segments
+    came from the bot's continuous per-speaker Soniox stream (no turn-seam loss);
+    otherwise they're whatever this room's Vexa-confirm-layer poller has seen so
+    far. Doesn't create a room / trigger any polling — a plain lookup so calling
+    this for a meeting live-translate never saw just returns empty segments."""
+    room = _rooms.get(f"{platform}/{native_id}")
+    if room is None:
+        return JSONResponse({"segments": [], "bfull": False})
+    segments = [
+        {
+            "speaker": seg.speaker,
+            "language": seg.language,
+            "text": seg.text,
+            "start": seg.start,
+            "end": seg.end,
+        }
+        for _, seg in sorted(room._segments.items())
+    ]
+    return JSONResponse({"segments": segments, "bfull": room.bfull})
+
+
 @app.get("/api/rooms/{platform}/{native_id}/stream")
 async def stream(platform: str, native_id: str, request: Request, lang: str = DEFAULT_LANG) -> StreamingResponse:
     room = get_room(platform, native_id)

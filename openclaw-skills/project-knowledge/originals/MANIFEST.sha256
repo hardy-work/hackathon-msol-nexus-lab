@@ -1,0 +1,4 @@
+# GATE 1 — sha256 của originals/ (tầng bất biến). KHÔNG sửa tay.
+# Sinh bởi scripts/gate1_integrity.py. Đổi original -> chạy --reinit CÓ CHỦ Ý.
+
+df3369a7bfbe56eb8d2222053f8e23c744d7dfee70640e37166175cbad2d6d58  nexus-plan.xlsx

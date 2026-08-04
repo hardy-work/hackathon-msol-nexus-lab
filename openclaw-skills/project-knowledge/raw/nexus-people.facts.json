@@ -1,0 +1,168 @@
+{
+  "doc_id": "nexus-plan",
+  "version": 1,
+  "facts": {
+    "tung-dv": {
+      "label": "TùngDV",
+      "roles": [],
+      "in_config": true,
+      "appears_in_sprints": false,
+      "task_count": {
+        "value": 0,
+        "unit": "task",
+        "src": "Config!H2:H15"
+      },
+      "estimate_h": {
+        "value": 0,
+        "unit": "hour",
+        "src": "Config!H2:H15"
+      },
+      "actual_h": {
+        "value": 0,
+        "unit": "hour",
+        "src": "Config!H2:H15"
+      }
+    },
+    "do-nt": {
+      "label": "ĐôNT",
+      "roles": [
+        "BE"
+      ],
+      "in_config": true,
+      "appears_in_sprints": true,
+      "task_count": {
+        "value": 10,
+        "unit": "task",
+        "src": "Sprint 1!E10:E63"
+      },
+      "estimate_h": {
+        "value": 80.0,
+        "unit": "hour",
+        "src": "Sprint 1!E10:E63"
+      },
+      "actual_h": {
+        "value": 43.0,
+        "unit": "hour",
+        "src": "Sprint 1!E10:E63"
+      }
+    },
+    "son-bh": {
+      "label": "SơnBH",
+      "roles": [
+        "BE"
+      ],
+      "in_config": true,
+      "appears_in_sprints": true,
+      "task_count": {
+        "value": 10,
+        "unit": "task",
+        "src": "Sprint 1!E6:E59"
+      },
+      "estimate_h": {
+        "value": 80.0,
+        "unit": "hour",
+        "src": "Sprint 1!E6:E59"
+      },
+      "actual_h": {
+        "value": 43.0,
+        "unit": "hour",
+        "src": "Sprint 1!E6:E59"
+      }
+    },
+    "kien-dt": {
+      "label": "KiênĐT",
+      "roles": [
+        "FE"
+      ],
+      "in_config": true,
+      "appears_in_sprints": true,
+      "task_count": {
+        "value": 10,
+        "unit": "task",
+        "src": "Sprint 1!E16:E57"
+      },
+      "estimate_h": {
+        "value": 80.0,
+        "unit": "hour",
+        "src": "Sprint 1!E16:E57"
+      },
+      "actual_h": {
+        "value": 40.0,
+        "unit": "hour",
+        "src": "Sprint 1!E16:E57"
+      }
+    },
+    "vinh-nv": {
+      "label": "VinhNV",
+      "roles": [
+        "FE"
+      ],
+      "in_config": true,
+      "appears_in_sprints": true,
+      "task_count": {
+        "value": 10,
+        "unit": "task",
+        "src": "Sprint 1!E8:E61"
+      },
+      "estimate_h": {
+        "value": 80.0,
+        "unit": "hour",
+        "src": "Sprint 1!E8:E61"
+      },
+      "actual_h": {
+        "value": 43.0,
+        "unit": "hour",
+        "src": "Sprint 1!E8:E61"
+      }
+    },
+    "long-vn": {
+      "label": "LongVN",
+      "roles": [
+        "BE"
+      ],
+      "in_config": true,
+      "appears_in_sprints": true,
+      "task_count": {
+        "value": 10,
+        "unit": "task",
+        "src": "Sprint 1!E14:E52"
+      },
+      "estimate_h": {
+        "value": 80.0,
+        "unit": "hour",
+        "src": "Sprint 1!E14:E52"
+      },
+      "actual_h": {
+        "value": 40.0,
+        "unit": "hour",
+        "src": "Sprint 1!E14:E52"
+      }
+    },
+    "hoang-mv": {
+      "label": "HoàngMV",
+      "roles": [
+        "FE"
+      ],
+      "in_config": true,
+      "appears_in_sprints": true,
+      "task_count": {
+        "value": 10,
+        "unit": "task",
+        "src": "Sprint 1!E12:E65"
+      },
+      "estimate_h": {
+        "value": 80.0,
+        "unit": "hour",
+        "src": "Sprint 1!E12:E65"
+      },
+      "actual_h": {
+        "value": 40.0,
+        "unit": "hour",
+        "src": "Sprint 1!E12:E65"
+      }
+    }
+  },
+  "zero_task": [
+    "TùngDV"
+  ]
+}

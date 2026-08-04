@@ -1,0 +1,10 @@
+{
+  "type": "event_callback",
+  "event": {
+    "type": "app_mention",
+    "user": "U_DEMO",
+    "text": "<@U_BOT> ĐôNT làm vai trò gì trong dự án Nexus?",
+    "channel": "C_NEXUS",
+    "ts": "1720000000.000001"
+  }
+}

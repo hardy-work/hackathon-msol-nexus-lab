@@ -1,0 +1,13 @@
+project: nexus
+default_visibility: internal
+
+# Identity/role are supplied by the trusted runtime (Slack user mapping, SSO,
+# or service environment), never copied from free-form user input.
+visibility_roles:
+  public: []
+  internal: [project_member, project_manager, knowledge_admin]
+  restricted: [project_manager, knowledge_admin]
+
+coverage_permissions:
+  person_role: project_knowledge:approve_coverage
+  person_task: project_knowledge:approve_coverage

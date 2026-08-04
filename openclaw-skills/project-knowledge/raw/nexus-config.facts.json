@@ -1,0 +1,280 @@
+{
+  "doc_id": "nexus-plan",
+  "version": 1,
+  "vocabulary": {
+    "provider": [
+      "MTEK",
+      "MSOL",
+      "MSG",
+      "MDN",
+      "MA"
+    ],
+    "level": [
+      "Senior",
+      "Middle",
+      "Junior",
+      "Expert",
+      "Leader",
+      "N/A"
+    ],
+    "tech_stack": [
+      "HTML",
+      "CSS",
+      "JavaScript",
+      "React",
+      "Vue.js",
+      "C#",
+      "C++",
+      "Python",
+      "ROR",
+      "Java",
+      "Node.js",
+      "Django",
+      "DevOps",
+      "Fullstack"
+    ],
+    "assignee": [
+      "TùngDV",
+      "ĐôNT",
+      "SơnBH",
+      "KiênĐT",
+      "VinhNV",
+      "LongVN",
+      "HoàngMV"
+    ],
+    "task_status": [
+      "Open",
+      "In progress",
+      "Done",
+      "Pending",
+      "Cancel"
+    ],
+    "priority": [
+      "Highest",
+      "High",
+      "Medium",
+      "Low"
+    ],
+    "role": [
+      "BE",
+      "FE"
+    ]
+  },
+  "vocabulary_cells": [
+    {
+      "field": "provider",
+      "value": "MTEK",
+      "src": "Config!E2"
+    },
+    {
+      "field": "provider",
+      "value": "MSOL",
+      "src": "Config!E3"
+    },
+    {
+      "field": "provider",
+      "value": "MSG",
+      "src": "Config!E4"
+    },
+    {
+      "field": "provider",
+      "value": "MDN",
+      "src": "Config!E5"
+    },
+    {
+      "field": "provider",
+      "value": "MA",
+      "src": "Config!E6"
+    },
+    {
+      "field": "level",
+      "value": "Senior",
+      "src": "Config!F2"
+    },
+    {
+      "field": "level",
+      "value": "Middle",
+      "src": "Config!F3"
+    },
+    {
+      "field": "level",
+      "value": "Junior",
+      "src": "Config!F4"
+    },
+    {
+      "field": "level",
+      "value": "Expert",
+      "src": "Config!F5"
+    },
+    {
+      "field": "level",
+      "value": "Leader",
+      "src": "Config!F6"
+    },
+    {
+      "field": "level",
+      "value": "N/A",
+      "src": "Config!F7"
+    },
+    {
+      "field": "tech_stack",
+      "value": "HTML",
+      "src": "Config!G2"
+    },
+    {
+      "field": "tech_stack",
+      "value": "CSS",
+      "src": "Config!G3"
+    },
+    {
+      "field": "tech_stack",
+      "value": "JavaScript",
+      "src": "Config!G4"
+    },
+    {
+      "field": "tech_stack",
+      "value": "React",
+      "src": "Config!G5"
+    },
+    {
+      "field": "tech_stack",
+      "value": "Vue.js",
+      "src": "Config!G6"
+    },
+    {
+      "field": "tech_stack",
+      "value": "C#",
+      "src": "Config!G7"
+    },
+    {
+      "field": "tech_stack",
+      "value": "C++",
+      "src": "Config!G8"
+    },
+    {
+      "field": "tech_stack",
+      "value": "Python",
+      "src": "Config!G9"
+    },
+    {
+      "field": "tech_stack",
+      "value": "ROR",
+      "src": "Config!G10"
+    },
+    {
+      "field": "tech_stack",
+      "value": "Java",
+      "src": "Config!G11"
+    },
+    {
+      "field": "tech_stack",
+      "value": "Node.js",
+      "src": "Config!G12"
+    },
+    {
+      "field": "tech_stack",
+      "value": "Django",
+      "src": "Config!G13"
+    },
+    {
+      "field": "tech_stack",
+      "value": "DevOps",
+      "src": "Config!G14"
+    },
+    {
+      "field": "tech_stack",
+      "value": "Fullstack",
+      "src": "Config!G15"
+    },
+    {
+      "field": "assignee",
+      "value": "TùngDV",
+      "src": "Config!H2"
+    },
+    {
+      "field": "assignee",
+      "value": "ĐôNT",
+      "src": "Config!H3"
+    },
+    {
+      "field": "assignee",
+      "value": "SơnBH",
+      "src": "Config!H4"
+    },
+    {
+      "field": "assignee",
+      "value": "KiênĐT",
+      "src": "Config!H5"
+    },
+    {
+      "field": "assignee",
+      "value": "VinhNV",
+      "src": "Config!H6"
+    },
+    {
+      "field": "assignee",
+      "value": "LongVN",
+      "src": "Config!H7"
+    },
+    {
+      "field": "assignee",
+      "value": "HoàngMV",
+      "src": "Config!H8"
+    },
+    {
+      "field": "task_status",
+      "value": "Open",
+      "src": "Config!I2"
+    },
+    {
+      "field": "task_status",
+      "value": "In progress",
+      "src": "Config!I3"
+    },
+    {
+      "field": "task_status",
+      "value": "Done",
+      "src": "Config!I4"
+    },
+    {
+      "field": "task_status",
+      "value": "Pending",
+      "src": "Config!I5"
+    },
+    {
+      "field": "task_status",
+      "value": "Cancel",
+      "src": "Config!I6"
+    },
+    {
+      "field": "priority",
+      "value": "Highest",
+      "src": "Config!J2"
+    },
+    {
+      "field": "priority",
+      "value": "High",
+      "src": "Config!J3"
+    },
+    {
+      "field": "priority",
+      "value": "Medium",
+      "src": "Config!J4"
+    },
+    {
+      "field": "priority",
+      "value": "Low",
+      "src": "Config!J5"
+    },
+    {
+      "field": "role",
+      "value": "BE",
+      "src": "Config!K2"
+    },
+    {
+      "field": "role",
+      "value": "FE",
+      "src": "Config!K3"
+    }
+  ]
+}

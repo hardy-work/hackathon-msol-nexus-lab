@@ -1,0 +1,1154 @@
+{
+  "doc_id": "nexus-plan",
+  "version": 1,
+  "kind": "rows",
+  "sheet": "Resource plan",
+  "headers": {
+    "A": "#",
+    "B": "Project scope",
+    "C": "Original estimated effort",
+    "D": "Re-estimated effort",
+    "E": "Tên nhân sự",
+    "F": "Vai trò",
+    "G": "Xếp hạng  nhân sự",
+    "H": "Migration July W1",
+    "I": "W2",
+    "J": "W3",
+    "K": "W4",
+    "L": "August W1",
+    "M": "W2",
+    "N": "W3",
+    "O": "W4",
+    "P": "Effort theo vai trò (MM)",
+    "Q": "Chênh lệch (MM)",
+    "R": "R",
+    "S": "S",
+    "T": "T",
+    "U": "1 2 3",
+    "V": "Bùi Hồng Sơn Nguyễn Thành Đô Văn Ngọc Long",
+    "W": "BE BE BE",
+    "X": "8 8 8",
+    "Y": "8 8 8",
+    "Z": "8 8 8",
+    "AA": "8 8 8",
+    "AB": "8 8 8",
+    "AC": "AC",
+    "AD": "AD",
+    "AE": "8 8 8",
+    "AF": "8 8 8",
+    "AG": "8 8 8",
+    "AH": "8 8 8",
+    "AI": "8 8 8",
+    "AJ": "AJ",
+    "AK": "AK"
+  },
+  "rows": [
+    {
+      "row": 8,
+      "cells": {
+        "A": {
+          "header": "#",
+          "value": "1",
+          "value_num": 1.0,
+          "src": "Resource plan!A8"
+        },
+        "B": {
+          "header": "Project scope",
+          "value": "Migration",
+          "value_num": null,
+          "src": "Resource plan!B8"
+        },
+        "C": {
+          "header": "Original estimated effort",
+          "value": "2",
+          "value_num": 2.0,
+          "src": "Resource plan!C8"
+        },
+        "D": {
+          "header": "Re-estimated effort",
+          "value": "3",
+          "value_num": 3,
+          "src": "Resource plan!D8"
+        },
+        "E": {
+          "header": "Tên nhân sự",
+          "value": "Bùi Hồng Sơn",
+          "value_num": null,
+          "src": "Resource plan!E8"
+        },
+        "F": {
+          "header": "Vai trò",
+          "value": "Developer(BE)",
+          "value_num": null,
+          "src": "Resource plan!F8"
+        },
+        "G": {
+          "header": "Xếp hạng  nhân sự",
+          "value": "Senior",
+          "value_num": null,
+          "src": "Resource plan!G8"
+        },
+        "H": {
+          "header": "Migration July W1",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!H8"
+        },
+        "I": {
+          "header": "W2",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!I8"
+        },
+        "J": {
+          "header": "W3",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!J8"
+        },
+        "K": {
+          "header": "W4",
+          "value": "1",
+          "value_num": 1.0,
+          "src": "Resource plan!K8"
+        },
+        "L": {
+          "header": "August W1",
+          "value": "1",
+          "value_num": 1.0,
+          "src": "Resource plan!L8"
+        },
+        "P": {
+          "header": "Effort theo vai trò (MM)",
+          "value": "0.5",
+          "value_num": 0.5,
+          "src": "Resource plan!P8"
+        },
+        "Q": {
+          "header": "Chênh lệch (MM)",
+          "value": "1",
+          "value_num": 1,
+          "src": "Resource plan!Q8"
+        },
+        "U": {
+          "header": "1 2 3",
+          "value": "4",
+          "value_num": 4.0,
+          "src": "Resource plan!U8"
+        },
+        "V": {
+          "header": "Bùi Hồng Sơn Nguyễn Thành Đô Văn Ngọc Long",
+          "value": "Nguyễn Văn Vinh",
+          "value_num": null,
+          "src": "Resource plan!V8"
+        },
+        "W": {
+          "header": "BE BE BE",
+          "value": "FE",
+          "value_num": null,
+          "src": "Resource plan!W8"
+        },
+        "X": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!X8"
+        },
+        "Y": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!Y8"
+        },
+        "Z": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!Z8"
+        },
+        "AA": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AA8"
+        },
+        "AB": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AB8"
+        },
+        "AE": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AE8"
+        },
+        "AF": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AF8"
+        },
+        "AG": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AG8"
+        },
+        "AH": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AH8"
+        },
+        "AI": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AI8"
+        }
+      }
+    },
+    {
+      "row": 9,
+      "cells": {
+        "E": {
+          "header": "Tên nhân sự",
+          "value": "Nguyễn Thành Đô",
+          "value_num": null,
+          "src": "Resource plan!E9"
+        },
+        "F": {
+          "header": "Vai trò",
+          "value": "Developer(BE)",
+          "value_num": null,
+          "src": "Resource plan!F9"
+        },
+        "G": {
+          "header": "Xếp hạng  nhân sự",
+          "value": "Senior",
+          "value_num": null,
+          "src": "Resource plan!G9"
+        },
+        "H": {
+          "header": "Migration July W1",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!H9"
+        },
+        "I": {
+          "header": "W2",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!I9"
+        },
+        "J": {
+          "header": "W3",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!J9"
+        },
+        "K": {
+          "header": "W4",
+          "value": "1",
+          "value_num": 1.0,
+          "src": "Resource plan!K9"
+        },
+        "L": {
+          "header": "August W1",
+          "value": "1",
+          "value_num": 1.0,
+          "src": "Resource plan!L9"
+        },
+        "P": {
+          "header": "Effort theo vai trò (MM)",
+          "value": "0.5",
+          "value_num": 0.5,
+          "src": "Resource plan!P9"
+        },
+        "U": {
+          "header": "1 2 3",
+          "value": "5",
+          "value_num": 5.0,
+          "src": "Resource plan!U9"
+        },
+        "V": {
+          "header": "Bùi Hồng Sơn Nguyễn Thành Đô Văn Ngọc Long",
+          "value": "Mai Viết Hoàng",
+          "value_num": null,
+          "src": "Resource plan!V9"
+        },
+        "W": {
+          "header": "BE BE BE",
+          "value": "FE",
+          "value_num": null,
+          "src": "Resource plan!W9"
+        },
+        "X": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!X9"
+        },
+        "Y": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!Y9"
+        },
+        "Z": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!Z9"
+        },
+        "AA": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AA9"
+        },
+        "AB": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AB9"
+        },
+        "AE": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AE9"
+        },
+        "AF": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AF9"
+        },
+        "AG": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AG9"
+        },
+        "AH": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AH9"
+        },
+        "AI": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AI9"
+        }
+      }
+    },
+    {
+      "row": 10,
+      "cells": {
+        "E": {
+          "header": "Tên nhân sự",
+          "value": "Văn Ngọc Long",
+          "value_num": null,
+          "src": "Resource plan!E10"
+        },
+        "F": {
+          "header": "Vai trò",
+          "value": "Developer(BE)",
+          "value_num": null,
+          "src": "Resource plan!F10"
+        },
+        "G": {
+          "header": "Xếp hạng  nhân sự",
+          "value": "Senior",
+          "value_num": null,
+          "src": "Resource plan!G10"
+        },
+        "H": {
+          "header": "Migration July W1",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!H10"
+        },
+        "I": {
+          "header": "W2",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!I10"
+        },
+        "J": {
+          "header": "W3",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!J10"
+        },
+        "K": {
+          "header": "W4",
+          "value": "1",
+          "value_num": 1.0,
+          "src": "Resource plan!K10"
+        },
+        "L": {
+          "header": "August W1",
+          "value": "1",
+          "value_num": 1.0,
+          "src": "Resource plan!L10"
+        },
+        "P": {
+          "header": "Effort theo vai trò (MM)",
+          "value": "0.5",
+          "value_num": 0.5,
+          "src": "Resource plan!P10"
+        },
+        "U": {
+          "header": "1 2 3",
+          "value": "6",
+          "value_num": 6.0,
+          "src": "Resource plan!U10"
+        },
+        "V": {
+          "header": "Bùi Hồng Sơn Nguyễn Thành Đô Văn Ngọc Long",
+          "value": "Đỗ Trung Kiên",
+          "value_num": null,
+          "src": "Resource plan!V10"
+        },
+        "W": {
+          "header": "BE BE BE",
+          "value": "FE",
+          "value_num": null,
+          "src": "Resource plan!W10"
+        },
+        "X": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!X10"
+        },
+        "Y": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!Y10"
+        },
+        "Z": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!Z10"
+        },
+        "AA": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AA10"
+        },
+        "AB": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AB10"
+        },
+        "AE": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AE10"
+        },
+        "AF": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AF10"
+        },
+        "AG": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AG10"
+        },
+        "AH": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AH10"
+        },
+        "AI": {
+          "header": "8 8 8",
+          "value": "8",
+          "value_num": 8.0,
+          "src": "Resource plan!AI10"
+        }
+      }
+    },
+    {
+      "row": 11,
+      "cells": {
+        "E": {
+          "header": "Tên nhân sự",
+          "value": "Nguyễn Văn Vinh",
+          "value_num": null,
+          "src": "Resource plan!E11"
+        },
+        "F": {
+          "header": "Vai trò",
+          "value": "Developer(FE)",
+          "value_num": null,
+          "src": "Resource plan!F11"
+        },
+        "G": {
+          "header": "Xếp hạng  nhân sự",
+          "value": "Senior",
+          "value_num": null,
+          "src": "Resource plan!G11"
+        },
+        "H": {
+          "header": "Migration July W1",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!H11"
+        },
+        "I": {
+          "header": "W2",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!I11"
+        },
+        "J": {
+          "header": "W3",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!J11"
+        },
+        "K": {
+          "header": "W4",
+          "value": "1",
+          "value_num": 1.0,
+          "src": "Resource plan!K11"
+        },
+        "L": {
+          "header": "August W1",
+          "value": "1",
+          "value_num": 1.0,
+          "src": "Resource plan!L11"
+        },
+        "P": {
+          "header": "Effort theo vai trò (MM)",
+          "value": "0.5",
+          "value_num": 0.5,
+          "src": "Resource plan!P11"
+        }
+      }
+    },
+    {
+      "row": 12,
+      "cells": {
+        "E": {
+          "header": "Tên nhân sự",
+          "value": "Mai Viết Hoàng",
+          "value_num": null,
+          "src": "Resource plan!E12"
+        },
+        "F": {
+          "header": "Vai trò",
+          "value": "Developer(FE)",
+          "value_num": null,
+          "src": "Resource plan!F12"
+        },
+        "G": {
+          "header": "Xếp hạng  nhân sự",
+          "value": "Senior",
+          "value_num": null,
+          "src": "Resource plan!G12"
+        },
+        "H": {
+          "header": "Migration July W1",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!H12"
+        },
+        "I": {
+          "header": "W2",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!I12"
+        },
+        "J": {
+          "header": "W3",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!J12"
+        },
+        "K": {
+          "header": "W4",
+          "value": "1",
+          "value_num": 1.0,
+          "src": "Resource plan!K12"
+        },
+        "L": {
+          "header": "August W1",
+          "value": "1",
+          "value_num": 1.0,
+          "src": "Resource plan!L12"
+        },
+        "P": {
+          "header": "Effort theo vai trò (MM)",
+          "value": "0.5",
+          "value_num": 0.5,
+          "src": "Resource plan!P12"
+        }
+      }
+    },
+    {
+      "row": 13,
+      "cells": {
+        "E": {
+          "header": "Tên nhân sự",
+          "value": "Đỗ Trung Kiên",
+          "value_num": null,
+          "src": "Resource plan!E13"
+        },
+        "F": {
+          "header": "Vai trò",
+          "value": "Developer(FE)",
+          "value_num": null,
+          "src": "Resource plan!F13"
+        },
+        "G": {
+          "header": "Xếp hạng  nhân sự",
+          "value": "Senior",
+          "value_num": null,
+          "src": "Resource plan!G13"
+        },
+        "H": {
+          "header": "Migration July W1",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!H13"
+        },
+        "I": {
+          "header": "W2",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!I13"
+        },
+        "J": {
+          "header": "W3",
+          "value": "0",
+          "value_num": 0.0,
+          "src": "Resource plan!J13"
+        },
+        "K": {
+          "header": "W4",
+          "value": "1",
+          "value_num": 1.0,
+          "src": "Resource plan!K13"
+        },
+        "L": {
+          "header": "August W1",
+          "value": "1",
+          "value_num": 1.0,
+          "src": "Resource plan!L13"
+        },
+        "P": {
+          "header": "Effort theo vai trò (MM)",
+          "value": "0.5",
+          "value_num": 0.5,
+          "src": "Resource plan!P13"
+        }
+      }
+    },
+    {
+      "row": 14,
+      "cells": {
+        "A": {
+          "header": "#",
+          "value": "SUM",
+          "value_num": null,
+          "src": "Resource plan!A14"
+        },
+        "C": {
+          "header": "Original estimated effort",
+          "value": "2",
+          "value_num": 2,
+          "src": "Resource plan!C14"
+        },
+        "D": {
+          "header": "Re-estimated effort",
+          "value": "3",
+          "value_num": 3,
+          "src": "Resource plan!D14"
+        },
+        "E": {
+          "header": "Tên nhân sự",
+          "value": "SUM (by month)",
+          "value_num": null,
+          "src": "Resource plan!E14"
+        },
+        "H": {
+          "header": "Migration July W1",
+          "value": "1.5",
+          "value_num": 1.5,
+          "src": "Resource plan!H14"
+        },
+        "L": {
+          "header": "August W1",
+          "value": "1.5",
+          "value_num": 1.5,
+          "src": "Resource plan!L14"
+        },
+        "P": {
+          "header": "Effort theo vai trò (MM)",
+          "value": "3",
+          "value_num": 3,
+          "src": "Resource plan!P14"
+        },
+        "Q": {
+          "header": "Chênh lệch (MM)",
+          "value": "1",
+          "value_num": 1,
+          "src": "Resource plan!Q14"
+        }
+      }
+    },
+    {
+      "row": 15,
+      "cells": {
+        "A": {
+          "header": "#",
+          "value": "Difference",
+          "value_num": null,
+          "src": "Resource plan!A15"
+        },
+        "C": {
+          "header": "Original estimated effort",
+          "value": "1",
+          "value_num": 1,
+          "src": "Resource plan!C15"
+        },
+        "E": {
+          "header": "Tên nhân sự",
+          "value": "Grand total",
+          "value_num": null,
+          "src": "Resource plan!E15"
+        },
+        "H": {
+          "header": "Migration July W1",
+          "value": "3",
+          "value_num": 3,
+          "src": "Resource plan!H15"
+        }
+      }
+    }
+  ],
+  "numeric_cells": {
+    "A8:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Resource plan!A8"
+    },
+    "C8:2": {
+      "value": 2,
+      "text": "2",
+      "src": "Resource plan!C8"
+    },
+    "D8:3": {
+      "value": 3,
+      "text": "3",
+      "src": "Resource plan!D8"
+    },
+    "H8:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!H8"
+    },
+    "I8:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!I8"
+    },
+    "J8:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!J8"
+    },
+    "K8:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Resource plan!K8"
+    },
+    "L8:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Resource plan!L8"
+    },
+    "P8:0.5": {
+      "value": 0.5,
+      "text": "0.5",
+      "src": "Resource plan!P8"
+    },
+    "Q8:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Resource plan!Q8"
+    },
+    "U8:4": {
+      "value": 4,
+      "text": "4",
+      "src": "Resource plan!U8"
+    },
+    "X8:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!X8"
+    },
+    "Y8:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!Y8"
+    },
+    "Z8:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!Z8"
+    },
+    "AA8:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AA8"
+    },
+    "AB8:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AB8"
+    },
+    "AE8:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AE8"
+    },
+    "AF8:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AF8"
+    },
+    "AG8:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AG8"
+    },
+    "AH8:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AH8"
+    },
+    "AI8:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AI8"
+    },
+    "H9:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!H9"
+    },
+    "I9:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!I9"
+    },
+    "J9:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!J9"
+    },
+    "K9:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Resource plan!K9"
+    },
+    "L9:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Resource plan!L9"
+    },
+    "P9:0.5": {
+      "value": 0.5,
+      "text": "0.5",
+      "src": "Resource plan!P9"
+    },
+    "U9:5": {
+      "value": 5,
+      "text": "5",
+      "src": "Resource plan!U9"
+    },
+    "X9:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!X9"
+    },
+    "Y9:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!Y9"
+    },
+    "Z9:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!Z9"
+    },
+    "AA9:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AA9"
+    },
+    "AB9:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AB9"
+    },
+    "AE9:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AE9"
+    },
+    "AF9:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AF9"
+    },
+    "AG9:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AG9"
+    },
+    "AH9:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AH9"
+    },
+    "AI9:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AI9"
+    },
+    "H10:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!H10"
+    },
+    "I10:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!I10"
+    },
+    "J10:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!J10"
+    },
+    "K10:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Resource plan!K10"
+    },
+    "L10:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Resource plan!L10"
+    },
+    "P10:0.5": {
+      "value": 0.5,
+      "text": "0.5",
+      "src": "Resource plan!P10"
+    },
+    "U10:6": {
+      "value": 6,
+      "text": "6",
+      "src": "Resource plan!U10"
+    },
+    "X10:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!X10"
+    },
+    "Y10:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!Y10"
+    },
+    "Z10:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!Z10"
+    },
+    "AA10:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AA10"
+    },
+    "AB10:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AB10"
+    },
+    "AE10:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AE10"
+    },
+    "AF10:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AF10"
+    },
+    "AG10:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AG10"
+    },
+    "AH10:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AH10"
+    },
+    "AI10:8": {
+      "value": 8,
+      "text": "8",
+      "src": "Resource plan!AI10"
+    },
+    "H11:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!H11"
+    },
+    "I11:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!I11"
+    },
+    "J11:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!J11"
+    },
+    "K11:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Resource plan!K11"
+    },
+    "L11:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Resource plan!L11"
+    },
+    "P11:0.5": {
+      "value": 0.5,
+      "text": "0.5",
+      "src": "Resource plan!P11"
+    },
+    "H12:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!H12"
+    },
+    "I12:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!I12"
+    },
+    "J12:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!J12"
+    },
+    "K12:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Resource plan!K12"
+    },
+    "L12:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Resource plan!L12"
+    },
+    "P12:0.5": {
+      "value": 0.5,
+      "text": "0.5",
+      "src": "Resource plan!P12"
+    },
+    "H13:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!H13"
+    },
+    "I13:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!I13"
+    },
+    "J13:0": {
+      "value": 0,
+      "text": "0",
+      "src": "Resource plan!J13"
+    },
+    "K13:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Resource plan!K13"
+    },
+    "L13:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Resource plan!L13"
+    },
+    "P13:0.5": {
+      "value": 0.5,
+      "text": "0.5",
+      "src": "Resource plan!P13"
+    },
+    "C14:2": {
+      "value": 2,
+      "text": "2",
+      "src": "Resource plan!C14"
+    },
+    "D14:3": {
+      "value": 3,
+      "text": "3",
+      "src": "Resource plan!D14"
+    },
+    "H14:1.5": {
+      "value": 1.5,
+      "text": "1.5",
+      "src": "Resource plan!H14"
+    },
+    "L14:1.5": {
+      "value": 1.5,
+      "text": "1.5",
+      "src": "Resource plan!L14"
+    },
+    "P14:3": {
+      "value": 3,
+      "text": "3",
+      "src": "Resource plan!P14"
+    },
+    "Q14:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Resource plan!Q14"
+    },
+    "C15:1": {
+      "value": 1,
+      "text": "1",
+      "src": "Resource plan!C15"
+    },
+    "H15:3": {
+      "value": 3,
+      "text": "3",
+      "src": "Resource plan!H15"
+    }
+  }
+}
