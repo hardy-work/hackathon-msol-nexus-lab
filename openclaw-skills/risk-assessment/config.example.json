@@ -1,20 +1,18 @@
 {
   "source": null,
-  "read": {
-    "fileId": null,
-    "sprintTabs": [],
-    "statusDoneValues": ["Done"],
-    "currentSprint": null,
-    "jiraProjectKey": null,
-    "jiraBoardId": null
+  "fileId": null,
+  "projectTitle": null,
+  "currentSprint": null,
+  "sprintTabs": [],
+  "statusDoneValues": ["Done"],
+  "resourcePlan": {
+    "tabName": "Resource plan",
+    "year": null,
+    "personCodeMap": {}
   },
   "output": {
-    "riskTabGid": null,
-    "riskTabName": null,
-    "issueTabGid": null,
-    "issueTabName": null,
-    "riskIssueType": null,
-    "issueIssueType": null
+    "riskTab": { "gid": null, "name": null },
+    "issueTab": { "gid": null, "name": null }
   },
   "thresholds": {
     "overdueGraceDays": 0,
