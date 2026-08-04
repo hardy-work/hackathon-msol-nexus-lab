@@ -6,6 +6,15 @@ stdin; `slack_http.py` is the signed Events API HTTP boundary.
 
 ## Local usage
 
+The stdin bridge is a fixture/demo transport and still needs a trusted local
+identity because the Project Knowledge skill is internal by default:
+
+```bash
+export PROJECT_KNOWLEDGE_ACTOR=local-slack-demo
+export PROJECT_KNOWLEDGE_ROLES=project_member
+export PROJECT_KNOWLEDGE_DEMO_MODE=1
+```
+
 ```bash
 python3 adapters/slack/slack_bridge.py \
   < adapters/slack/fixtures/app_mention.json
@@ -28,6 +37,44 @@ The parser strips `<@BOT_ID>` mentions and keeps `channel_id`, `user_id`,
 `thread_ts`, and `ts` for context/audit. The gateway verifies Slack's signing
 secret, rejects stale timestamps, and maps `user_id` to trusted roles using
 `PROJECT_KNOWLEDGE_SLACK_ROLE_MAP`.
+
+## Slack app checklist
+
+Before connecting a real workspace:
+
+1. Build and verify the corpus from the same commit that will run the gateway:
+   `python3 scripts/versioning.py check --summary` must report `fresh`.
+2. Create a Slack app, enable Event Subscriptions, and set a public HTTPS
+   Request URL ending in `/slack/events`. Slack's URL verification challenge
+   is handled by the gateway.
+3. Subscribe to `app_mention` (and add a Slash Command such as `/nexus` only
+   if that interaction is needed). Install/reinstall the app after changing
+   scopes, then invite the bot to the target channel.
+4. Configure `SLACK_SIGNING_SECRET` and `SLACK_BOT_TOKEN` out of band. The
+   bot needs `app_mentions:read` and `chat:write`; Slash Commands also need the
+   command feature enabled in the Slack app.
+5. Fill `PROJECT_KNOWLEDGE_SLACK_ROLE_MAP` with real Slack `U...` user IDs and
+   only roles declared in `access.yml`. A missing user mapping is deliberately
+   `forbidden`; do not set `PROJECT_KNOWLEDGE_DEMO_MODE=1` in production.
+6. Keep `PROJECT_KNOWLEDGE_STATE_DIR` on persistent storage. It contains the
+   durable queue, bounded conversation context, cache and privacy-safe
+   telemetry. Do not commit `.env` or state files.
+
+For a demo on one host, load `adapters/slack/.env` from a secret manager or
+process environment, then run:
+
+```bash
+python3 scripts/versioning.py check --summary
+python3 adapters/slack/slack_http.py
+curl -fsS http://127.0.0.1:8787/health
+```
+
+Keep `SLACK_BOT_TOKEN` configured for Events API/app mentions: the gateway
+queues and acknowledges queries before retrieval, then posts the answer with
+`chat.postMessage`. Without the token, synchronous responses are useful for a
+local HTTP test or slash-command response but app-mention answers cannot be
+posted back to the channel. Put TLS/public exposure in a reverse proxy or
+tunnel; do not expose the stdlib HTTP server directly to the Internet.
 
 For a minimal local gateway, run:
 

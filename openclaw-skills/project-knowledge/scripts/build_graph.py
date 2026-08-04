@@ -25,6 +25,7 @@ from pathlib import Path
 
 import yaml
 import document_registry
+from artifact_paths import artifact_rel, frontmatter_is_current
 
 ROOT = Path(__file__).resolve().parent.parent
 WIKI = ROOT / "wiki"
@@ -58,6 +59,7 @@ def frontmatter(text):
 
 def build():
     nodes, edges, dim_nodes = {}, [], {}
+    versions = document_registry.current_versions(ROOT)
 
     def dimension_node(dim, value):
         vid = f"{dim}:{slug(value)}"
@@ -74,6 +76,8 @@ def build():
         if p.name in ("index.md", "log.md"):
             continue
         fm, body = frontmatter(p.read_text(encoding="utf-8"))
+        if not frontmatter_is_current(fm, ROOT, versions):
+            continue
         pid = p.stem
         nodes[pid] = {
             "id": pid, "type": fm.get("page", "?"),
@@ -99,10 +103,10 @@ def build():
     # Dựng node task từ facts có provenance.  Wiki entity pages chỉ đủ để nối
     # người/role; task rows mới cho phép đi nhiều bước task -> người -> sprint /
     # status / milestone. Không suy ra dependency nếu workbook không khai báo.
-    task_facts = ROOT / "raw" / "nexus-sprint1.facts.json"
+    source_doc = document_registry.current("nexus-plan", ROOT)
+    task_facts = ROOT / artifact_rel(source_doc, "nexus-sprint1", "facts")
     task_count = 0
     if task_facts.exists():
-        source_doc = document_registry.current("nexus-plan", ROOT)
         payload = json.loads(task_facts.read_text(encoding="utf-8"))
         people_by_name = {str(n.get("name")): pid for pid, n in nodes.items()
                           if n.get("type") == "entity-person"}

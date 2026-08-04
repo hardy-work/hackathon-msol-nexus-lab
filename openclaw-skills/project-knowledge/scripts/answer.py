@@ -33,6 +33,8 @@ import router
 import versioning
 import graph_retrieval
 import access_control
+import document_registry
+from artifact_paths import artifact_rel
 
 # Bậc 2 NGỮ NGHĨA (vector bge-m3 trên TRANG WIKI). Lười nạp: model ~2GB nên CHỈ nạp
 # khi thật sự dùng (câu mở, LLM bật). Không có chỉ mục / thiếu thư viện -> None,
@@ -96,6 +98,12 @@ def rrf_merge(rank_lists, keep=6, pin=(), k0=60):
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "derived" / "facts.duckdb"
 RAW = ROOT / "raw"
+
+
+def raw_ref(raw_id: str, kind: str = "md") -> str:
+    """Resolve a current Nexus artifact for citations and raw fallback reads."""
+    document = document_registry.current("nexus-plan", ROOT)
+    return artifact_rel(document, raw_id, kind).as_posix()
 
 CO, NO, NF = "CÓ", "CHẮC CHẮN KHÔNG", "KHÔNG TÌM THẤY"
 G, R, Y, B, D, OFF = "\033[32m", "\033[31m", "\033[33m", "\033[34m", "\033[2m", "\033[0m"
@@ -363,6 +371,15 @@ def strip_accent(s):
     return "".join(c for c in s if unicodedata.category(c) != "Mn")
 
 
+def closed_value(values, text):
+    """Match one closed-enum value without allowing prefixes to collide."""
+    for value in sorted(values, key=lambda item: len(str(item)), reverse=True):
+        token = strip_accent(value)
+        if re.search(rf"(?<!\w){re.escape(token)}(?!\w)", text):
+            return value
+    return None
+
+
 def normalize_query(q):
     """Add only deterministic scope aliases; never invent a project fact."""
     first_sprint = re.search(r"sprint\s+đầu\s+tiên|sprint\s+đầu\b", q, re.I)
@@ -433,7 +450,7 @@ class KB:
         self.psprint = {(r[0], r[1]): r[:6] for r in sprint_rows
                         if self.can_read_acl(*r[6:9])}
         self.sprint_metrics = {}
-        metrics_file = RAW / "nexus-sprint1.facts.json"
+        metrics_file = ROOT / raw_ref("nexus-sprint1", "facts")
         if metrics_file.exists():
             data = json.loads(metrics_file.read_text(encoding="utf-8"))
             self.sprint_metrics = data.get("summary_facts", {})
@@ -750,6 +767,11 @@ def tier1(kb, q):
     q = normalize_query(q)
     qa = strip_accent(q)
     who = kb.find_people(q)
+    if (re.search(r"\b(cap nhat|sua|tao|doi|update|create|xoa|delete|remove|add)\b", qa, re.I)
+            or re.match(r"\s*(ghi|log)\b", qa, re.I)):
+        return Result(1, NF,
+                      "Đây là yêu cầu ghi/cập nhật dữ liệu, không phải câu hỏi tra cứu.",
+                      reason="Project Knowledge chỉ tạo action proposal; action skill riêng phải kiểm tra quyền và xin approval trước khi ghi.")
     if re.search(INTERPRETIVE, qa):
         return None          # nhường bậc 3
     # Quan hệ nhiều bước vẫn "thử bậc 1" trước, nhưng bậc 1 chủ động từ chối
@@ -782,6 +804,9 @@ def tier1(kb, q):
     # --- 0. câu nhắc ĐÍCH DANH một sheet bảng (Backlog/CR/Master schedule/…) -> tra
     # thẳng bảng doc_cell ở BẬC 1 (SQL, tất định, số truy về ô). KHÔNG đọc raw.
     docs = docs_mentioned(q) or inferred_docs(q)
+    count_question = bool(re.search(r"bao nhieu|may|so\s+", qa))
+    status_match = closed_value(kb.sprint_metrics.get("status_counts", {}), qa)
+    priority_match = closed_value(kb.sprint_metrics.get("priority_counts", {}), qa)
 
     # Config chỉ có danh mục tech_stack, chưa có quan hệ người–tech_stack.  Trả
     # đúng phần kho biết và nói rõ phần thiếu, không suy ra ai dùng công nghệ nào.
@@ -794,19 +819,19 @@ def tier1(kb, q):
             return Result(1, NF,
                 "Kho có danh mục tech-stack chuẩn nhưng chưa có mapping người–tech-stack; "
                 "không thể xác định ai làm công nghệ này.",
-                cites=["raw/nexus-config.md (Config!G2:G15)",
-                       "raw/nexus-config.facts.json :: vocabulary.tech_stack"],
+                cites=[f"{raw_ref('nexus-config')} (Config!G2:G15)",
+                       f"{raw_ref('nexus-config', 'facts')} :: vocabulary.tech_stack"],
                 reason="workbook chỉ khai báo vocabulary `tech_stack`, không có cột liên kết với assignee.")
         if "config" in qa or "khai bao" in qa or "danh muc" in qa:
             return Result(1, CO,
                 "Các tech-stack được khai báo trong Config: "
                 + ", ".join(f"**{v}**" for v in configured),
-                cites=["raw/nexus-config.md (Config!G2:G15)",
-                       "raw/nexus-config.facts.json :: vocabulary.tech_stack"],
+                cites=[f"{raw_ref('nexus-config')} (Config!G2:G15)",
+                       f"{raw_ref('nexus-config', 'facts')} :: vocabulary.tech_stack"],
                 reason="đây là danh mục chuẩn của workbook, không phải mapping người–tech-stack.")
         return Result(1, NF,
             "Kho chưa có mapping tech-stack đang được dùng trong dự án.",
-            cites=["raw/nexus-config.md (Config!G2:G15)"],
+            cites=[f"{raw_ref('nexus-config')} (Config!G2:G15)"],
             reason="Config chỉ có danh mục tech-stack; dữ liệu nguồn chưa liên kết công nghệ với người hoặc task.")
 
     # --- 0a. ngày bắt đầu của sprint là trường Summary project, không phải ngày
@@ -819,7 +844,7 @@ def tier1(kb, q):
             start_cell = next((c for c in row["cells"] if c[1] == "Start date"), None)
             if sprint_cell and strip_accent(sprint_cell[2]) == "sprint 1" and start_cell:
                 return Result(1, CO, f"Sprint 1 bắt đầu ngày **{start_cell[2]}**.",
-                              cites=[start_cell[3], "raw/nexus-summary.facts.json"],
+                              cites=[start_cell[3], raw_ref("nexus-summary", "facts")],
                               reason="tra trực tiếp Summary project, cột `Start date`, dòng Sprint 1.")
 
     if sprints == {1} and re.search(r"ket thuc|end date|deadline", qa):
@@ -830,10 +855,10 @@ def tier1(kb, q):
             end_cell = next((c for c in row["cells"] if c[1] == "End date"), None)
             if sprint_cell and strip_accent(sprint_cell[2]) == "sprint 1" and end_cell:
                 return Result(1, CO, f"Sprint 1 kết thúc ngày **{end_cell[2]}**.",
-                              cites=[end_cell[3], "raw/nexus-summary.facts.json"],
+                              cites=[end_cell[3], raw_ref("nexus-summary", "facts")],
                               reason="tra trực tiếp Summary project, cột `End date`, dòng Sprint 1.")
 
-    if sprints == {1} and re.search(r"tien do|progress", qa):
+    if sprints == {1} and re.search(r"tien do|progress", qa) and not (count_question and status_match):
         for (doc, _), row in kb.doc_rows.items():
             if doc != "nexus-summary":
                 continue
@@ -841,7 +866,7 @@ def tier1(kb, q):
             progress_cell = next((c for c in row["cells"] if c[1] == "Progress"), None)
             if sprint_cell and strip_accent(sprint_cell[2]) == "sprint 1" and progress_cell:
                 return Result(1, CO, f"Tiến độ Sprint 1 là **{progress_cell[2]}**.",
-                              cites=[progress_cell[3], "raw/nexus-summary.facts.json"],
+                              cites=[progress_cell[3], raw_ref("nexus-summary", "facts")],
                               reason="tra trực tiếp Summary project, cột `Progress`, dòng Sprint 1.")
 
     if "summary project" in qa and re.search(r"status|trang thai|tinh trang", qa):
@@ -851,31 +876,29 @@ def tier1(kb, q):
             status_cell = next((c for c in row["cells"] if c[1] == "Status"), None)
             if status_cell:
                 return Result(1, CO, f"Summary project đang ở trạng thái **{status_cell[2]}**.",
-                              cites=[status_cell[3], "raw/nexus-summary.facts.json"],
+                              cites=[status_cell[3], raw_ref("nexus-summary", "facts")],
                               reason="tra trực tiếp Summary project, cột `Status`.")
 
+    if "summary project" in qa and re.search(r"con lai|remaining", qa):
+        return doc_answer(kb, q, ["nexus-summary"])
+
     # --- 0b. aggregate đã khai báo nguồn, không tự cộng tại thời điểm trả lời
-    count_question = bool(re.search(r"bao nhieu|may|so\s+", qa))
-    status_match = next((v for v in kb.sprint_metrics.get("status_counts", {})
-                         if strip_accent(v) in qa), None)
-    priority_match = next((v for v in kb.sprint_metrics.get("priority_counts", {})
-                           if strip_accent(v) in qa), None)
     if sprints in ({1}, set()) and count_question and status_match:
         metric = kb.sprint_metrics["status_counts"][status_match]
         return Result(1, CO, f"**{metric['value']} task** có trạng thái **{status_match}** trong Sprint 1.",
-                      cites=["raw/nexus-sprint1.facts.json", metric["src"]],
+                      cites=[raw_ref("nexus-sprint1", "facts"), metric["src"]],
                       reason="đếm trạng thái được khai báo tại Stage 2 từ toàn bộ dòng Sprint 1.")
     if sprints in ({1}, set()) and count_question and priority_match:
         metric = kb.sprint_metrics["priority_counts"][priority_match]
         return Result(1, CO, f"**{metric['value']} task** có mức ưu tiên **{priority_match}** trong Sprint 1.",
-                      cites=["raw/nexus-sprint1.facts.json", metric["src"]],
+                      cites=[raw_ref("nexus-sprint1", "facts"), metric["src"]],
                       reason="đếm mức ưu tiên được khai báo tại Stage 2 từ toàn bộ dòng Sprint 1.")
     if (not docs or docs == ["nexus-sprint1"]) and not who and sprints in ({1}, set()) and re.search(r"(tong|bao nhieu|so)\s+.*task|task.*(tong|tat ca)", qa):
         metric = kb.sprint_metrics.get("task_count")
         if metric:
             scope = "Sprint 1" if sprints else "corpus hiện nạp (Sprint 1)"
             return Result(1, CO, f"**{metric['value']} task** trong {scope}.",
-                          cites=["raw/nexus-sprint1.facts.json", metric["src"]],
+                          cites=[raw_ref("nexus-sprint1", "facts"), metric["src"]],
                           reason="aggregate được khai báo tại Stage 2 từ toàn bộ dòng task; không cộng ngẫu nhiên lúc trả lời.")
     if re.search(r"re[- ]?est|re estimated", qa) and "sprint 1" in qa:
         for (doc, _), row in kb.doc_rows.items():
@@ -885,18 +908,24 @@ def tier1(kb, q):
             reest_cell = next((c for c in row["cells"] if c[1] == "Re-est (h)"), None)
             if sprint_cell and strip_accent(sprint_cell[2]) == "sprint 1" and reest_cell:
                 return Result(1, CO, f"**{reest_cell[2]} giờ** Re-est của Sprint 1.",
-                              cites=[reest_cell[3], "raw/nexus-summary.facts.json"],
+                              cites=[reest_cell[3], raw_ref("nexus-summary", "facts")],
                               reason="tra trực tiếp Summary project, cột `Re-est (h)`, dòng Sprint 1.")
 
-    if re.search(r"\b(cap nhat|sua|ghi|log|tao|doi|update|create)\b", qa, re.I):
-        return Result(1, NF,
-                      "Đây là yêu cầu ghi/cập nhật dữ liệu, không phải câu hỏi tra cứu.",
-                      reason="Project Knowledge chỉ tạo action proposal; action skill riêng phải kiểm tra quyền và xin approval trước khi ghi.")
+    if sprints in ({1}, set()) and not who and count_question and re.search(r"con lai|remaining", qa):
+        metric = kb.sprint_metrics.get("remaining_h")
+        if metric:
+            return Result(1, CO, f"**{metric['value']} giờ** còn lại trong Sprint 1.",
+                          cites=[raw_ref("nexus-sprint1", "facts"), metric["src"]],
+                          reason="remaining effort được khai báo tại Stage 2 từ cột Remaining của toàn bộ task Sprint 1.")
+
+    if re.search(r"liet ke|danh sach", qa) and re.search(r"task|cong viec", qa) and who:
+        return None
+
     if not who and sprints == {1} and re.search(r"(tong|bao nhieu|so)\s+.*(effort|gio|thoi gian)|effort.*(tong|thuc te)", qa):
         metric = kb.sprint_metrics.get("actual_h")
         if metric:
             return Result(1, CO, f"**{metric['value']} giờ** actual effort của Sprint 1.",
-                          cites=["raw/nexus-sprint1.facts.json", metric["src"]],
+                          cites=[raw_ref("nexus-sprint1", "facts"), metric["src"]],
                           reason="aggregate actual effort được khai báo tại Stage 2 từ các task Sprint 1.")
     if docs and not who and not (
             docs == ["nexus-sprint1"] and re.search(r"nhung nguoi|nguoi co task|ai tham gia", qa)):
@@ -908,7 +937,7 @@ def tier1(kb, q):
             return kb.unsigned_downgrade("person_task", "danh sách người làm task là đầy đủ")
         return Result(1, NO,
             "Không có. Mọi `assignee` xuất hiện trong Sprint 1 đều nằm trong `Config!H2:H15`.",
-            cites=["raw/nexus-people.md", "scripts/extract_nexus.py :: assignee mapping"],
+            cites=[raw_ref("nexus-people"), "scripts/extract_nexus.py :: assignee mapping"],
             reason="Stage 2 kiểm tra điều này ở mức máy: rollup HALT nếu gặp assignee "
                    "ngoài Config. Pipeline chạy xanh ⇒ phạm vi kín. " + kb.cov_note("person_task"))
 
@@ -921,7 +950,7 @@ def tier1(kb, q):
             return kb.unsigned_downgrade("person_role", f"không ai làm '{term}'")
         if not match:
             return Result(1, NO, f"Không. Dự án **nexus** không có vai trò `{m.group(1)}`.",
-                cites=["schema.yml :: dimensions.role", "raw/nexus-config.md (Config!K2:K15)"],
+                cites=["schema.yml :: dimensions.role", f"{raw_ref('nexus-config')} (Config!K2:K15)"],
                 reason="① `role` được lưu thành hàng dữ liệu · ② `role` là DIMENSION **đóng**, "
                        f"enum đầy đủ là {' · '.join(kb.roles)} — `{m.group(1)}` không nằm trong đó · "
                        "③ " + kb.cov_note("person_role") + ". Ba điều kiện đủ ⇒ được nói chắc chắn không.")
@@ -966,7 +995,7 @@ def tier1(kb, q):
 
         zero = [kb.person(s) for s in who if n_task(s) == 0]
         nonzero = [kb.person(s) for s in who if n_task(s) > 0]
-        src = ([f"raw/nexus-sprint{one_sprint}.md"] if scoped else ["raw/nexus-people.md"])
+        src = ([raw_ref(f"nexus-sprint{one_sprint}")] if scoped else [raw_ref("nexus-people")])
         if zero and not nonzero:
             names = ", ".join(f"**{p[1]}**" for p in zero)
             return Result(1, NO,
@@ -1009,7 +1038,7 @@ def tier1(kb, q):
                         "person_task", f"{p[1]} không có task nào ở Sprint {one_sprint}")
                 return Result(1, NO,
                     f"Không. **{p[1]}** không có đầu việc nào trong **Sprint {one_sprint}**.",
-                    cites=[p[6], f"raw/nexus-sprint{one_sprint}.md"],
+                    cites=[p[6], raw_ref(f"nexus-sprint{one_sprint}")],
                     reason=f"Sprint {one_sprint} nằm trong phạm vi đã ký, và bảng "
                            f"`person_sprint` không có dòng nào cho người này. "
                            + kb.cov_note("person_task"))
@@ -1039,7 +1068,7 @@ def tier1(kb, q):
     # --- 6. liệt kê vai trò
     if re.search(r"vai tro nao|nhung vai tro|co vai tro gi|role nao", qa):
         return Result(1, CO, "Các vai trò: " + " · ".join(f"`{r}`" for r in kb.roles),
-            cites=["raw/nexus-config.md (Config!K2:K15)", "schema.yml :: dimensions.role"],
+            cites=[f"{raw_ref('nexus-config')} (Config!K2:K15)", "schema.yml :: dimensions.role"],
             reason="đây là enum ĐẦY ĐỦ, không phải danh sách tìm được — nên có thể "
                    "khẳng định không còn vai trò nào khác.")
 
@@ -1048,7 +1077,7 @@ def tier1(kb, q):
         got = sorted([p for p in kb.people if p[3] > 0], key=lambda p: -p[3])
         return Result(1, CO,
             "\n".join(f"- **{p[1]}** — {p[3]} task, {p[5]} h" for p in got),
-            cites=["raw/nexus-people.md"],
+            cites=[raw_ref("nexus-people")],
             reason=f"{len(kb.people)} người khai trong Config, {len(got)} người thực sự có task. "
                    + kb.cov_note("person_task") if kb.signed("person_task") else "")
 

@@ -23,6 +23,8 @@ import yaml
 
 import numeric_guard
 from numeric_guard import Halt
+import document_registry
+from artifact_paths import artifact_path
 from openpyxl.utils import column_index_from_string as col_idx
 from openpyxl.utils import get_column_letter
 
@@ -345,13 +347,13 @@ def do_table(ws, spec, sheet, raw_id):
     return "\n".join(lines), payload, len(rows)
 
 
-def do_rollup(spec, vocab_facts):
+def do_rollup(spec, vocab_facts, document):
     """Cộng nhiều nguồn table đã sinh -> một nguồn tổng hợp.
     Người khai trong Config nhưng 0 task VẪN có mục ở đây với task_count=0 —
     đây chính là bằng chứng để bậc 1 nói 'CHẮC CHẮN KHÔNG'."""
     agg, srcs = {}, {}
     for rid in spec["over"]:
-        f = RAW / f"{rid}.facts.json"
+        f = artifact_path(ROOT, document, rid, "facts")
         if not f.exists():
             raise Halt(f"rollup cần {f.name} nhưng chưa có — khai nó TRƯỚC rollup trong mapping")
         for k, v in json.loads(f.read_text(encoding="utf-8"))["facts"].items():
@@ -405,17 +407,21 @@ def do_rollup(spec, vocab_facts):
 
 
 # ------------------------------------------------------------------ chạy
-def write_raw(raw_id, doc_id, sheet, kind, body, payload, suffix=".md"):
-    md = RAW / f"{raw_id}{suffix}"
+def write_raw(raw_id, doc_id, sheet, kind, body, payload, document, suffix=".md"):
+    artifact_kind = "fulltext" if suffix == ".fulltext.md" else "md"
+    md = artifact_path(ROOT, document, raw_id, artifact_kind)
+    fj = artifact_path(ROOT, document, raw_id, "facts")
+    md.parent.mkdir(parents=True, exist_ok=True)
+    payload = {**payload, "doc_id": doc_id, "version": int(document["version"])}
     md.write_text(
         f"---\n"
         f"raw_id: {raw_id}\ndoc_id: {doc_id}\nsheet: \"{sheet}\"\nkind: {kind}\n"
+        f"version: {int(document['version'])}\n"
         f"generated_by: scripts/extract.py\n"
         f"# TẦNG 2 — MÁY SINH. KHÔNG SỬA TAY. Muốn đổi thì sửa extract/*.yml rồi chạy lại.\n"
         f"---\n\n# {raw_id}\n\nNguồn: `{sheet}` trong `originals/`\n\n{body}\n",
         encoding="utf-8",
     )
-    fj = RAW / f"{raw_id}.facts.json"
     fj.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return md, fj
 
@@ -423,6 +429,7 @@ def write_raw(raw_id, doc_id, sheet, kind, body, payload, suffix=".md"):
 def main(mapping_path):
     spec = yaml.safe_load(Path(mapping_path).read_text(encoding="utf-8"))
     doc_id = spec["doc_id"]
+    document = document_registry.current(doc_id, ROOT)
     wb = openpyxl.load_workbook(ROOT / spec["original"], data_only=True)
     RAW.mkdir(exist_ok=True)
 
@@ -434,8 +441,8 @@ def main(mapping_path):
         if src["kind"] == "rollup":
             if vocab_facts is None:
                 raise Halt("rollup cần nguồn kind=vocabulary được khai trước nó")
-            body, payload, n = do_rollup(src, vocab_facts)
-            write_raw(src["raw_id"], doc_id, "(tổng hợp 8 sprint)", "rollup", body, payload)
+            body, payload, n = do_rollup(src, vocab_facts, document)
+            write_raw(src["raw_id"], doc_id, "(tổng hợp 8 sprint)", "rollup", body, payload, document)
             made.append((src["raw_id"], "-", "rollup", n))
             print(f"  ✓ {src['raw_id']:20s} {'rollup':11s} {n:4d}  <- {len(src['over'])} nguồn")
             continue
@@ -465,7 +472,7 @@ def main(mapping_path):
             if kind == "vocabulary":
                 vocab_facts = payload
             suffix = ".fulltext.md" if kind == "fulltext" else ".md"
-            md, fj = write_raw(raw_id, doc_id, sheet, kind, body, payload, suffix)
+            md, fj = write_raw(raw_id, doc_id, sheet, kind, body, payload, document, suffix)
             made.append((raw_id, sheet, kind, n))
             print(f"  ✓ {raw_id:20s} {kind:11s} {n:4d}  <- {sheet}")
 

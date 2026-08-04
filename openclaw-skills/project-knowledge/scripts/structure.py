@@ -19,6 +19,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import models  # noqa: E402
 import numeric_guard  # noqa: E402
+from artifact_paths import frontmatter_is_current  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "raw"
@@ -49,7 +50,7 @@ def raw_documents() -> dict[str, Path]:
     docs = {}
     for path in sorted(RAW.glob("*.md")):
         fm, _ = frontmatter(path.read_text(encoding="utf-8"))
-        if fm.get("kind") == "van":
+        if fm.get("kind") == "van" and frontmatter_is_current(fm, ROOT):
             docs[str(fm.get("doc_id") or path.stem)] = path
     return docs
 
@@ -78,10 +79,40 @@ def structure_one(doc_id: str, raw_path: Path, timeout: int = 600) -> tuple[str 
     return "---\n" + yaml.safe_dump(header, allow_unicode=True, sort_keys=False).strip() + "\n---\n\n" + output + "\n", [], warnings
 
 
+def validate_source_metadata(doc_id: str, raw_path: Path,
+                             structured_path: Path) -> list[str]:
+    """Reject a structured artifact produced from another raw/version."""
+    raw_fm, _ = frontmatter(raw_path.read_text(encoding="utf-8"))
+    structured_fm, _ = frontmatter(structured_path.read_text(encoding="utf-8"))
+    errors = []
+    if structured_fm.get("doc_id") != doc_id:
+        errors.append(f"structured doc_id={structured_fm.get('doc_id')!r} lệch {doc_id!r}")
+    if raw_fm.get("version") is not None:
+        try:
+            if int(structured_fm.get("version")) != int(raw_fm["version"]):
+                errors.append("structured version lệch raw version")
+        except (TypeError, ValueError):
+            errors.append("structured thiếu version hợp lệ")
+    source_sha = raw_fm.get("sha256")
+    if source_sha and structured_fm.get("source_sha256") != source_sha:
+        errors.append("structured source_sha256 lệch raw sha256")
+    if not structured_fm.get("source_sha256"):
+        errors.append("structured thiếu source_sha256")
+    try:
+        expected_raw = raw_path.relative_to(ROOT).as_posix()
+    except ValueError:
+        expected_raw = None
+    if expected_raw and structured_fm.get("raw_path") != expected_raw:
+        errors.append(f"structured raw_path={structured_fm.get('raw_path')!r} lệch {expected_raw!r}")
+    return errors
+
+
 def verify_one(doc_id: str, raw_path: Path, structured_path: Path) -> tuple[list[str], list[str]]:
     _, raw_body = frontmatter(raw_path.read_text(encoding="utf-8"))
     _, structured_body = frontmatter(structured_path.read_text(encoding="utf-8"))
-    return numeric_guard.check_transform(raw_body, structured_body)
+    metadata_errors = validate_source_metadata(doc_id, raw_path, structured_path)
+    numeric_errors, warnings = numeric_guard.check_transform(raw_body, structured_body)
+    return metadata_errors + numeric_errors, warnings
 
 
 def main() -> int:

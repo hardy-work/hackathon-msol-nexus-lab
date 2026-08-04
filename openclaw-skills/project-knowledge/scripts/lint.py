@@ -16,6 +16,7 @@ from pathlib import Path
 
 import yaml
 import document_registry
+from artifact_paths import frontmatter_is_current, payload_is_current
 
 ROOT = Path(__file__).resolve().parent.parent
 WIKI = ROOT / "wiki"
@@ -39,6 +40,7 @@ def warn(lint, where, msg):
 def load_pages():
     """Đọc frontmatter của mọi wiki/**/*.md (trừ index/log)."""
     pages = {}
+    versions = document_registry.current_versions(ROOT)
     for p in sorted(WIKI.rglob("*.md")):
         if p.name in ("index.md", "log.md"):
             continue
@@ -53,6 +55,8 @@ def load_pages():
         except yaml.YAMLError as e:
             err("lint-schema", rel, f"frontmatter hỏng: {e}")
             continue
+        if not frontmatter_is_current(fm, ROOT, versions):
+            continue
         pages[rel] = {"path": p, "fm": fm, "body": m.group(2)}
     return pages
 
@@ -60,8 +64,11 @@ def load_pages():
 def load_facts():
     """Gom mọi raw/*.facts.json thành một bảng tra phẳng để lint-numbers dùng."""
     facts = {}
+    versions = document_registry.current_versions(ROOT)
     for p in sorted(RAW.glob("*.facts.json")):
-        facts[p.name] = json.loads(p.read_text(encoding="utf-8"))
+        payload = json.loads(p.read_text(encoding="utf-8"))
+        if payload_is_current(payload, ROOT, versions):
+            facts[p.name] = payload
     return facts
 
 
@@ -171,7 +178,9 @@ def lint_contract(schema):
 
 # ------------------------------------------------------------- 1. vocab
 def lint_vocab(schema):
-    cfgs = sorted(RAW.glob("*-config.facts.json"))
+    versions = document_registry.current_versions(ROOT)
+    cfgs = [p for p in sorted(RAW.glob("*-config*.facts.json"))
+            if payload_is_current(json.loads(p.read_text(encoding="utf-8")), ROOT, versions)]
     cfg = cfgs[0] if cfgs else None
     if cfg is None or not cfg.exists():
         warn("lint-vocab", "raw/", "chưa có *-config.facts.json, bỏ qua đối chiếu")
@@ -194,8 +203,12 @@ def lint_vocab(schema):
 def lint_observed(schema):
     """Giá trị DIMENSION thực gặp trong sprint có nằm trong enum không.
     Đây là chỗ bắt được lỗi gõ 'Brse' trong file gốc."""
+    versions = document_registry.current_versions(ROOT)
     for p in sorted(RAW.glob("*-sprint*.facts.json")):
-        obs = json.loads(p.read_text(encoding="utf-8")).get("observed_dimensions", {})
+        payload = json.loads(p.read_text(encoding="utf-8"))
+        if not payload_is_current(payload, ROOT, versions):
+            continue
+        obs = payload.get("observed_dimensions", {})
         for dim, vals in obs.items():
             spec = schema["dimensions"].get(dim)
             if not spec:

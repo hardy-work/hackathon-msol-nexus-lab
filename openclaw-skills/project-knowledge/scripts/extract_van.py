@@ -33,6 +33,7 @@ from shutil import which
 
 import yaml
 from document_registry import current as current_document
+from artifact_paths import artifact_path
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "raw"
@@ -204,7 +205,8 @@ def write_raw(doc_id, spec, body, meta, registry):
         body,
         "",
     ]
-    out = RAW / f"{doc_id}.md"
+    out = artifact_path(ROOT, registry, doc_id, "md")
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(fm), encoding="utf-8")
     return out
 

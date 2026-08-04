@@ -32,10 +32,11 @@ echo; echo "══ Gate 1 · TOÀN VẸN NGUỒN (sha256 originals/) ══"
 "$PY" scripts/gate1_integrity.py
 
 echo; echo "══ xoá tầng dựng lại được ══"
-rm -rf raw derived; mkdir -p raw derived; touch raw/.gitkeep derived/.gitkeep
+rm -rf derived; mkdir -p raw derived; touch raw/.gitkeep derived/.gitkeep
 echo; echo "══ Stage 0/1 · INVENTORY & CANONICAL REVIEW ══"; "$PY" scripts/inventory.py
 
 echo; echo "══ Stage 2 · EXTRACT (NEXUS PLAN · .xlsx) ══";  "$PY" scripts/extract_nexus.py
+echo; echo "══ Stage 2 · EXTRACT (VĂN / OCR · opt-in) ══"; "$PY" scripts/extract_van.py
 echo; echo "══ Stage 3 · STRUCTURE CONTRACT ══"; "$PY" scripts/structure_selftest.py
 echo; echo "══ Stage 4 · WIKI PAGES (NEXUS) ══"; "$PY" scripts/build_nexus_wiki.py
 echo; echo "══ Gate 3a · LINT ══";     "$PY" scripts/lint.py
@@ -58,6 +59,7 @@ echo; echo "══ LONG-LIVED RUNTIME BENCHMARK ══"; "$PY" scripts/benchmark
 echo; echo "══ ROUTER CONTRACT (offline) ══"; "$PY" scripts/router_selftest.py
 echo; echo "══ VERSION/FRESHNESS (offline) ══"; "$PY" scripts/version_selftest.py
 echo; echo "══ DOCUMENT LIFECYCLE (offline) ══"; "$PY" scripts/lifecycle_selftest.py
+echo; echo "══ VERSIONED ARTIFACTS (offline) ══"; "$PY" scripts/versioned_artifact_selftest.py
 echo; echo "══ RUNTIME ACCESS/CACHE/CONTEXT (offline) ══"; "$PY" scripts/runtime_selftest.py
 echo; echo "══ GRAPH RETRIEVAL (offline) ══"; "$PY" scripts/graph_selftest.py
 echo; echo "══ INVENTORY (offline) ══"; "$PY" scripts/inventory_selftest.py

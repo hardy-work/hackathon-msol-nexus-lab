@@ -29,6 +29,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import models  # noqa: E402
 import build_index  # noqa: E402
 import numeric_guard  # noqa: E402
+import structure  # noqa: E402
+from artifact_paths import artifact_path  # noqa: E402
 from document_registry import current as current_document  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -61,7 +63,7 @@ Nhiệm vụ: viết trang `wiki/sources/{doc_id}.md` — trang loại `source` 
    domain: {domain}          # DIMENSION — chọn đúng giá trị này, không đổi
    visibility: {visibility}
    raw_paths:
-     - raw/{doc_id}.md
+     - {raw_path}
    KHÔNG thêm `project` (tài liệu này không thuộc dự án phần mềm nào).
 {facts_rule}
 3. Thân bài: TÓM TẮT CÓ CẤU TRÚC, trung thành, tiếng Việt. Bám bố cục thật của tài
@@ -91,14 +93,17 @@ def ingest_one(doc_id, d, contract, schema, timeout=600):
         registry = current_document(doc_id, ROOT)
     except (KeyError, ValueError) as exc:
         return None, 0.0, f"documents.yml chưa có current version hợp lệ: {exc}"
-    raw_path = ROOT / "raw" / f"{doc_id}.md"
+    raw_path = artifact_path(ROOT, registry, doc_id, "md")
     if not raw_path.exists():
-        return None, 0.0, f"chưa có raw/{doc_id}.md (chạy extract_van.py trước)"
+        return None, 0.0, f"chưa có {raw_path.relative_to(ROOT)} (chạy extract_van.py trước)"
     raw = raw_path.read_text(encoding="utf-8")
     structured_path = ROOT / "structured" / f"{doc_id}.md"
     if not structured_path.exists():
         return None, 0.0, (f"chưa có structured/{doc_id}.md — Stage 3 là bắt buộc; "
                            f"chạy scripts/structure.py --doc {doc_id}")
+    metadata_errors = structure.validate_source_metadata(doc_id, raw_path, structured_path)
+    if metadata_errors:
+        return None, 0.0, "structured không khớp raw: " + "; ".join(metadata_errors)
     structured = structured_path.read_text(encoding="utf-8")
     is_ocr = "\nocr: true" in raw or raw.startswith("ocr: true")
     ocr_note = ("\n[LƯU Ý: tài liệu này do OCR sinh (máy đọc ảnh) — có thể sai vài "
@@ -117,16 +122,18 @@ def ingest_one(doc_id, d, contract, schema, timeout=600):
         facts_rule = (
             "   Sau `raw_paths`, khai thêm các SỐ ĐO NGƯỠNG/CHU KỲ/SỐ LƯỢNG đáng tra của tài\n"
             "   liệu ở chế độ chép — mỗi số một trường frontmatter tên gợi nhớ (snake_case):\n"
-            "     do_dai_mat_khau_toi_thieu: {{ facts: 8, unit: \"ký tự\", src: \"raw/{doc_id}.md :: Điều 7\" }}\n"
+            "     do_dai_mat_khau_toi_thieu: {{ facts: 8, unit: \"ký tự\", src: \"{raw_path} :: Điều 7\" }}\n"
             "   Quy tắc: (a) CHỈ khai số CÓ THẬT trong tài liệu, `src` trỏ đúng Điều/Mục chứa nó;\n"
             "   (b) mỗi trường bắt buộc đủ `facts` + `unit` + `src`; (c) chỉ khai số ĐO thật sự\n"
             "   đáng hỏi (ngưỡng, chu kỳ, số lượng) — BỎ QUA số hiệu văn bản/mã/số Điều (định danh);\n"
-            "   (d) TUYỆT ĐỐI không tự tính/suy ra số mới. Không có số đo đáng khai thì bỏ trống mục này.").format(doc_id=doc_id)
+            "   (d) TUYỆT ĐỐI không tự tính/suy ra số mới. Không có số đo đáng khai thì bỏ trống mục này.") \
+            .format(doc_id=doc_id, raw_path=raw_path.relative_to(ROOT).as_posix())
     prompt = PROMPT.format(
         doc_id=doc_id, title=d.get("title", doc_id), domain=d["domain"],
         version=int(registry["version"]), visibility=registry.get("visibility", "internal"),
         contract=contract, schema=schema, raw=structured, ocr_note=ocr_note,
-        ocr_rule=ocr_rule, facts_rule=facts_rule)
+        ocr_rule=ocr_rule, facts_rule=facts_rule,
+        raw_path=raw_path.relative_to(ROOT).as_posix())
 
     t0 = time.time()
     out = subprocess.run(

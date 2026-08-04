@@ -13,6 +13,7 @@ from pathlib import Path
 import duckdb
 import yaml
 import document_registry
+from artifact_paths import frontmatter_is_current, payload_is_current
 
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "derived" / "facts.duckdb"
@@ -26,7 +27,10 @@ def acl_values(metadata):
 
 def resolve(ref):
     fpath, dotted = ref.split("#", 1)
-    node = json.loads((ROOT / fpath).read_text(encoding="utf-8"))
+    payload = json.loads((ROOT / fpath).read_text(encoding="utf-8"))
+    if not payload_is_current(payload, ROOT):
+        raise ValueError(f"facts_ref trỏ tới raw superseded hoặc chưa đăng ký: {fpath}")
+    node = payload
     node = node.get("facts", node)
     for part in dotted.split("."):
         node = node[part]
@@ -79,9 +83,16 @@ def main():
         estimate_h DOUBLE, actual_h DOUBLE, src VARCHAR, visibility VARCHAR,
         allowed_roles VARCHAR, allowed_users VARCHAR)""")
     nexus_acl = document_registry.current("nexus-plan", ROOT)
-    for p in sorted((ROOT / "raw").glob("*-sprint[0-9].facts.json")):
-        n = int(re.search(r"sprint(\d)", p.name).group(1))
-        for slug, v in json.loads(p.read_text(encoding="utf-8"))["facts"].items():
+    versions = document_registry.current_versions(ROOT)
+    for p in sorted((ROOT / "raw").glob("*-sprint*.facts.json")):
+        payload = json.loads(p.read_text(encoding="utf-8"))
+        if not payload_is_current(payload, ROOT, versions):
+            continue
+        match = re.search(r"sprint(\d+)", p.name, re.IGNORECASE)
+        if not match:
+            continue
+        n = int(match.group(1))
+        for slug, v in payload["facts"].items():
             con.execute("INSERT INTO person_sprint VALUES (?,?,?,?,?,?,?,?,?)", [
                 slug, n, int(v["task_count"]["value"]),
                 float(v.get("estimate_h", {}).get("value", 0)),
@@ -98,6 +109,8 @@ def main():
         visibility VARCHAR, allowed_roles VARCHAR, allowed_users VARCHAR)""")
     for p in sorted((ROOT / "raw").glob("*.facts.json")):
         d = json.loads(p.read_text(encoding="utf-8"))
+        if not payload_is_current(d, ROOT, versions):
+            continue
         # Mọi nguồn có row-record đều vào đây: `kind: rows` (bảng bán cấu trúc) VÀ
         # `kind: table` (sheet sprint — ngoài phần gộp MEASURE còn giữ nguyên từng dòng
         # đủ mọi cột, nên cột như `Note` tra được thay vì biến mất).
@@ -116,6 +129,8 @@ def main():
         visibility VARCHAR, allowed_roles VARCHAR, allowed_users VARCHAR)""")
     for p in sorted((ROOT / "wiki" / "sources").glob("*.md")):
         fm = frontmatter(p)
+        if not frontmatter_is_current(fm, ROOT, versions):
+            continue
         for k, v in fm.items():
             if isinstance(v, dict) and "facts_ref" in v:
                 n = resolve(v["facts_ref"])

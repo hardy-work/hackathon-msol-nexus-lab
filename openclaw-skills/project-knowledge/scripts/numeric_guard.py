@@ -27,6 +27,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import yaml
+from artifact_paths import current_versions, frontmatter_is_current, payload_is_current
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "raw"
@@ -197,8 +198,11 @@ class AnswerGuard:
         self.units_by_page: dict[str, dict] = {}   # trang  -> {dạng-số: {đơn vị}}
         self.units_by_file: dict[str, dict] = {}   # file   -> {dạng-số: {đơn vị}}
         self.units_by_sheet: dict[str, dict] = {}  # sheet  -> {dạng-số: {đơn vị}}
+        versions = current_versions(ROOT)
         for f in sorted(RAW.glob("*.facts.json")):
             data = json.loads(f.read_text(encoding="utf-8"))
+            if not payload_is_current(data, ROOT, versions):
+                continue
             bucket: set = set()
             ubucket: dict = {}
             self._collect(data, bucket, ubucket)  # -> self.values/value_units (toàn cục) + bucket/ubucket (cục bộ)
@@ -278,6 +282,8 @@ class AnswerGuard:
         try:
             fpath, dotted = ref.split("#", 1)
             node = json.loads((ROOT / fpath).read_text(encoding="utf-8"))
+            if not payload_is_current(node, ROOT):
+                return None
             node = node.get("facts", node)
             for part in dotted.split("."):
                 node = node[part]
@@ -296,6 +302,8 @@ class AnswerGuard:
                 try:
                     fm = yaml.safe_load(m.group(1)) or {}
                 except yaml.YAMLError:
+                    continue
+                if not frontmatter_is_current(fm, ROOT):
                     continue
                 # LUẬT OCR: trang OCR là bản ĐOÁN — KHÔNG đăng ký số (thực thi ở CODE).
                 is_ocr = fm.get("ocr") in (True, "true")
@@ -428,6 +436,12 @@ class AnswerGuard:
 
 
 _guard = None
+
+
+def reset() -> None:
+    """Drop the corpus-scoped guard after a new current version is built."""
+    global _guard
+    _guard = None
 
 
 def check_answer(text, cites=None):

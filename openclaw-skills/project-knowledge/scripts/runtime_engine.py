@@ -19,7 +19,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def suggested_actions(query: str, status: str, citations: list[str]) -> list[dict[str, object]]:
-    if not re.search(r"\b(cập nhật|sửa|ghi|log|tạo|đổi|update|create)\b", query, re.I):
+    if not (re.search(r"\b(cập nhật|sửa|tạo|đổi|xóa|update|create|delete|remove|add)\b", query, re.I)
+            or re.match(r"\s*(ghi|log)\b", query, re.I)):
         return []
     return [{
         "type": "project_action", "status": "proposed", "requires_approval": True,
@@ -64,6 +65,7 @@ class KnowledgeRuntime:
             # Derived graph/vector files may have changed with the corpus.
             answer._GRAPH = False
             answer._SEM = False
+            answer.numeric_guard.reset()
         key = (access.fingerprint, token)
         kb = self._views.get(key)
         if kb is None:

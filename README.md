@@ -192,12 +192,15 @@ The stage-by-stage mapping and remaining data boundaries are documented in
 
 `demo/run_slack_demo.sh` exercises the Slack-shaped adapter locally without a
 token. A minimal signed HTTP boundary is available at
-`adapters/slack/slack_http.py`; set `SLACK_SIGNING_SECRET` and run it on
-`/slack/events`. `SLACK_BOT_TOKEN` is optional and is used only to post the
-formatted Block Kit response. The Project Knowledge skill remains read-only.
-Set `PROJECT_KNOWLEDGE_SLACK_ROLE_MAP` to a trusted JSON user-to-roles mapping. The
-gateway acknowledges Slack before retrieval, posts asynchronously, and keeps
-bounded conversation context per channel/thread.
+`adapters/slack/slack_http.py`; set `SLACK_SIGNING_SECRET` and expose
+`/slack/events` through a public HTTPS reverse proxy or tunnel. For real
+Events API/app-mention replies, configure `SLACK_BOT_TOKEN` so the gateway
+acknowledges before retrieval and posts asynchronously; the Project Knowledge
+skill remains read-only. Set `PROJECT_KNOWLEDGE_SLACK_ROLE_MAP` to a trusted
+JSON mapping of real Slack `U...` user IDs to roles. Unknown users fail closed.
+The full app setup and production-safe environment defaults are in
+`openclaw-skills/project-knowledge/adapters/slack/SLACK.md` and its
+`.env.example`.
 
 Production Slack delivery uses a durable idempotent queue with retry/dead-letter;
 see `adapters/slack/.env.example`. Mount `PROJECT_KNOWLEDGE_STATE_DIR` on persistent

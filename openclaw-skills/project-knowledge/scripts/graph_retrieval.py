@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any
 
 import access_control
+import document_registry
+from artifact_paths import artifact_rel
 
 
 def normalize(value: object) -> str:
@@ -46,7 +48,8 @@ def is_relation_query(query: str) -> bool:
     q = normalize(query)
     return bool(re.search(
         r"thuoc|lien quan|phu thuoc|phu trach cac|anh huong|blocked|dependency|"
-        r"milestone|module|category|quan he|tac dong|danh sach task",
+        r"milestone|module|category|quan he|tac dong|danh sach task|"
+        r"liet ke .*task.*(?:cua|thuoc|phu trach|lien quan)",
         q,
     ))
 
@@ -87,16 +90,22 @@ class GraphIndex:
     def _can_read(self, node: dict[str, Any], access) -> bool:
         return access is None or access_control.can_read_metadata(access, node, self.root)
 
+    def _facts_ref(self) -> str:
+        document = document_registry.current("nexus-plan", self.root)
+        return artifact_rel(document, "nexus-sprint1", "facts").as_posix()
+
     def _people_in_query(self, query: str, access=None) -> set[str]:
         q = normalize(query)
         return {node["id"] for node in self.nodes.values()
                 if node.get("type") == "entity-person" and self._can_read(node, access)
                 and normalize(node.get("name")) in q}
 
-    def _task_hit(self, node: dict[str, Any]) -> GraphHit:
+    def _task_hit(self, node: dict[str, Any], access=None) -> GraphHit:
         values = {e["rel"]: self.nodes.get(e["to"], {}) for e in self.out.get(node["id"], [])}
         # A task has at most one target for each relation in the current corpus.
         assigned = values.get("assigned_to", {})
+        if assigned and not self._can_read(assigned, access):
+            assigned = {}
         role = values.get("has_role", {})
         category = values.get("in_milestone", {})
         status = values.get("has_status", {})
@@ -148,7 +157,7 @@ class GraphIndex:
                     selector = True
                     matches = overlap >= max(1, min(2, len(name_terms)))
             if selector and matches:
-                hits.append(self._task_hit(node))
+                hits.append(self._task_hit(node, access))
         return hits[:limit]
 
     def context(self, query: str, limit: int = 12, access=None) -> tuple[str, tuple[str, ...]]:
@@ -156,7 +165,7 @@ class GraphIndex:
         if not hits:
             return "", ()
         lines = []
-        citations = {"raw/nexus-sprint1.facts.json"}
+        citations = {self._facts_ref()}
         for hit in hits:
             lines.append(
                 f"task={hit.task_id}; name={hit.name}; assignee={hit.assignee or '—'}; "
@@ -201,7 +210,7 @@ class GraphIndex:
             rows = [f"**{person}**: " + "; ".join(tasks)
                     for person, tasks in sorted(grouped.items())]
             answer = "\n".join(rows)
-        cites = tuple(sorted({"raw/nexus-sprint1.facts.json", *(h.source for h in hits if h.source)}))
+        cites = tuple(sorted({self._facts_ref(), *(h.source for h in hits if h.source)}))
         return GraphAnswer(answer, cites,
                            "graph retrieval nối task với assignee/role/milestone/status từ facts có provenance.")
 

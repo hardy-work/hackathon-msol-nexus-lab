@@ -6,6 +6,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from document_registry import current  # noqa: E402
+from artifact_paths import artifact_rel  # noqa: E402
 import build_index  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -16,8 +17,19 @@ VERSION = int(DOC["version"])
 
 
 def main():
-    people = json.loads((RAW / "nexus-people.facts.json").read_text(encoding="utf-8"))["facts"]
-    source_paths = [f"raw/{p.name}" for p in sorted(RAW.glob("nexus-*.md"))]
+    people_facts = artifact_rel(DOC, "nexus-people", "facts").as_posix()
+    people = json.loads((ROOT / people_facts).read_text(encoding="utf-8"))["facts"]
+    source_paths = [str(p) for p in DOC.get("raw_paths", [])
+                    if str(p).endswith(".md")]
+    if not source_paths:
+        source_paths = [artifact_rel(DOC, raw_id, "md").as_posix()
+                        for raw_id in ("nexus-backlog", "nexus-config", "nexus-issue",
+                                       "nexus-master-schedule", "nexus-people",
+                                       "nexus-resource-plan", "nexus-risk",
+                                       "nexus-sprint1", "nexus-summary")]
+    config_md = artifact_rel(DOC, "nexus-config", "md").as_posix()
+    sprint_md = artifact_rel(DOC, "nexus-sprint1", "md").as_posix()
+    people_md = artifact_rel(DOC, "nexus-people", "md").as_posix()
     (WIKI / "sources").mkdir(parents=True, exist_ok=True)
     (WIKI / "entities").mkdir(parents=True, exist_ok=True)
 
@@ -52,7 +64,6 @@ lịch tổng, backlog, sprint, rủi ro, issue và Config. Các bảng được
     for slug, info in people.items():
         role = (info.get("roles") or [None])[0]
         role_line = f"role: {role}\n" if role else ""
-        raw_paths = ["raw/nexus-config.md", "raw/nexus-sprint1.md", "raw/nexus-people.md"]
         if info["task_count"]["value"] == 0:
             note = """Người này được khai trong Config nhưng rollup Sprint 1 ghi nhận **0 task**,
 không có dòng task hoặc vai trò theo task trong nguồn raw. Số 0 vẫn chỉ dùng qua
@@ -68,11 +79,11 @@ name: "{info['label']}"
 assignee: {slug}
 {role_line}project: nexus
 visibility: internal
-task_count: {{ facts_ref: "raw/nexus-people.facts.json#{slug}.task_count" }}
-estimate_h: {{ facts_ref: "raw/nexus-people.facts.json#{slug}.estimate_h" }}
-actual_h: {{ facts_ref: "raw/nexus-people.facts.json#{slug}.actual_h" }}
+task_count: {{ facts_ref: "{people_facts}#{slug}.task_count" }}
+estimate_h: {{ facts_ref: "{people_facts}#{slug}.estimate_h" }}
+actual_h: {{ facts_ref: "{people_facts}#{slug}.actual_h" }}
 raw_paths:
-""" + "".join(f"  - {p}\n" for p in raw_paths) + f"""---
+""" + "".join(f"  - {p}\n" for p in (config_md, sprint_md, people_md)) + f"""---
 
 # {info['label']}
 
