@@ -27,6 +27,9 @@ jobs:
         env:
           HF_HUB_OFFLINE: "1"
           TRANSFORMERS_OFFLINE: "1"
+          PROJECT_KNOWLEDGE_SKIP_VECTOR: "1"
+          PROJECT_KNOWLEDGE_COVERAGE_GRANTS: '{"Đô":["project_knowledge:approve_coverage"]}'
+          PROJECT_KNOWLEDGE_APPROVAL_IDS: "nexus-demo-person-role-20260803,nexus-demo-person-task-20260803"
         run: bash openclaw-skills/project-knowledge/demo/run_demo.sh
       - name: Run Slack-shaped adapter demo
         run: bash openclaw-skills/project-knowledge/demo/run_slack_demo.sh

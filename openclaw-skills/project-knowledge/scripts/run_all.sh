@@ -24,7 +24,9 @@ export PROJECT_KNOWLEDGE_DEMO_MODE="${PROJECT_KNOWLEDGE_DEMO_MODE:-1}"
 # Test state is isolated from the persistent production volume and recreated
 # with derived/. This prevents a prior cache entry from hiding a regression.
 export PROJECT_KNOWLEDGE_STATE_DIR="$PWD/derived/test-runtime"
-export PROJECT_KNOWLEDGE_COVERAGE_GRANTS="${PROJECT_KNOWLEDGE_COVERAGE_GRANTS:-{\"Đô\":[\"project_knowledge:approve_coverage\"]}}"
+if [ -z "${PROJECT_KNOWLEDGE_COVERAGE_GRANTS:-}" ]; then
+  export PROJECT_KNOWLEDGE_COVERAGE_GRANTS='{"Đô":["project_knowledge:approve_coverage"]}'
+fi
 export PROJECT_KNOWLEDGE_APPROVAL_IDS="${PROJECT_KNOWLEDGE_APPROVAL_IDS:-nexus-demo-person-role-20260803,nexus-demo-person-task-20260803}"
 echo "Python: $("$PY" --version 2>&1) ($PY)"
 
@@ -46,8 +48,12 @@ echo; echo "══ Response style contract ══"; "$PY" scripts/response_style
 echo; echo "══ Stage 6 · PUBLISH ══";  "$PY" scripts/build_db.py
 echo; echo "══ Stage 5 · DERIVE · bậc 3 graph (typed links + DIMENSION) ══"; "$PY" scripts/build_graph.py
 echo; echo "══ Stage 5 · DERIVE · vector wiki (bge-m3) ══"
-"$PY" scripts/embed_index.py 2>&1 | grep -v "Warning\|Loading weights\|HF_TOKEN\|Batches" \
-  || echo "  (bỏ qua — thiếu model/thư viện; bậc 2 vector sẽ tự tắt, keyword vẫn chạy)"
+if [ "${PROJECT_KNOWLEDGE_SKIP_VECTOR:-0}" = "1" ]; then
+  echo "  (bỏ qua theo cấu hình offline/demo — keyword/graph deterministic vẫn chạy)"
+else
+  "$PY" scripts/embed_index.py 2>&1 | grep -v "Warning\|Loading weights\|HF_TOKEN\|Batches" \
+    || echo "  (bỏ qua — thiếu model/thư viện; bậc 2 vector sẽ tự tắt, keyword vẫn chạy)"
+fi
 echo; echo "══ CORPUS VERSION / FRESHNESS ══"; "$PY" scripts/versioning.py build --summary
 echo; echo "══ EVAL ══";               (cd scripts && "$PY" eval.py)
 echo; echo "══ EXTENDED EVAL + STYLE ══"; "$PY" scripts/eval_extended.py

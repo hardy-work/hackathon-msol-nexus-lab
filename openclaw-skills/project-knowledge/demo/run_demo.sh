@@ -22,8 +22,10 @@ export PROJECT_KNOWLEDGE_ACTOR="${PROJECT_KNOWLEDGE_ACTOR:-local-demo}"
 export PROJECT_KNOWLEDGE_ROLES="${PROJECT_KNOWLEDGE_ROLES:-project_member}"
 export PROJECT_KNOWLEDGE_DEMO_MODE="${PROJECT_KNOWLEDGE_DEMO_MODE:-1}"
 export PROJECT_KNOWLEDGE_STATE_DIR="${PROJECT_KNOWLEDGE_STATE_DIR:-$ROOT/.runtime/demo}"
-export PROJECT_KNOWLEDGE_COVERAGE_GRANTS="${PROJECT_KNOWLEDGE_COVERAGE_GRANTS:-{\"Đô\":[\"project_knowledge:approve_coverage\"]}}"
-export PROJECT_KNOWLEDGE_APPROVAL_IDS="${PROJECT_KNOWLEDGE_APPROVAL_IDS:-nexus-demo-person-role-20260803,nexus-demo-person-task-20260803}"
+# The showcase is a deterministic fixture, so do not inherit production or
+# runner-wide approval variables. Production runtime injects these separately.
+export PROJECT_KNOWLEDGE_COVERAGE_GRANTS='{"Đô":["project_knowledge:approve_coverage"]}'
+export PROJECT_KNOWLEDGE_APPROVAL_IDS='nexus-demo-person-role-20260803,nexus-demo-person-task-20260803'
 
 needs_build=0
 if [ ! -f derived/facts.duckdb ]; then
@@ -35,6 +37,7 @@ fi
 if [ "$needs_build" = "1" ]; then
   echo "[demo] corpus thiếu hoặc stale; dựng lại offline-safe"
   HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+    PROJECT_KNOWLEDGE_SKIP_VECTOR=1 \
     PROJECT_KNOWLEDGE_RUN_SLACK_TESTS=0 bash scripts/run_all.sh
 fi
 
