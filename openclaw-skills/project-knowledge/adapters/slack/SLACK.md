@@ -60,6 +60,11 @@ Before connecting a real workspace:
    durable queue, bounded conversation context, cache and privacy-safe
    telemetry. Do not commit `.env` or state files.
 
+The HTTP boundary rejects payloads larger than `SLACK_MAX_BODY_BYTES` before
+reading or verifying them; the default is 1 MiB, far above normal Slack event
+payloads. Keep the reverse proxy's request limit at least as strict as this
+value.
+
 For a demo on one host, load `adapters/slack/.env` from a secret manager or
 process environment, then run:
 

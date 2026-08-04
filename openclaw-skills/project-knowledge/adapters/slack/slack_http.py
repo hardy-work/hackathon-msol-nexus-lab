@@ -32,6 +32,15 @@ import telemetry
 
 _worker_started = False
 _worker_lock = threading.Lock()
+DEFAULT_MAX_BODY_BYTES = 1024 * 1024
+
+
+def max_body_bytes() -> int:
+    """Return a bounded request size without trusting an invalid env value."""
+    try:
+        return max(1024, int(os.getenv("SLACK_MAX_BODY_BYTES", str(DEFAULT_MAX_BODY_BYTES))))
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_BODY_BYTES
 
 
 def ensure_worker() -> None:
@@ -142,6 +151,12 @@ class SlackHandler(BaseHTTPRequestHandler):
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
+            if length < 0:
+                raise ValueError("negative Content-Length")
+            limit = max_body_bytes()
+            if length > limit:
+                self._json(413, {"error": "payload_too_large", "max_body_bytes": limit})
+                return
             body = self.rfile.read(length)
             if not request_is_valid(dict(self.headers.items()), body,
                                     os.getenv("SLACK_SIGNING_SECRET", "")):

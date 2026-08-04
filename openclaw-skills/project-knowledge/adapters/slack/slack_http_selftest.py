@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import http.client
 import json
 import os
 import time
@@ -45,6 +46,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="pk-slack-http-") as temp:
         os.environ.update({"SLACK_SIGNING_SECRET": secret, "SLACK_BOT_TOKEN": "xoxb-test",
                            "SLACK_EMBEDDED_WORKER": "0",
+                           "SLACK_MAX_BODY_BYTES": "1048576",
                            "SLACK_JOB_DB": str(Path(temp) / "jobs.sqlite3")})
         server = ThreadingHTTPServer(("127.0.0.1", 0), SlackHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -64,11 +66,22 @@ def main() -> int:
         first = json.loads(urllib.request.urlopen(req, timeout=2).read())
         elapsed = time.perf_counter() - started
         second = json.loads(urllib.request.urlopen(req, timeout=2).read())
-        server.shutdown(); server.server_close(); thread.join(timeout=2)
         assert elapsed < 1.0 and first["accepted"] and not first["duplicate"]
         assert second["duplicate"] and second["job_id"] == first["job_id"]
 
-    print("✓ slack HTTP boundary self-test: 7/7 qua")
+        # Reject an oversized request before reading its body or checking HMAC.
+        oversized = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+        oversized.request("POST", "/slack/events", body=b"", headers={
+            "Content-Type": "application/json",
+            "Content-Length": str(int(os.environ["SLACK_MAX_BODY_BYTES"]) + 1),
+        })
+        limited = oversized.getresponse()
+        assert limited.status == 413
+        limited.read()
+        oversized.close()
+        server.shutdown(); server.server_close(); thread.join(timeout=2)
+
+    print("✓ slack HTTP boundary self-test: 8/8 qua")
     return 0
 
 
