@@ -172,15 +172,6 @@ KHÔNG tự động làm bước này trong Action 1 — chỉ làm khi PM yêu 
 
 ---
 
-## Audit Log
-
-Sau mỗi lần tạo sheet thành công, ghi vào `evidence-audit.log` (cùng thư mục skill):
-
-```
-[YYYY-MM-DD HH:MM:SS] THREAD=<channel>/<ts> ROWS=<N> FILES=<M> SHARING=<anyone|restricted> SHEET=<fileId> BY=<PM nếu biết>
-```
-
----
 
 ## Error Handling
 
