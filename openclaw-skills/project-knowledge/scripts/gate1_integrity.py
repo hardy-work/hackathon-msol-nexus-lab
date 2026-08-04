@@ -96,7 +96,8 @@ def main(argv):
 
     print(f"GATE 1 · {len(want)} file trong manifest")
     for rel in new:
-        print(f"{Y}⚠ file mới chưa vào manifest: {rel} — chạy --reinit nếu cố ý thêm{OFF}")
+        errs.append(f"FILE MỚI CHƯA DUYỆT: {rel} — chạy inventory, cập nhật documents.yml, "
+                    f"sau đó --reinit trên ingest branch")
     if errs:
         for e in errs:
             print(f"{R}✗ {e}{OFF}")

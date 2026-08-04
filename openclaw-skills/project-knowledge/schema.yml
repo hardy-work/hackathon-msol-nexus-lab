@@ -39,18 +39,18 @@ page_types:
     dir: wiki/entities
     required_dimensions: [assignee, project]
     optional_dimensions: [role]
-    required_fields: [page, name, raw_paths]
+    required_fields: [page, name, raw_paths, visibility]
   source:
     dir: wiki/sources
     required_dimensions: [domain]
     optional_dimensions: [project]
-    required_fields: [page, name, raw_paths, doc_id]
+    required_fields: [page, name, raw_paths, doc_id, version, visibility]
   concept:
     dir: wiki/concepts
     required_dimensions: []
-    required_fields: [page, name, raw_paths]
+    required_fields: [page, name, raw_paths, visibility]
   case-study:
     dir: wiki/case-studies
     required_dimensions: [domain]
     optional_dimensions: [project]
-    required_fields: [page, name, raw_paths]
+    required_fields: [page, name, raw_paths, visibility]

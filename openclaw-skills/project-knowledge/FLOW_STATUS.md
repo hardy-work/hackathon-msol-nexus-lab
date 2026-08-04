@@ -1,0 +1,45 @@
+# Nexus Project Knowledge — flow status
+
+| Flow stage | Implementation | Current boundary |
+|---|---|---|
+| Stage 0 · Inventory | `scripts/inventory.py` | Detects exact/near duplicates and halts on unregistered canonical choices |
+| Stage 1 · Intake | `originals/`, `documents.yml`, Gate 1 | Immutable SHA-256 identity, current version and supersedes chain |
+| Stage 2 · Extract | `extract_nexus.py`, `extract_van.py` | Nexus `.xlsx` is live; DOCX/PDF/OCR is opt-in |
+| Stage 3 · Structure | `structure.py` → `structured/` | Independent prose pass; exact date/number/unit transform gate |
+| Stage 4 · Wiki ingest | `build_nexus_wiki.py`, `ingest_van.py` | Reads Stage 3 output; model has no filesystem tools; script validates then writes |
+| Re-ingest | `reingest.py`, `ingest_flow.py` | Raw diff + impacted claims in isolated `ingest/<doc>@vN` worktree; never auto-merges |
+| Gate 2/4 | `numeric_guard.py` | Citation-scoped exact number/date/unit checks; no rounded-value allowance |
+| Gate 3a | `lint.py` | Contract, current version, visibility, references and numeric provenance |
+| Gate 3b | `review.py` | Sonnet review is opt-in; previous Nexus run passed 8/8 |
+| Stage 6 · Publish | DuckDB + wiki index | Rebuildable from source; `derived/` is intentionally ignored |
+| Graph derive/retrieval | `build_graph.py`, `graph_retrieval.py` | 60 task nodes and provenance edges; no invented dependency edges |
+| Vector retrieval | `embed_index.py` / BGE-M3 | Dependency is pinned; keyword fallback stays available if model is not downloaded |
+| Version/freshness | `versioning.py` | Digest includes originals/raw/structured/wiki/schema/coverage/registry/access |
+| Q&A routing | `answer.py`, Haiku router | Tier 0 catalog → Tier 1 → graph → scoped keyword/vector → Sonnet synthesis |
+| Access + coverage | `access_control.py`, `access.yml` | Fail-closed actor/role; page ACL reaches DuckDB/graph/wiki; approval authority is external |
+| Cache + context | `query_cache.py`, `conversation.py` | Version/access/history key, TTL/max retention, persistent `.runtime/` volume |
+| Long-lived runtime | `runtime_engine.py`, `benchmark.py` | Reuses access-scoped DuckDB views, graph, BGE-M3 and cache connections |
+| Slack | HTTP + durable worker | HMAC, ACK-before-query, event dedup, retry/dead-letter, persisted response |
+| Telemetry | `telemetry.py`, `/health` | Query/queue latency and state without raw question, answer or actor identity |
+| Production eval | onboarding + production suites | Auth/context/cache/concurrency and 10 PM/new-dev representative questions |
+| Demo showcase | `demo/run_demo.sh`, `scripts/demo_showcase.py` | Freshness-aware, one-process, offline 7-step story; human and JSON output |
+| Action boundary | `suggested_actions` | Approval/permission proposal only; action skill owns writes/RBAC |
+
+## Data gaps that code cannot invent
+
+- Workbook có vocabulary `tech_stack` nhưng chưa có mapping người–tech-stack.
+- Risk, Issue và Backlog đang không có dòng nghiệp vụ thực.
+- Dependency/blocker giữa task chưa có trong nguồn, nên graph không tự suy ra.
+- Meeting note cần được đưa qua một ingest adapter riêng trước khi trở thành
+  Project Knowledge source.
+
+Sau khi thay workbook hoặc wiki nguồn, chạy:
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 bash scripts/run_all.sh
+python3 scripts/versioning.py check
+```
+
+Khi thêm version tài liệu: đăng ký version + `supersedes` trong `documents.yml`, sau
+đó dùng `scripts/ingest_flow.py --prepare ...`; chỉ merge worktree sau khi review diff
+và các gate xanh. Không thay file canonical tại chỗ.

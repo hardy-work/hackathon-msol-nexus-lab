@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -24,10 +25,23 @@ CASES = [
 
 def main() -> int:
     failures = []
+    env = os.environ.copy()
+    env.setdefault("PROJECT_KNOWLEDGE_ACTOR", "local-demo")
+    env.setdefault("PROJECT_KNOWLEDGE_ROLES", "project_member")
+    env.setdefault("PROJECT_KNOWLEDGE_DEMO_MODE", "1")
+    env.setdefault(
+        "PROJECT_KNOWLEDGE_COVERAGE_GRANTS",
+        '{"Đô":["project_knowledge:approve_coverage"]}',
+    )
+    env.setdefault(
+        "PROJECT_KNOWLEDGE_APPROVAL_IDS",
+        "nexus-demo-person-role-20260803,nexus-demo-person-task-20260803",
+    )
     for query, expected in CASES:
         proc = subprocess.run(
-            [sys.executable, str(RUN), "--project", "nexus", "--query", query],
+            [sys.executable, str(RUN), "--project", "nexus", "--query", query, "--no-cache"],
             cwd=ROOT, text=True, capture_output=True, check=False,
+            env=env,
         )
         try:
             result = json.loads(proc.stdout)

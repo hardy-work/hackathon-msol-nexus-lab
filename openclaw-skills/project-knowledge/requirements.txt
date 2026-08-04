@@ -4,5 +4,9 @@ duckdb==1.1.3        # derived/facts.duckdb — tầng số cho bậc 1
 python-frontmatter==1.1.0  # parse frontmatter của wiki/*.md
 python-docx==1.2.0   # luồng VĂN (v1.5) — trích .docx
 PyMuPDF==1.28.0      # luồng VĂN (v1.5) — trích .pdf (text) + phát hiện PDF scan
+numpy==2.1.3         # vector index serialization/search
+sentence-transformers==3.3.1  # multilingual bge-m3 semantic retrieval
+torch==2.13.0       # pinned local inference runtime for sentence-transformers
+transformers==4.57.6  # avoid semantic stack drift across deployments
 # OCR (nhánh SCAN) là phần mềm HỆ THỐNG, không cài bằng pip:
 #   ocrmypdf + tesseract (-l vie+eng) — cần cho PDF ảnh như noi-quy-lao-dong.pdf

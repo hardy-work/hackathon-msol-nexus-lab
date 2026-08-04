@@ -32,6 +32,8 @@ from pathlib import Path
 from shutil import which
 
 import yaml
+from document_registry import current as current_document
+from artifact_paths import artifact_path
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "raw"
@@ -172,12 +174,13 @@ def ocr_pdf(path, lang="vie+eng", dpi=300):
 ROUTER = {".docx": extract_docx, ".pdf": extract_pdf}
 
 
-def write_raw(doc_id, spec, body, meta):
+def write_raw(doc_id, spec, body, meta, registry):
     src = Path(spec["original"])
     fm = [
         "---",
         f"raw_id: {doc_id}",
         f"doc_id: {doc_id}",
+        f"version: {int(registry['version'])}",
         "kind: van",
         f"source_file: {spec['original']}",
         f"sha256: {sha256(ROOT / spec['original'])}",
@@ -202,7 +205,8 @@ def write_raw(doc_id, spec, body, meta):
         body,
         "",
     ]
-    out = RAW / f"{doc_id}.md"
+    out = artifact_path(ROOT, registry, doc_id, "md")
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(fm), encoding="utf-8")
     return out
 
@@ -216,6 +220,16 @@ def main(argv):
     for d in spec["docs"]:
         doc_id = d["doc_id"]
         if only and doc_id != only:
+            continue
+        try:
+            registry = current_document(doc_id, ROOT)
+        except (KeyError, ValueError) as exc:
+            print(f"{R}✗ {doc_id:20s} chưa đăng ký current version: {exc}{OFF}")
+            halted += 1
+            continue
+        if registry.get("original") != d.get("original"):
+            print(f"{R}✗ {doc_id:20s} original lệch documents.yml{OFF}")
+            halted += 1
             continue
         path = ROOT / d["original"]
         if not path.exists():
@@ -244,7 +258,7 @@ def main(argv):
                 print(f"{D}   (chạy `extract_van.py --ocr` MỘT LẦN → lưu ocr/, rồi rebuild tự đọc lại){OFF}")
                 halted += 1
                 continue
-        out = write_raw(doc_id, d, body, meta)
+        out = write_raw(doc_id, d, body, meta, registry)
         info = " · ".join(f"{k}={meta[k]}" for k in ("pages", "paragraphs", "tables") if k in meta)
         print(f"{G}✓ {doc_id:20s}{OFF} {meta['extractor']:12s} {info:24s} → {out.relative_to(ROOT).as_posix()} "
               f"({len(body)} ký tự)")

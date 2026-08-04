@@ -1,0 +1,5 @@
+# Optional prose/OCR sources.
+# Add one registered document here only after its original + current version
+# exists in documents.yml.  raw_paths are versioned automatically from the
+# registry; the extractor keeps old raw artifacts for re-ingest review.
+docs: []

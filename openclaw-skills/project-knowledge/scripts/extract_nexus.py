@@ -13,11 +13,15 @@ from pathlib import Path
 import openpyxl
 
 from extract import cell_str, numeric_guard_ingest, scan_headers, scan_rows
+from document_registry import current
+from artifact_paths import artifact_path
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "raw"
 ORIGINAL = ROOT / "originals/nexus-plan.xlsx"
 DOC_ID = "nexus-plan"
+DOC = current(DOC_ID)
+VERSION = int(DOC["version"])
 
 ASSIGNEE = {
     "TùngDV": "tung-dv",
@@ -31,13 +35,20 @@ ASSIGNEE = {
 
 
 def write_raw(raw_id, sheet, kind, body, payload):
-    (RAW / f"{raw_id}.md").write_text(
+    # Normalize generated Markdown so a rebuild is byte-stable.  Empty sheets
+    # otherwise accumulate an extra blank line and appear as source changes.
+    body = body.rstrip()
+    md_path = artifact_path(ROOT, DOC, raw_id, "md")
+    facts_path = artifact_path(ROOT, DOC, raw_id, "facts")
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    md_path.write_text(
         f"---\nraw_id: {raw_id}\ndoc_id: {DOC_ID}\nsheet: {sheet!r}\n"
-        f"kind: {kind}\ngenerated_by: scripts/extract_nexus.py\n---\n\n"
+        f"version: {VERSION}\nkind: {kind}\ngenerated_by: scripts/extract_nexus.py\n---\n\n"
         f"# {raw_id}\n\nNguồn: `{sheet}` trong `originals/nexus-plan.xlsx`\n\n{body}\n",
         encoding="utf-8")
-    (RAW / f"{raw_id}.facts.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    facts_path.write_text(
+        json.dumps({"doc_id": DOC_ID, "version": VERSION, **payload},
+                   ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def rows_source(wb, raw_id, sheet, header_rows, start, cols=None, skip=None):

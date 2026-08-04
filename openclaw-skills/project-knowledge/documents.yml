@@ -1,0 +1,23 @@
+# Human-owned document identity/version registry. Originals and raw artifacts are
+# append-only; changing the canonical version requires a reviewed ingest branch.
+documents:
+  - doc_id: nexus-plan
+    version: 1
+    original: originals/nexus-plan.xlsx
+    kind: xlsx
+    sha256: df3369a7bfbe56eb8d2222053f8e23c744d7dfee70640e37166175cbad2d6d58
+    status: canonical
+    current: true
+    supersedes: null
+    visibility: internal
+    extractor: nexus
+    raw_paths:
+      - raw/nexus-backlog.md
+      - raw/nexus-config.md
+      - raw/nexus-issue.md
+      - raw/nexus-master-schedule.md
+      - raw/nexus-people.md
+      - raw/nexus-resource-plan.md
+      - raw/nexus-risk.md
+      - raw/nexus-sprint1.md
+      - raw/nexus-summary.md

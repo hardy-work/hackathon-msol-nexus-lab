@@ -19,6 +19,9 @@ from pathlib import Path
 
 import yaml
 
+import document_registry
+from artifact_paths import frontmatter_is_current
+
 ROOT = Path(__file__).resolve().parent.parent
 WIKI = ROOT / "wiki"
 RAW = ROOT / "raw"
@@ -52,10 +55,17 @@ def _pages(sub):
 
 
 def build():
-    entities = [(p, frontmatter(p)) for p in _pages("entities")]
-    sources = [(p, frontmatter(p)) for p in _pages("sources")]
-    concepts = [(p, frontmatter(p)) for p in _pages("concepts")]
-    cases = [(p, frontmatter(p)) for p in _pages("case-studies")]
+    versions = document_registry.current_versions(ROOT)
+
+    def current_pages(section):
+        return [(p, fm) for p in _pages(section)
+                for fm in [frontmatter(p)]
+                if frontmatter_is_current(fm, ROOT, versions)]
+
+    entities = current_pages("entities")
+    sources = current_pages("sources")
+    concepts = current_pages("concepts")
+    cases = current_pages("case-studies")
     cov = yaml.safe_load((ROOT / "coverage.yml").read_text(encoding="utf-8")) or []
 
     n_pages = len(entities) + len(sources) + len(concepts) + len(cases)
@@ -124,13 +134,15 @@ def build():
         out += [f"- [[{p.stem}]] — domain `{fm.get('domain', '—')}`" for p, fm in cases]
         out.append("")
 
-    # --- Phạm vi đã ký
-    out += ["## Phạm vi đã ký — `coverage.yml`", "",
-            "| quan hệ | phạm vi | tính đến |", "|---|---|---|"]
+    # --- Coverage receipts. Runtime authorization is intentionally external;
+    # this catalog must not imply that repository YAML grants permission.
+    out += ["## Phạm vi có approval receipt — `coverage.yml`", "",
+            "| quan hệ | phạm vi | tính đến | approval |", "|---|---|---|---|"]
     for c in cov:
         out.append(f"| `{c['relation']}` | {c['source'].split('::')[-1].strip()} "
-                   f"| {c['complete_as_of']} |")
-    out += ["", "Ngoài các dòng trên, hệ thống **không** được trả lời \"chắc chắn không\".", ""]
+                   f"| {c['complete_as_of']} | `{c.get('approval_id', '—')}` |")
+    out += ["", "Receipt chỉ có hiệu lực khi runtime xác thực người ký, permission và approval id. "
+            "Ngoài phạm vi đã xác thực, hệ thống **không** được trả lời \"chắc chắn không\".", ""]
 
     (WIKI / "index.md").write_text("\n".join(out), encoding="utf-8")
     return n_pages

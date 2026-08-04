@@ -5,6 +5,8 @@
   source: "originals/nexus-plan.xlsx :: Config!H2:K15"
   asserted_by: "Đô"
   signed_date: "2026-08-03"
+  approval_id: "nexus-demo-person-role-20260803"
+  required_permission: "project_knowledge:approve_coverage"
 
 - entity: nexus
   relation: person_task
@@ -12,4 +14,6 @@
   source: "originals/nexus-plan.xlsx :: Sprint 1!A6:R65"
   asserted_by: "Đô"
   signed_date: "2026-08-03"
+  approval_id: "nexus-demo-person-task-20260803"
+  required_permission: "project_knowledge:approve_coverage"
   note: "Phạm vi chỉ gồm Sprint 1; Backlog hiện không có dòng dữ liệu."

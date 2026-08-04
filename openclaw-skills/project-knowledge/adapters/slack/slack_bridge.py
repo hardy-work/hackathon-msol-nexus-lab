@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -13,11 +14,29 @@ from parse_event import parse
 SKILL_ROOT = next(parent for parent in Path(__file__).resolve().parents
                   if (parent / "scripts" / "run.py").exists())
 RUN = SKILL_ROOT / "scripts" / "run.py"
+sys.path.insert(0, str(SKILL_ROOT / "scripts"))
+from runtime_engine import default_runtime  # noqa: E402
 
 
-def query_project(text: str) -> dict:
+def query_project(text: str, *, actor: str = "", roles: list[str] | None = None,
+                  history: list[dict] | None = None) -> dict:
+    use_llm = os.getenv("PROJECT_KNOWLEDGE_LLM", "0").lower() in {"1", "true", "yes", "on"}
+    if os.getenv("PROJECT_KNOWLEDGE_RUNTIME_MODE", "inprocess") != "subprocess":
+        return default_runtime().query(
+            "nexus", text, llm=use_llm, actor=actor or None,
+            roles=roles, history=history or [],
+        )
+    args = [sys.executable, str(RUN), "--project", "nexus", "--query", text]
+    if actor:
+        args.extend(["--actor", actor])
+    if roles is not None:
+        args.extend(["--roles", ",".join(roles)])
+    if history:
+        args.extend(["--history-json", json.dumps(history, ensure_ascii=False)])
+    if use_llm:
+        args.append("--llm")
     proc = subprocess.run(
-        [sys.executable, str(RUN), "--project", "nexus", "--query", text],
+        args,
         cwd=SKILL_ROOT, text=True, capture_output=True, check=False,
     )
     try:

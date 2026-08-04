@@ -160,13 +160,57 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 bash demo/run_demo.sh
 ```
 
 The normal entrypoint is `scripts/run.py`. It is deterministic and does not
-need network or Claude credentials. Gate 3b review and the optional LLM answer
-tier are opt-in only.
+need network or Claude credentials. With `--llm`, unresolved queries use a
+cheap Haiku router first and send selected wiki context to Sonnet; Gate 3b
+review remains opt-in.
+
+The query boundary is fail-closed. Inject a trusted identity and roles from the
+host runtime (SSO/Slack mapping), for example:
+
+```bash
+PROJECT_KNOWLEDGE_ACTOR=local-demo \
+PROJECT_KNOWLEDGE_ROLES=project_member \
+python3 scripts/run.py --project nexus --query "ĐôNT làm vai trò gì?"
+```
+
+Coverage receipts do not grant themselves authority. Production also injects
+`PROJECT_KNOWLEDGE_COVERAGE_GRANTS` and `PROJECT_KNOWLEDGE_APPROVAL_IDS` from an
+approval service; the offline test runner supplies demo-only values.
+
+The pipeline also builds a task relationship graph and records corpus
+version/freshness metadata. Query JSON reports `fresh`, `stale`, or `unknown`
+so a changed workbook cannot silently look like a current answer. Run
+`scripts/run_all.sh` after replacing the workbook.
+
+Document identity and supersession live in `documents.yml`. New document versions
+are ingested in an isolated `ingest/<doc>@vN` worktree using
+`scripts/ingest_flow.py`; the flow creates a raw diff/impact plan and never merges
+automatically.
+
+The stage-by-stage mapping and remaining data boundaries are documented in
+[`openclaw-skills/project-knowledge/FLOW_STATUS.md`](openclaw-skills/project-knowledge/FLOW_STATUS.md).
 
 `demo/run_slack_demo.sh` exercises the Slack-shaped adapter locally without a
-token. A production Slack transport still belongs at the gateway boundary
-(OpenClaw Slack integration or a Bolt/HTTP receiver) and must verify the
-signing secret before forwarding events to this read-only skill.
+token. A minimal signed HTTP boundary is available at
+`adapters/slack/slack_http.py`; set `SLACK_SIGNING_SECRET` and expose
+`/slack/events` through a public HTTPS reverse proxy or tunnel. For real
+Events API/app-mention replies, configure `SLACK_BOT_TOKEN` so the gateway
+acknowledges before retrieval and posts asynchronously; the Project Knowledge
+skill remains read-only. Set `PROJECT_KNOWLEDGE_SLACK_ROLE_MAP` to a trusted
+JSON mapping of real Slack `U...` user IDs to roles. Unknown users fail closed.
+The full app setup and production-safe environment defaults are in
+`openclaw-skills/project-knowledge/adapters/slack/SLACK.md` and its
+`.env.example`.
+
+Production Slack delivery uses a durable idempotent queue with retry/dead-letter;
+see `adapters/slack/.env.example`. Mount `PROJECT_KNOWLEDGE_STATE_DIR` on persistent
+storage because it owns jobs, query cache, conversation retention and privacy-safe
+telemetry. `/health` reports aggregate queue/runtime status.
+
+The Slack process uses a long-lived runtime, so DuckDB, graph and BGE-M3 stay warm.
+Run `scripts/benchmark.py` for p50/p95 latency. `scripts/eval_onboarding.py` and
+`scripts/eval_production.py` cover onboarding, authorization, context, cache and
+concurrent request boundaries.
 
 To expose it to an OpenClaw workspace, link the skill directory and restart the
 gateway:

@@ -1,37 +1,54 @@
 #!/usr/bin/env bash
-# One-command, offline-safe demo for the Project Knowledge skill.
+# One-command, offline-safe showcase for the Project Knowledge skill.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+PY=""
+for candidate in python3 python py; do
+  if command -v "$candidate" >/dev/null 2>&1 \
+      && "$candidate" -c 'import sys' >/dev/null 2>&1; then
+    PY="$candidate"
+    break
+  fi
+done
+[ -n "$PY" ] || {
+  echo "[demo] không tìm thấy Python chạy được (đã thử python3/python/py)" >&2
+  exit 1
+}
+
+export PYTHONUTF8=1
+export PROJECT_KNOWLEDGE_ACTOR="${PROJECT_KNOWLEDGE_ACTOR:-local-demo}"
+export PROJECT_KNOWLEDGE_ROLES="${PROJECT_KNOWLEDGE_ROLES:-project_member}"
+export PROJECT_KNOWLEDGE_DEMO_MODE="${PROJECT_KNOWLEDGE_DEMO_MODE:-1}"
+export PROJECT_KNOWLEDGE_STATE_DIR="${PROJECT_KNOWLEDGE_STATE_DIR:-$ROOT/.runtime/demo}"
+# The showcase is a deterministic fixture, so do not inherit production or
+# runner-wide approval variables. Production runtime injects these separately.
+export PROJECT_KNOWLEDGE_COVERAGE_GRANTS='{"Đô":["project_knowledge:approve_coverage"]}'
+export PROJECT_KNOWLEDGE_APPROVAL_IDS='nexus-demo-person-role-20260803,nexus-demo-person-task-20260803'
+
+needs_build=0
 if [ ! -f derived/facts.duckdb ]; then
-  echo "[demo] dựng corpus Nexus và index (offline-safe)"
-  HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 bash scripts/run_all.sh
+  needs_build=1
+elif ! "$PY" scripts/versioning.py check --summary >/dev/null 2>&1; then
+  needs_build=1
 fi
 
-echo "[demo] gate kiểm tra"
-python3 scripts/lint.py >/dev/null
-python3 scripts/numeric_guard.py >/dev/null
-python3 scripts/response_style.py >/dev/null
-python3 scripts/skill_selftest.py
-python3 scripts/eval.py | tail -n 12
-python3 scripts/eval_extended.py | tail -n 3
-python3 scripts/eval_coverage.py | tail -n 3
+if [ "$needs_build" = "1" ]; then
+  echo "[demo] corpus thiếu hoặc stale; dựng lại offline-safe"
+  HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+    PROJECT_KNOWLEDGE_SKIP_VECTOR=1 \
+    PROJECT_KNOWLEDGE_RUN_SLACK_TESTS=0 bash scripts/run_all.sh
+fi
+
+echo "[demo] Python: $("$PY" --version 2>&1) ($PY)"
+echo "[demo] kiểm tra nhanh ingest/retrieval contract"
+"$PY" scripts/lint.py >/dev/null
+"$PY" scripts/numeric_guard.py >/dev/null
+"$PY" scripts/response_style.py >/dev/null
+"$PY" scripts/skill_selftest.py >/dev/null
+"$PY" scripts/graph_selftest.py >/dev/null
+"$PY" scripts/versioning.py check --summary
 
 echo
-echo "[demo] project-knowledge skill"
-queries=(
-  "ĐôNT làm vai trò gì trong dự án Nexus?"
-  "Task API Login trong Sprint 1 do ai phụ trách?"
-  "ĐôNT đã bỏ ra bao nhiêu giờ trong Sprint 1?"
-  "Sprint đầu tiên bắt đầu ngày nào?"
-  "Tổng số task của Sprint 1 là bao nhiêu?"
-  "Re-est của Sprint 1 là bao nhiêu giờ?"
-  "TùngDV có task nào trong Sprint 1 không?"
-  "Có issue nào trong Issue management không?"
-)
-for query in "${queries[@]}"; do
-  echo
-  echo "### $query"
-  python3 scripts/run.py --project nexus --query "$query"
-done
+"$PY" scripts/demo_showcase.py

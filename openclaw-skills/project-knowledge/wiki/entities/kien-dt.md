@@ -4,6 +4,7 @@ name: "KiênĐT"
 assignee: kien-dt
 role: FE
 project: nexus
+visibility: internal
 task_count: { facts_ref: "raw/nexus-people.facts.json#kien-dt.task_count" }
 estimate_h: { facts_ref: "raw/nexus-people.facts.json#kien-dt.estimate_h" }
 actual_h: { facts_ref: "raw/nexus-people.facts.json#kien-dt.actual_h" }

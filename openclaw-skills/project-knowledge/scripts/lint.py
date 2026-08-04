@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 
 import yaml
+import document_registry
+from artifact_paths import frontmatter_is_current, payload_is_current
 
 ROOT = Path(__file__).resolve().parent.parent
 WIKI = ROOT / "wiki"
@@ -38,6 +40,7 @@ def warn(lint, where, msg):
 def load_pages():
     """Đọc frontmatter của mọi wiki/**/*.md (trừ index/log)."""
     pages = {}
+    versions = document_registry.current_versions(ROOT)
     for p in sorted(WIKI.rglob("*.md")):
         if p.name in ("index.md", "log.md"):
             continue
@@ -52,6 +55,8 @@ def load_pages():
         except yaml.YAMLError as e:
             err("lint-schema", rel, f"frontmatter hỏng: {e}")
             continue
+        if not frontmatter_is_current(fm, ROOT, versions):
+            continue
         pages[rel] = {"path": p, "fm": fm, "body": m.group(2)}
     return pages
 
@@ -59,8 +64,11 @@ def load_pages():
 def load_facts():
     """Gom mọi raw/*.facts.json thành một bảng tra phẳng để lint-numbers dùng."""
     facts = {}
+    versions = document_registry.current_versions(ROOT)
     for p in sorted(RAW.glob("*.facts.json")):
-        facts[p.name] = json.loads(p.read_text(encoding="utf-8"))
+        payload = json.loads(p.read_text(encoding="utf-8"))
+        if payload_is_current(payload, ROOT, versions):
+            facts[p.name] = payload
     return facts
 
 
@@ -170,7 +178,9 @@ def lint_contract(schema):
 
 # ------------------------------------------------------------- 1. vocab
 def lint_vocab(schema):
-    cfgs = sorted(RAW.glob("*-config.facts.json"))
+    versions = document_registry.current_versions(ROOT)
+    cfgs = [p for p in sorted(RAW.glob("*-config*.facts.json"))
+            if payload_is_current(json.loads(p.read_text(encoding="utf-8")), ROOT, versions)]
     cfg = cfgs[0] if cfgs else None
     if cfg is None or not cfg.exists():
         warn("lint-vocab", "raw/", "chưa có *-config.facts.json, bỏ qua đối chiếu")
@@ -193,8 +203,12 @@ def lint_vocab(schema):
 def lint_observed(schema):
     """Giá trị DIMENSION thực gặp trong sprint có nằm trong enum không.
     Đây là chỗ bắt được lỗi gõ 'Brse' trong file gốc."""
+    versions = document_registry.current_versions(ROOT)
     for p in sorted(RAW.glob("*-sprint*.facts.json")):
-        obs = json.loads(p.read_text(encoding="utf-8")).get("observed_dimensions", {})
+        payload = json.loads(p.read_text(encoding="utf-8"))
+        if not payload_is_current(payload, ROOT, versions):
+            continue
+        obs = payload.get("observed_dimensions", {})
         for dim, vals in obs.items():
             spec = schema["dimensions"].get(dim)
             if not spec:
@@ -226,6 +240,9 @@ def lint_schema(schema, pages):
         for f in spec["required_fields"]:
             if f not in fm or fm[f] in (None, "", []):
                 err("lint-schema", rel, f"thiếu trường bắt buộc `{f}`")
+        if fm.get("visibility") not in {"public", "internal", "restricted"}:
+            err("lint-schema", rel,
+                f"visibility='{fm.get('visibility')}' không thuộc public/internal/restricted")
         for dim in spec["required_dimensions"] + spec.get("optional_dimensions", []):
             if dim not in fm:
                 if dim in spec["required_dimensions"]:
@@ -246,11 +263,22 @@ LINK = re.compile(r"\[\[([^\]]+)\]\]")
 
 def lint_refs(pages):
     slugs = {Path(rel).stem: rel for rel in pages}
+    current = document_registry.current_versions(ROOT)
 
     for rel, pg in pages.items():
         for rp in pg["fm"].get("raw_paths") or []:
-            if not (ROOT / rp).exists():
+            raw = ROOT / rp
+            if not raw.exists():
                 err("lint-refs", rel, f"raw_paths trỏ tới file không tồn tại: {rp}")
+                continue
+            text = raw.read_text(encoding="utf-8")
+            match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+            metadata = yaml.safe_load(match.group(1)) if match else {}
+            doc_id = metadata.get("doc_id") if metadata else None
+            version = metadata.get("version") if metadata else None
+            if doc_id in current and int(version or 0) != current[doc_id]:
+                err("lint-refs", rel,
+                    f"tham chiếu raw superseded `{rp}` ({doc_id}@v{version}); current=v{current[doc_id]}")
 
     # liên kết hai chiều: A nhắc B thì B phải nhắc lại A
     out = {rel: set(LINK.findall(pg["body"]) + LINK.findall(str(pg["fm"]))) for rel, pg in pages.items()}

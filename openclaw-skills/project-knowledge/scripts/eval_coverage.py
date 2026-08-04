@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -16,12 +17,18 @@ from response_style import check_style  # noqa: E402
 
 def main() -> int:
     suite = json.loads(SUITE.read_text(encoding="utf-8"))
+    env = os.environ.copy()
+    env.setdefault("PROJECT_KNOWLEDGE_COVERAGE_GRANTS",
+                   '{"Đô":["project_knowledge:approve_coverage"]}')
+    env.setdefault("PROJECT_KNOWLEDGE_APPROVAL_IDS",
+                   "nexus-demo-person-role-20260803,nexus-demo-person-task-20260803")
     failures = []
     passed = 0
     for case in suite["questions"]:
         proc = subprocess.run(
-            [sys.executable, str(RUN), "--project", "nexus", "--query", case["q"]],
-            cwd=ROOT, text=True, capture_output=True, check=False,
+            [sys.executable, str(RUN), "--project", "nexus", "--query", case["q"],
+             "--actor", "coverage-eval", "--roles", "project_member", "--no-cache"],
+            cwd=ROOT, text=True, capture_output=True, check=False, env=env,
         )
         try:
             got = json.loads(proc.stdout)

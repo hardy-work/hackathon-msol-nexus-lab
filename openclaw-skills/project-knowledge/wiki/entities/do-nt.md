@@ -4,6 +4,7 @@ name: "ĐôNT"
 assignee: do-nt
 role: BE
 project: nexus
+visibility: internal
 task_count: { facts_ref: "raw/nexus-people.facts.json#do-nt.task_count" }
 estimate_h: { facts_ref: "raw/nexus-people.facts.json#do-nt.estimate_h" }
 actual_h: { facts_ref: "raw/nexus-people.facts.json#do-nt.actual_h" }

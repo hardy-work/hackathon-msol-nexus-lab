@@ -16,6 +16,9 @@ import openpyxl
 import yaml
 from openpyxl.utils import get_column_letter
 
+import document_registry
+from artifact_paths import payload_is_current
+
 ROOT = Path(__file__).resolve().parent.parent
 G, R, Y, D, OFF = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
 
@@ -36,8 +39,11 @@ def covered_cells():
             for v in node:
                 walk(v)
 
+    versions = document_registry.current_versions(ROOT)
     for p in sorted((ROOT / "raw").glob("*.facts.json")):
-        walk(json.loads(p.read_text(encoding="utf-8")))
+        payload = json.loads(p.read_text(encoding="utf-8"))
+        if payload_is_current(payload, ROOT, versions):
+            walk(payload)
     return cov
 
 

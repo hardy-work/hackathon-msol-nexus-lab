@@ -22,9 +22,12 @@ Nguyên tắc chặn: thà không trả lời còn hơn trả lời một con s�
 """
 import json
 import re
+from collections import Counter
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import yaml
+from artifact_paths import current_versions, frontmatter_is_current, payload_is_current
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "raw"
@@ -50,8 +53,6 @@ def check_ingest(name, value, unit, src):
 # ------------------------------------------------- policy=answer · GATE 4
 # Số KHÔNG phải giá trị đo lường — che đi trước khi soi.
 MASK = [
-    r"\d{4}-\d{2}-\d{2}",                  # ngày ISO: 2025-12-09
-    r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b",  # ngày dd/mm/yyyy · dd-mm-yyyy (VĂN hay dùng)
     # ĐỊNH DANH văn bản (luồng VĂN) — KHÔNG phải số đo, giống ô Excel / phiên bản.
     # Đặt TRƯỚC mẫu ô Excel: nếu không, '[A-Z]{1,3}\d+' nuốt 'QH13' và bỏ sót năm.
     r"\b\d+/\d{4}/[A-ZĐ]+\d*(?:[-–][A-ZĐ]+\d*)*", # số hiệu luật: 86/2015/QH13, 72/2013/NĐ-CP
@@ -60,11 +61,20 @@ MASK = [
     r"\bv\d+(?:\.\d+)*",                   # phiên bản: v2.1
     r"§[\d.]+",                            # tham chiếu mục: §5.3
     r"\b[A-Z]{1,3}\d+(?::[A-Z]{1,3}\d+)?", # ô Excel: H14, B3:B11
+    r"\b[A-Z]{1,10}-\d+\b",                # mã task: AU-1, NEX-123
     r"[Ss]print\s*\d+(?:\s*[-–]\s*\d+)?",  # Sprint 0, Sprint 0–7
     r"\bbậc\s*\d",                         # bậc 1
     r"\b\d+\.\d+\.",                       # số thứ tự mục: 2.4.
     r"\b2\.\d+\.Sprint",                   # tên sheet
 ]
+
+DATE_TOKEN = re.compile(
+    r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b"
+)
+TRANSFORM_TOKEN = re.compile(
+    r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b|"
+    r"(?<![\w.])\d[\d.,]*(?![\w.])"
+)
 
 # ---- ĐƠN VỊ (pha 2) --------------------------------------------------------
 # Câu trả lời viết đơn vị bằng NHIỀU cách ("h" · "giờ" · "hour"); facts lưu một chuỗi
@@ -103,6 +113,68 @@ def _merge_units(dst, src):
         dst.setdefault(k, set()).update(v)
 
 
+def _canonical_transform_number(token):
+    """Canonical numeric spelling for Stage 3 comparison (format-only changes OK)."""
+    if DATE_TOKEN.fullmatch(token):
+        return f"date:{token}"
+    raw = token.strip()
+    # Multiple separators of one kind are thousands separators. With one
+    # separator, preserve decimal semantics unless exactly three trailing digits.
+    if raw.count(",") + raw.count(".") > 1:
+        raw = raw.replace(",", "").replace(".", "")
+    elif "," in raw:
+        left, right = raw.split(",", 1)
+        raw = left + right if len(right) == 3 and len(left) >= 1 else left + "." + right
+    elif "." in raw:
+        left, right = raw.split(".", 1)
+        if len(right) == 3 and len(left) > 3:
+            raw = left + right
+    try:
+        dec = Decimal(raw)
+    except InvalidOperation:
+        return token
+    text = format(dec, "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def transform_numbers(text):
+    """Return [(canonical, recognized_unit, original)] for prose transformation gates."""
+    rows = []
+    for match in TRANSFORM_TOKEN.finditer(text):
+        token = match.group(0)
+        # Ignore document/task identifiers, section references and spreadsheet cells.
+        prefix = text[max(0, match.start() - 24):match.start()]
+        whole = text[max(0, match.start() - 12):min(len(text), match.end() + 12)]
+        if any(re.search(pat, whole) for pat in MASK):
+            continue
+        unit = AnswerGuard._unit_after(text[match.end():]) if "AnswerGuard" in globals() else None
+        rows.append((_canonical_transform_number(token), unit, token))
+    return rows
+
+
+def check_transform(before, after, *, allow_loss=False):
+    """Numeric transform gate.
+
+    Stage 3 uses the strict default (no new number and no lost unit-bearing
+    number). Stage 4 summaries pass ``allow_loss=True`` because omission is
+    allowed, while invention/rounding is still blocked.
+    """
+    src = transform_numbers(before)
+    dst = transform_numbers(after)
+    src_counts = Counter((n, u) for n, u, _ in src)
+    dst_counts = Counter((n, u) for n, u, _ in dst)
+    errors, warnings = [], []
+    for key, count in (dst_counts - src_counts).items():
+        errors.append(f"số mới/đổi/làm tròn `{key[0]}`"
+                      + (f" {key[1]}" if key[1] else ""))
+    if not allow_loss:
+        lost = src_counts - dst_counts
+        for (number, unit), count in lost.items():
+            message = f"rơi {count}× `{number}`" + (f" {unit}" if unit else "")
+            (errors if unit else warnings).append(message)
+    return errors, warnings
+
+
 class AnswerGuard:
     """Số hợp lệ = số có thật, gắn NGUỒN. Hai chế độ:
 
@@ -126,8 +198,11 @@ class AnswerGuard:
         self.units_by_page: dict[str, dict] = {}   # trang  -> {dạng-số: {đơn vị}}
         self.units_by_file: dict[str, dict] = {}   # file   -> {dạng-số: {đơn vị}}
         self.units_by_sheet: dict[str, dict] = {}  # sheet  -> {dạng-số: {đơn vị}}
+        versions = current_versions(ROOT)
         for f in sorted(RAW.glob("*.facts.json")):
             data = json.loads(f.read_text(encoding="utf-8"))
+            if not payload_is_current(data, ROOT, versions):
+                continue
             bucket: set = set()
             ubucket: dict = {}
             self._collect(data, bucket, ubucket)  # -> self.values/value_units (toàn cục) + bucket/ubucket (cục bộ)
@@ -138,20 +213,44 @@ class AnswerGuard:
                 self.by_sheet.setdefault(data["sheet"], set()).update(bucket)
                 _merge_units(self.units_by_sheet.setdefault(data["sheet"], {}), ubucket)
         self._load_wiki_facts()
-        # Số CẤU TRÚC (đếm bản ghi, ≤20): tất định, không phải số đo -> cho phép TOÀN CỤC.
-        self.structural = {str(n) for n in range(0, 21)}
+        # Không có "số nhỏ mặc nhiên an toàn". Mọi count, kể cả 0–20, phải tới từ
+        # facts của đúng citation. Task/document identifiers được MASK riêng ở trên.
 
-    # dạng trình bày tất định của một số: 148.0 -> {148}, 0.9959 -> {99.59, 0.9959, …}
-    def _forms(self, v):
+    @staticmethod
+    def _decimal_text(value):
+        """Biểu diễn thập phân chính xác, không sinh biến thể đã làm tròn."""
+        try:
+            dec = Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            return None
+        text = format(dec, "f")
+        if "." in text:
+            text = text.rstrip("0").rstrip(".")
+        return text or "0"
+
+    # Dạng trình bày TƯƠNG ĐƯƠNG chính xác: 148.0 -> 148; 0.5125 -> 0.5125/51.25%.
+    # Tuyệt đối không tạo 45.5 -> 46: flow coi làm tròn là sai dữ liệu.
+    def _forms(self, v, unit=None):
         if not isinstance(v, (int, float)) or isinstance(v, bool):
             return set()
-        forms = {repr(v), str(v)}
-        if isinstance(v, float):
-            if v.is_integer():
-                forms.add(str(int(v)))
-            forms |= {f"{v:.{d}f}" for d in range(0, 7)}          # làm tròn
-            forms |= {f"{v * 100:.{d}f}" for d in range(0, 5)}    # dạng phần trăm
-        return {f.rstrip("0").rstrip(".") if "." in f else f for f in forms}
+        exact = self._decimal_text(v)
+        if exact is None:
+            return set()
+        forms = {exact}
+        # Percentage is only equivalent for an explicitly registered ratio.
+        # A fact "43 hours" must never unlock an answer "4300".
+        if _canon_fact_unit(unit) == "ratio":
+            percent = self._decimal_text(Decimal(str(v)) * Decimal("100"))
+            if percent is not None:
+                forms.add(percent)
+        return forms
+
+    @staticmethod
+    def _date_form(value):
+        if not isinstance(value, str):
+            return None
+        value = value.strip()
+        return f"date:{value}" if DATE_TOKEN.fullmatch(value) else None
 
     def _collect(self, node, bucket, ubucket):
         """Đi khắp facts.json: mỗi {value,src} -> dạng-số vào self.values (toàn cục) VÀ
@@ -160,12 +259,16 @@ class AnswerGuard:
         if isinstance(node, dict):
             if "value" in node and "src" in node:
                 u = _canon_fact_unit(node.get("unit"))
-                for f in self._forms(node["value"]):
+                for f in self._forms(node["value"], node.get("unit")):
                     self.values.add(f); bucket.add(f)
                     self.provenance.setdefault(f, node["src"])
                     if u:
                         self.value_units.setdefault(f, set()).add(u)
                         ubucket.setdefault(f, set()).add(u)
+                date_form = self._date_form(node["value"])
+                if date_form:
+                    self.values.add(date_form); bucket.add(date_form)
+                    self.provenance.setdefault(date_form, node["src"])
                 if isinstance(node.get("text"), str):
                     self.values.add(node["text"]); bucket.add(node["text"])
                     self.provenance.setdefault(node["text"], node["src"])
@@ -179,6 +282,8 @@ class AnswerGuard:
         try:
             fpath, dotted = ref.split("#", 1)
             node = json.loads((ROOT / fpath).read_text(encoding="utf-8"))
+            if not payload_is_current(node, ROOT):
+                return None
             node = node.get("facts", node)
             for part in dotted.split("."):
                 node = node[part]
@@ -198,6 +303,8 @@ class AnswerGuard:
                     fm = yaml.safe_load(m.group(1)) or {}
                 except yaml.YAMLError:
                     continue
+                if not frontmatter_is_current(fm, ROOT):
+                    continue
                 # LUẬT OCR: trang OCR là bản ĐOÁN — KHÔNG đăng ký số (thực thi ở CODE).
                 is_ocr = fm.get("ocr") in (True, "true")
                 bucket: set = set()
@@ -216,7 +323,7 @@ class AnswerGuard:
                     else:
                         continue
                     u = _canon_fact_unit(unit)
-                    for f in self._forms(val):
+                    for f in self._forms(val, unit):
                         self.values.add(f); bucket.add(f)
                         self.provenance.setdefault(f, src)
                         if u:
@@ -262,23 +369,47 @@ class AnswerGuard:
     def check(self, text, cites=None):
         """-> danh sách con số KHÔNG truy được nguồn.
 
-        cites có -> chỉ chấp nhận số thuộc facts của nguồn đã trích (ngữ cảnh).
-        cites rỗng/None -> lùi về tập TOÀN CỤC (self-test, back-compat)."""
+        cites là list (kể cả list rỗng) -> chỉ chấp nhận facts của nguồn đã trích.
+        cites=None -> lùi về tập TOÀN CỤC cho self-test/back-compat."""
         masked = text
+        # Dates are project facts, not harmless identifiers. Validate the whole
+        # date token first, then remove it so its year/month/day are not checked
+        # again as independent numbers.
+        date_bad = []
+        date_spans = []
+        if cites is not None:
+            date_scope: set = set()
+            date_units: dict = {}
+            for c in cites:
+                sf, su = self._resolve_cite(str(c))
+                date_scope |= sf
+                _merge_units(date_units, su)
+        else:
+            date_scope = self.values
+            date_units = self.value_units
+        for match in DATE_TOKEN.finditer(masked):
+            if f"date:{match.group(0)}" not in date_scope:
+                date_bad.append(match.group(0))
+            date_spans.append(match.span())
+        if date_spans:
+            chars = list(masked)
+            for start, end in date_spans:
+                chars[start:end] = " " * (end - start)
+            masked = "".join(chars)
         for pat in MASK:
             masked = re.sub(pat, " ", masked)
-        if cites:
+        if cites is not None:
             scope: set = set()
             uscope: dict = {}
             for c in cites:
                 sf, su = self._resolve_cite(str(c))
                 scope |= sf
                 _merge_units(uscope, su)
-            valid = scope | self.structural
+            valid = scope
         else:
-            valid = self.values | self.structural
+            valid = self.values
             uscope = self.value_units
-        bad = []
+        bad = list(date_bad)
         for m in re.finditer(r"(?<![\w.])\d+(?:[.,]\d+)?", masked):
             tok = m.group(0)
             norm = tok.replace(",", ".")
@@ -305,6 +436,12 @@ class AnswerGuard:
 
 
 _guard = None
+
+
+def reset() -> None:
+    """Drop the corpus-scoped guard after a new current version is built."""
+    global _guard
+    _guard = None
 
 
 def check_answer(text, cites=None):
@@ -339,10 +476,13 @@ if __name__ == "__main__":
         ("10 task — đúng trang", "10 task", ["wiki/entities/son-bh.md"], []),
         ("10 giờ — lệch đơn vị", "10 giờ", ["wiki/entities/son-bh.md"], ["10"]),
         ("43 phút — lệch đơn vị", "43 phút", ["wiki/entities/son-bh.md"], ["43"]),
-        ("ngày ISO — định danh", "2026-07-27", None, []),
-        ("0 task — số cấu trúc", "0 task", ["wiki/entities/tung-dv.md"], []),
+        ("ngày ISO — đúng nguồn", "2026-07-27", ["Summary project!D4"], []),
+        ("ngày ISO — sai nguồn", "2026-07-28", ["Summary project!D4"], ["2026-07-28"]),
+        ("0 task — đúng trang", "0 task", ["wiki/entities/tung-dv.md"], []),
+        ("task id — định danh", "AU-1", [], []),
         ("999 giờ — bịa", "999 giờ", None, ["999"]),
     ]
+    assert "46" not in g._forms(45.5, "hour"), "numeric guard không được cho phép làm tròn 45.5 -> 46"
     fails = 0
     for label, text, cites, want in CASES:
         got = g.check(text, cites=cites)

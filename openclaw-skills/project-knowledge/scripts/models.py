@@ -20,7 +20,7 @@ LIGHT = "claude-sonnet-5"
 # Gate 3b: review nội dung wiki bằng Sonnet 5 khi chạy Claude Code subscription.
 REVIEW = "claude-sonnet-5"
 
-# Rẻ: định tuyến / phân loại (chưa dùng ở v1 — để sẵn cho bộ định tuyến bậc RAG).
+# Rẻ: định tuyến / phân loại query trước khi chọn retrieval tier.
 CHEAP = "claude-haiku-4-5-20251001"
 
 

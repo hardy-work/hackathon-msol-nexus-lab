@@ -2,6 +2,7 @@
 raw_id: nexus-master-schedule
 doc_id: nexus-plan
 sheet: 'Master schedule'
+version: 1
 kind: rows
 generated_by: scripts/extract_nexus.py
 ---

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """STAGE 4 (luồng VĂN) — WIKI-INGEST: trang `source` cho tài liệu văn xuôi.
 
-  raw/<doc_id>.md + CLAUDE.md + schema.yml  --[ claude -p · opus 4.8 ]-->  wiki/sources/<doc_id>.md
+  structured/<doc_id>.md + raw provenance + contract --[ Opus ]--> wiki/sources/<doc_id>.md
 
 Song song với `ingest.py` (chỉ làm entity-person của corpus handy). Việc NẶNG (soạn
 nội dung theo hợp đồng) → dùng models.HEAVY.
@@ -28,6 +28,10 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import models  # noqa: E402
 import build_index  # noqa: E402
+import numeric_guard  # noqa: E402
+import structure  # noqa: E402
+from artifact_paths import artifact_path  # noqa: E402
+from document_registry import current as current_document  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 G, R, D, OFF = "\033[32m", "\033[31m", "\033[2m", "\033[0m"
@@ -41,8 +45,8 @@ Nhiệm vụ: viết trang `wiki/sources/{doc_id}.md` — trang loại `source` 
 ===== SCHEMA MÁY ĐỌC (schema.yml) =====
 {schema}
 
-===== TÀI LIỆU TẦNG 2 (raw/{doc_id}.md) =====
-Đây là TOÀN BỘ nội dung đã trích. Không dùng gì ngoài đây.
+===== TÀI LIỆU ĐÃ QUA STAGE 3 (structured/{doc_id}.md) =====
+Đây là TOÀN BỘ nội dung được phép dùng. Không dùng gì ngoài đây.
 {ocr_note}
 {raw}
 
@@ -55,9 +59,11 @@ Nhiệm vụ: viết trang `wiki/sources/{doc_id}.md` — trang loại `source` 
    page: source
    name: "{title}"
    doc_id: {doc_id}
+   version: {version}
    domain: {domain}          # DIMENSION — chọn đúng giá trị này, không đổi
+   visibility: {visibility}
    raw_paths:
-     - raw/{doc_id}.md
+     - {raw_path}
    KHÔNG thêm `project` (tài liệu này không thuộc dự án phần mềm nào).
 {facts_rule}
 3. Thân bài: TÓM TẮT CÓ CẤU TRÚC, trung thành, tiếng Việt. Bám bố cục thật của tài
@@ -75,15 +81,30 @@ Nhiệm vụ: viết trang `wiki/sources/{doc_id}.md` — trang loại `source` 
 
 
 def load_docs():
-    spec = yaml.safe_load((ROOT / "extract/van-docs.yml").read_text(encoding="utf-8"))
+    spec_path = ROOT / "extract/van-docs.yml"
+    if not spec_path.exists():
+        return {}
+    spec = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
     return {d["doc_id"]: d for d in spec["docs"]}
 
 
 def ingest_one(doc_id, d, contract, schema, timeout=600):
-    raw_path = ROOT / "raw" / f"{doc_id}.md"
+    try:
+        registry = current_document(doc_id, ROOT)
+    except (KeyError, ValueError) as exc:
+        return None, 0.0, f"documents.yml chưa có current version hợp lệ: {exc}"
+    raw_path = artifact_path(ROOT, registry, doc_id, "md")
     if not raw_path.exists():
-        return None, 0.0, f"chưa có raw/{doc_id}.md (chạy extract_van.py trước)"
+        return None, 0.0, f"chưa có {raw_path.relative_to(ROOT)} (chạy extract_van.py trước)"
     raw = raw_path.read_text(encoding="utf-8")
+    structured_path = ROOT / "structured" / f"{doc_id}.md"
+    if not structured_path.exists():
+        return None, 0.0, (f"chưa có structured/{doc_id}.md — Stage 3 là bắt buộc; "
+                           f"chạy scripts/structure.py --doc {doc_id}")
+    metadata_errors = structure.validate_source_metadata(doc_id, raw_path, structured_path)
+    if metadata_errors:
+        return None, 0.0, "structured không khớp raw: " + "; ".join(metadata_errors)
+    structured = structured_path.read_text(encoding="utf-8")
     is_ocr = "\nocr: true" in raw or raw.startswith("ocr: true")
     ocr_note = ("\n[LƯU Ý: tài liệu này do OCR sinh (máy đọc ảnh) — có thể sai vài "
                 "chữ/số. KHÔNG coi số ở đây là nguyên văn.]\n") if is_ocr else ""
@@ -101,15 +122,18 @@ def ingest_one(doc_id, d, contract, schema, timeout=600):
         facts_rule = (
             "   Sau `raw_paths`, khai thêm các SỐ ĐO NGƯỠNG/CHU KỲ/SỐ LƯỢNG đáng tra của tài\n"
             "   liệu ở chế độ chép — mỗi số một trường frontmatter tên gợi nhớ (snake_case):\n"
-            "     do_dai_mat_khau_toi_thieu: {{ facts: 8, unit: \"ký tự\", src: \"raw/{doc_id}.md :: Điều 7\" }}\n"
+            "     do_dai_mat_khau_toi_thieu: {{ facts: 8, unit: \"ký tự\", src: \"{raw_path} :: Điều 7\" }}\n"
             "   Quy tắc: (a) CHỈ khai số CÓ THẬT trong tài liệu, `src` trỏ đúng Điều/Mục chứa nó;\n"
             "   (b) mỗi trường bắt buộc đủ `facts` + `unit` + `src`; (c) chỉ khai số ĐO thật sự\n"
             "   đáng hỏi (ngưỡng, chu kỳ, số lượng) — BỎ QUA số hiệu văn bản/mã/số Điều (định danh);\n"
-            "   (d) TUYỆT ĐỐI không tự tính/suy ra số mới. Không có số đo đáng khai thì bỏ trống mục này.").format(doc_id=doc_id)
+            "   (d) TUYỆT ĐỐI không tự tính/suy ra số mới. Không có số đo đáng khai thì bỏ trống mục này.") \
+            .format(doc_id=doc_id, raw_path=raw_path.relative_to(ROOT).as_posix())
     prompt = PROMPT.format(
         doc_id=doc_id, title=d.get("title", doc_id), domain=d["domain"],
-        contract=contract, schema=schema, raw=raw, ocr_note=ocr_note,
-        ocr_rule=ocr_rule, facts_rule=facts_rule)
+        version=int(registry["version"]), visibility=registry.get("visibility", "internal"),
+        contract=contract, schema=schema, raw=structured, ocr_note=ocr_note,
+        ocr_rule=ocr_rule, facts_rule=facts_rule,
+        raw_path=raw_path.relative_to(ROOT).as_posix())
 
     t0 = time.time()
     out = subprocess.run(
@@ -128,6 +152,9 @@ def ingest_one(doc_id, d, contract, schema, timeout=600):
         if not m:
             return None, dt, "không tìm thấy frontmatter (---)"
         text = text[m.start():]
+    number_errors, _ = numeric_guard.check_transform(structured, text, allow_loss=True)
+    if number_errors:
+        return None, dt, "GATE 2/WIKI chặn: " + "; ".join(number_errors)
     return text + "\n", dt, None
 
 

@@ -2,7 +2,9 @@
 page: source
 name: "Nexus Plan"
 doc_id: nexus-plan
+version: 1
 domain: nexus
+visibility: internal
 raw_paths:
   - raw/nexus-backlog.md
   - raw/nexus-config.md

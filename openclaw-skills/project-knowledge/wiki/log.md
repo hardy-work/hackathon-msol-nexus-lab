@@ -1,5 +1,31 @@
 # Nhật ký Nexus Plan
 
+## 2026-08-03 — Haiku router và Slack HTTP boundary
+
+- Thêm `scripts/router.py`: Haiku chỉ phân loại `structured`, `document`,
+  `semantic`, `open`, `action`, `unsupported`; không sinh câu trả lời và không
+  được thay thế nguồn facts.
+- Router chỉ chạy sau khi Tier 1 không trả được; lỗi model/JSON/timeout tự lui
+  về flow cũ và heuristic an toàn. Output JSON có telemetry `route` tuỳ chọn.
+- Thêm `router_selftest.py` (9/9) và đưa vào `scripts/run_all.sh`.
+- Thêm `adapters/slack/slack_http.py`: verify signing secret, URL verification,
+  Block Kit response và optional `chat.postMessage` bằng token từ environment;
+  không ghi credential vào repo.
+- Thêm HTTP boundary self-test 5/5; full pipeline rebuild giữ Gate 1, Gate 3a,
+  baseline 12/12, extended 24/24 và coverage 21/21.
+- Proposal action bổ sung `required_permission=project_action:write` và
+  `approval_flow=external_action_skill`; quyền thực tế vẫn thuộc action skill,
+  Project Knowledge không tự ghi dữ liệu.
+- Mở rộng `build_graph.py` từ graph trang wiki thành graph task có 60 task node,
+  quan hệ assignee/role/sprint/milestone/status/priority và provenance từng ô.
+- Thêm `graph_retrieval.py` + graph self-test 5/5; câu hỏi như “liệt kê task thuộc
+  Authentication” trả bằng quan hệ graph, không cần LLM.
+- Thêm `versioning.py`: tạo `derived/corpus_version.json`, phát hiện input stale
+  theo digest của originals/raw/wiki/schema/coverage và đưa `freshness`, version,
+  as-of vào JSON contract.
+- Bổ sung Stage 0/1 inventory: `inventory.py` ghi format/hash/duplicate và cờ
+  canonical review; không tự mutate `originals/`.
+
 ## 2026-08-03 — mở rộng coverage và kiểm tra văn phong
 
 - Router bậc 1 đã chọn được sheet/cột cho Resource plan, Master schedule, Summary và Sprint;
