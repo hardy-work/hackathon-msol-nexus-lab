@@ -62,10 +62,16 @@ def main() -> int:
         workbook(updated, "new")
         write_registry(root, current)
 
-        no_op = intake.decide(root, formatted)
+        review = intake.decide(root, formatted)
+        assert review["flow"] == "identity_review"
+        assert review["candidate_doc_ids"] == ["plan"]
+
+        no_op = intake.decide(root, formatted, confirmed_doc_id="plan")
         assert no_op["flow"] == "no_op"
 
-        decision = intake.decide(root, updated)
+        review = intake.decide(root, updated)
+        assert review["flow"] == "identity_review"
+        decision = intake.decide(root, updated, confirmed_doc_id="plan")
         assert decision["flow"] == "reingest"
         assert decision["doc_id"] == "plan"
         assert decision["from_version"] == 1
@@ -89,10 +95,15 @@ def main() -> int:
         (root / "documents.yml").write_text("documents: []\n", encoding="utf-8")
         decision = intake.decide(root, source)
         assert decision["flow"] == "initial_ingest"
+        assert decision["doc_id"].startswith("new-plan-")
+        assert decision["source_name"] == "New Plan.xlsx"
+        assert decision["kind"] == "xlsx"
         assert decision["version"] == 1
         intake.register(root, source, decision)
-        assert document_registry.current("new-plan", root)["doc_id"] == "new-plan"
-        assert document_registry.current("new-plan", root)["version"] == 1
+        registered_new = document_registry.current(decision["doc_id"], root)
+        assert registered_new["doc_id"] == decision["doc_id"]
+        assert registered_new["version"] == 1
+        assert registered_new["extractor"] == "unsupported"
 
     print("✓ intake self-test: 8/8 qua")
     return 0

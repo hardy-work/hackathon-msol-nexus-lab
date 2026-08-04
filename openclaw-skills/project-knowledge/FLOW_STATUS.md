@@ -12,13 +12,16 @@
 | Gate 3a | `lint.py` | Contract, current version, visibility, references and numeric provenance |
 | Gate 3b | `review.py` | Sonnet review is opt-in; previous Nexus run passed 8/8 |
 | Stage 6 · Publish | DuckDB + wiki index | Rebuildable from source; `derived/` is intentionally ignored |
+| Stage 5 · RAG Derive | `build_rag_indexes.py` | Mandatory BM25 + persistent Chroma store, bound to current input digest |
+| Keyword retrieval | `bm25_index.py` | `bm25s` index over current Gate-3 wiki pages; missing/stale index fails closed |
 | Graph derive/retrieval | `build_graph.py`, `graph_retrieval.py` | 60 task nodes and provenance edges; no invented dependency edges |
-| Vector retrieval | `embed_index.py` / BGE-M3 | Dependency is pinned; keyword fallback stays available if model is not downloaded |
+| Vector retrieval | `embed_index.py` / BGE-M3 + Chroma | Persistent Chroma collection is mandatory; hash embeddings exist only for offline/CI contract runs |
 | Version/freshness | `versioning.py` | Digest includes originals/raw/structured/wiki/schema/coverage/registry/access |
-| Q&A routing | `answer.py`, Haiku router | Tier 0 catalog → Tier 1 → graph → scoped keyword/vector → Sonnet synthesis |
+| Q&A routing | `answer.py`, Haiku router | Tier 0 catalog → Tier 1 → graph → scoped BM25/Chroma → Sonnet synthesis |
 | Access + coverage | `access_control.py`, `access.yml` | Fail-closed actor/role; page ACL reaches DuckDB/graph/wiki; approval authority is external |
 | Cache + context | `query_cache.py`, `conversation.py` | Version/access/history key, TTL/max retention, persistent `.runtime/` volume |
 | Long-lived runtime | `runtime_engine.py`, `benchmark.py` | Reuses access-scoped DuckDB views, graph, BGE-M3 and cache connections |
+| Read-only filesystem boundary | `scripts/filesystem_boundary.py` | Runtime chỉ đọc corpus/index trong skill root; chặn traversal/symlink escape; cache/telemetry nằm ở `.runtime` hoặc volume riêng |
 | Slack | HTTP + durable worker | HMAC, ACK-before-query, event dedup, retry/dead-letter, persisted response |
 | Telemetry | `telemetry.py`, `/health` | Query/queue latency and state without raw question, answer or actor identity |
 | Production eval | onboarding + production suites | Auth/context/cache/concurrency and 10 PM/new-dev representative questions |

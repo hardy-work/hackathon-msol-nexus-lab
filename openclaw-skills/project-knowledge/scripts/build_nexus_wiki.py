@@ -14,6 +14,8 @@ RAW = ROOT / "raw"
 WIKI = ROOT / "wiki"
 DOC = current("nexus-plan")
 VERSION = int(DOC["version"])
+SOURCE_NAME = str(DOC.get("source_name") or Path(str(DOC["original"])).name)
+SOURCE_KIND = str(DOC.get("kind") or Path(str(DOC["original"])).suffix.lstrip(".") or "unknown")
 
 
 def main():
@@ -30,19 +32,22 @@ def main():
     config_md = artifact_rel(DOC, "nexus-config", "md").as_posix()
     sprint_md = artifact_rel(DOC, "nexus-sprint1", "md").as_posix()
     people_md = artifact_rel(DOC, "nexus-people", "md").as_posix()
+    raw_block = "".join(f"  - {p}\n" for p in source_paths)
     (WIKI / "sources").mkdir(parents=True, exist_ok=True)
     (WIKI / "entities").mkdir(parents=True, exist_ok=True)
 
     links = " · ".join(f"[[{slug}]]" for slug in people)
-    source = """---
+    source = f"""---
 page: source
 name: "Nexus Plan"
 doc_id: nexus-plan
-version: """ + str(VERSION) + """
+version: {VERSION}
 domain: nexus
 visibility: internal
+source_name: {json.dumps(SOURCE_NAME, ensure_ascii=False)}
+kind: {SOURCE_KIND}
 raw_paths:
-""" + "".join(f"  - {p}\n" for p in source_paths) + """---
+{raw_block}---
 
 # Nexus Plan
 
@@ -52,12 +57,14 @@ lịch tổng, backlog, sprint, rủi ro, issue và Config. Các bảng được
 
 ## Các trang nhân sự
 
-""" + links + """
+{links}
 
 ## Nguồn
 
 - `doc_id`: nexus-plan
-- `raw_paths`: các bảng Nexus được trích từ `originals/nexus-plan.xlsx`.
+- `source_name`: {SOURCE_NAME}
+- `kind`: {SOURCE_KIND}
+- `raw_paths`: các bảng Nexus được trích từ `{DOC['original']}`.
 """
     (WIKI / "sources/nexus-plan.md").write_text(source, encoding="utf-8")
 

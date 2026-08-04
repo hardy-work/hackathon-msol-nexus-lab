@@ -5,6 +5,8 @@ doc_id: nexus-plan
 version: 1
 domain: nexus
 visibility: internal
+source_name: "Nexus Plan.xlsx"
+kind: xlsx
 raw_paths:
   - raw/nexus-backlog.md
   - raw/nexus-config.md
@@ -30,4 +32,6 @@ lịch tổng, backlog, sprint, rủi ro, issue và Config. Các bảng được
 ## Nguồn
 
 - `doc_id`: nexus-plan
+- `source_name`: Nexus Plan.xlsx
+- `kind`: xlsx
 - `raw_paths`: các bảng Nexus được trích từ `originals/nexus-plan.xlsx`.

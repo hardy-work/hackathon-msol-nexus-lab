@@ -30,8 +30,9 @@ Khi `--llm` được bật, các câu hỏi không trả được ở bậc 1 s�
 `graph`, `open`, `action` hoặc `unsupported`; nó không sinh câu trả lời. Route `graph`
 được dùng cho quan hệ nhiều bước giữa task/người/milestone/status. Route `open`
 hoặc route cần tổng hợp mới chuyển context đã chọn cho Sonnet. Nếu Claude/Haiku
-không chạy được, router tự lui về heuristic và flow keyword/LLM cũ, không làm
-thay đổi kết quả deterministic.
+không chạy được, router tự lui về heuristic, không làm thay đổi kết quả
+deterministic. Bậc 2 production luôn có cả BM25 và Chroma; nếu một index thiếu,
+stale hoặc khác digest với corpus thì runtime trả `error`, không âm thầm fallback.
 
 Khi tích hợp Claude, đọc adapter tại `adapters/claude/CLAUDE.md`; adapter chỉ thay lớp runtime, không thay contract facts/citation.
 
@@ -64,7 +65,8 @@ Hiển thị citation cùng câu trả lời khi đưa lên giao diện chat. Gi
    xác thực `asserted_by` có `required_permission` cùng `approval_id` hợp lệ.
 3. Sheet đã nạp nhưng chưa ký coverage chỉ được trả `not_in_kb`, không được khẳng định phủ định.
 4. Không thực hiện write action. Nếu người dùng muốn sửa Jira/Excel, trả lời context hiện có và chuyển yêu cầu cho action skill có permission/approval.
-5. Khi `derived/facts.duckdb` chưa tồn tại, yêu cầu chạy `bash scripts/run_all.sh` rồi thử lại.
+5. Khi `derived/facts.duckdb` hoặc `derived/rag_indexes.json` chưa tồn tại, yêu cầu
+   chạy `bash scripts/run_all.sh` rồi thử lại.
 6. Nếu người dùng yêu cầu ghi/cập nhật, chỉ tạo `suggested_actions`; không thực hiện action.
    Proposal phải giữ `required_permission=project_action:write` và chuyển cho action
    skill bên ngoài để kiểm tra actor/role và xin approval.
@@ -93,7 +95,10 @@ python scripts/demo_showcase.py --check --no-cache
 python scripts/demo_showcase.py --json
 ```
 
-Không bật `--llm` trong showcase chính. BGE-M3 được lazy-load và cold-start phụ
+Không bật `--llm` trong showcase chính. Stage 5 vẫn phải dựng BM25 và Chroma.
+Production dùng BGE-M3; offline/CI có thể đặt rõ
+`PROJECT_KNOWLEDGE_EMBEDDING_BACKEND=hash` để không tải model, nhưng vẫn phải tạo
+persistent Chroma và manifest. BGE-M3 được lazy-load và cold-start phụ
 thuộc mạnh vào máy; câu hỏi mở chỉ nên chạy như phần optional sau khi đã warm-up
 model và preflight xác nhận Claude CLI, auth/network cùng model id đều khả dụng.
 
@@ -105,6 +110,15 @@ gọi trong các eval để bắt output thiếu citation, lẫn runtime marker 
 `not_in_kb` thành phủ định chắc chắn.
 
 Smoke test cho contract/paraphrase nằm ở `scripts/skill_selftest.py`.
+Stage 5 RAG derive chạy bằng:
+
+```bash
+python3 scripts/build_rag_indexes.py
+```
+
+Lệnh này tạo `derived/bm25/`, `derived/chroma/` và `derived/rag_indexes.json`.
+`python3 scripts/versioning.py check` cũng fail nếu BM25/Chroma thiếu hoặc không
+cùng digest với corpus.
 Smoke test route offline nằm ở `scripts/router_selftest.py`; có thể xem route mà
 không gọi Claude bằng `python3 scripts/router.py --offline "câu hỏi"`.
 Kiểm tra freshness bằng `python3 scripts/versioning.py check`; metadata được tạo
@@ -114,6 +128,14 @@ Slack dùng `runtime_engine.py` trong cùng process để tái sử dụng DuckD
 Benchmark bằng `python3 scripts/benchmark.py --iterations 3 --concurrency 4` và
 benchmark cache bằng cách thêm `--cache`. Runtime state nằm ngoài `derived/` tại
 `.runtime/` hoặc volume do `PROJECT_KNOWLEDGE_STATE_DIR` chỉ định.
+
+Runtime query chạy trong read-only filesystem boundary (`scripts/filesystem_boundary.py`):
+chỉ được đọc `originals/`, `raw/`, `structured/`, `wiki/`, `derived/` và các file
+contract trong chính skill root. Đường dẫn tuyệt đối, `..` và symlink thoát root bị
+chặn fail-closed. Cache/conversation/telemetry/Slack queue là operational state,
+được ghi riêng ở `.runtime/` hoặc volume persistent; không được đặt state vào
+corpus/index. Production nên mount corpus read-only ở cấp container/volume để
+khóa thêm một lớp ngoài kiểm tra của Python.
 
 Bộ `eval_onboarding.py` kiểm 10 câu đại diện PM/dev mới. `eval_production.py` kiểm
 fail-closed authorization, external coverage approval, follow-up context, cache
@@ -127,9 +149,19 @@ tiên qua `derived/graph.json`. Graph chỉ là index dẫn xuất; mọi task v
 `src` từ `raw/nexus-sprint1.facts.json`, và không tự suy ra dependency nếu nguồn
 chưa khai báo.
 
+Bậc 2 dùng BM25 (`derived/bm25/`) để tìm lexical và Chroma
+(`derived/chroma/`, một embedding cho mỗi trang wiki current) để tìm ngữ nghĩa.
+Hai index đều được dựng từ wiki đã qua Gate 3, không index raw/chunk chưa duyệt.
+
 Stage 0/1 có `scripts/inventory.py` để kiểm kê format/hash và đánh dấu duplicate
 cho người duyệt canonical. Inventory không tự xoá hoặc chọn tài liệu; Gate 1
 vẫn là cổng bất biến của `originals/`.
+
+Gate 3a không chỉ lint page current: nó còn quét toàn bộ page lịch sử có
+`doc_id`/`version`. Version cũ bắt buộc có `superseded_by` trỏ tới page current
+cùng identity/version chain; target, raw_paths lịch sử và link trong snapshot phải
+tồn tại. Các snapshot cũ không bị ép backlink với page current, vì đó là quan hệ
+của từng thời điểm.
 
 Identity/version canonical nằm trong `documents.yml`. Re-ingest phải tạo version mới,
 khai `supersedes`, chạy trong worktree `ingest/<doc>@vN`, xem `reingest-plan.json`,
@@ -141,14 +173,36 @@ Stage 4 không được đọc thẳng prose raw.
 ```bash
 python3 scripts/intake.py \
   --file "/path/to/Nexus Plan.xlsx" \
+  --doc-id nexus-plan \
   --root "/path/to/ingest-worktree/openclaw-skills/project-knowledge" \
   --apply
 ```
 
-Intake trả `duplicate`, `no_op`, `initial_ingest` hoặc `reingest`. Khi semantic
-content thay đổi, nó giữ version cũ, copy original sang `@vN`, thêm `supersedes`
-và chuyển `current` sang version mới trong staging. Lệnh này không merge, publish
-hoặc reload runtime.
+Intake luôn giữ `source_name` và `kind` trong registry. File hoàn toàn mới được
+gán `doc_id` dạng `slug-UTC-timestamp-hash`, trong đó hash được collision-check với
+toàn bộ registry; tên file không phải identity duy nhất. Nếu tên/loại file giống
+document cũ nhưng chưa có xác nhận, intake trả `identity_review` và không tự ghép
+nhầm file vào corpus. Người duyệt xác nhận identity rồi mới chạy:
+
+```bash
+python3 scripts/ingest_flow.py \
+  --file "/path/to/Nexus Plan.xlsx" \
+  --doc-id nexus-plan --prepare --run   # Gate 3b bật mặc định
+```
+
+Intake trả `duplicate`, `no_op`, `identity_review`, `initial_ingest` hoặc
+`reingest`. Khi semantic content thay đổi, nó giữ version cũ, copy original sang
+`@vN`, thêm `supersedes`, chuyển `current` sang version mới và chạy downstream trong
+staging worktree. Với trang 1:1, re-ingest archive trang cũ thành `@vN` và ghi
+`superseded_by` trước khi sinh trang current. Lệnh này không merge, publish hoặc
+reload runtime.
+
+CI chạy `scripts/ingest_flow_selftest.py` để kiểm tra chuỗi intake → re-ingest →
+Gate 3a → derive, thêm `scripts/lint_history_selftest.py` cho metadata lịch sử và
+`scripts/review_selftest.py` cho consensus Gate 3b. Review nội dung bằng Claude
+chạy mặc định khi `ingest_flow.py --run`; `--no-review` chỉ dành cho fixture/offline
+và không được dùng để merge. Selftest offline không giả vờ thay thế việc đọc ngữ
+nghĩa của LLM.
 
 Config chỉ khai báo vocabulary `tech_stack`; chưa có quan hệ người–tech-stack.
 Vì vậy câu hỏi “ai làm JavaScript?” phải trả `not_in_kb`, không được suy ra từ

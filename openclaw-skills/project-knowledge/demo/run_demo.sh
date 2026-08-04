@@ -37,7 +37,7 @@ fi
 if [ "$needs_build" = "1" ]; then
   echo "[demo] corpus thiếu hoặc stale; dựng lại offline-safe"
   HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
-    PROJECT_KNOWLEDGE_SKIP_VECTOR=1 \
+    PROJECT_KNOWLEDGE_EMBEDDING_BACKEND=hash \
     PROJECT_KNOWLEDGE_RUN_SLACK_TESTS=0 bash scripts/run_all.sh
 fi
 

@@ -78,10 +78,40 @@ Gate 1 SHA256 · Gate 2 numeric ingest · Gate 3a lint · Gate 3b review · Gate
 
 `raw/` là provenance; truy vấn bảng dùng DuckDB, không đọc raw trực tiếp.
 
-File upload phải đi qua `scripts/intake.py` trên staging/worktree. Intake dùng
-SHA-256, identity tên/loại file và semantic digest của workbook để phân biệt
-duplicate, no-op, initial ingest và re-ingest. Re-ingest không sửa `v1`: nó đăng
-ký original `@vN`, khai `supersedes`, rồi mới cho các gate downstream chạy.
+Gate 3a lint current pages và đồng thời quét page lịch sử đã supersede. Mọi page
+version cũ phải có `superseded_by` trỏ tới đúng page current cùng `doc_id`, version;
+target, raw_paths lịch sử và link trong page lịch sử đều phải tồn tại. Page lịch sử
+được miễn kiểm backlink current để không làm thay đổi ngữ nghĩa của snapshot cũ.
+
+File upload phải đi qua `scripts/intake.py` trên staging/worktree. Intake lưu
+`source_name` và `kind`, dùng SHA-256, identity tên/loại file và semantic digest
+của workbook để phân biệt duplicate, no-op, initial ingest và re-ingest. File mới
+được gán `doc_id` từ slug tên + UTC timestamp + hash collision-checked; tên file
+không phải identity duy nhất. Heuristic khớp tên/loại chỉ trả `identity_review`,
+không tự ghép vào document cũ; người duyệt phải xác nhận `--doc-id`. Re-ingest
+không sửa `v1`: nó đăng ký original `@vN`, khai `supersedes`, archive trang 1:1
+với `superseded_by`, rồi mới cho các gate downstream chạy.
+
+Stage 5 sau Gate 3 phải chạy `scripts/build_rag_indexes.py`. Lệnh này tạo cả
+`derived/bm25/` bằng `bm25s` và `derived/chroma/` bằng Chroma, rồi ghi
+`derived/rag_indexes.json` với digest của input. Runtime chỉ phục vụ khi cả hai
+index tồn tại và manifest còn khớp; thiếu index là lỗi triển khai, không phải lý do
+để fallback im lặng. BGE-M3 là backend production mặc định; backend `hash` chỉ
+dành cho CI/offline contract và vẫn phải tạo Chroma thật.
+
+Query runtime bị khóa trong `scripts/filesystem_boundary.py`: chỉ đọc corpus và
+index trong skill root, không nhận path tuyệt đối, `..` hoặc symlink thoát root.
+DuckDB mở `read_only=True`; cache, conversation, telemetry và Slack queue là
+operational state riêng ở `.runtime/` hoặc volume persistent, tuyệt đối không đặt
+vào `originals/`, `raw/`, `wiki/` hay `derived/`. Production nên mount corpus ở chế
+độ read-only của container/volume để có thêm enforcement ở OS.
+
+CI bắt buộc chạy fixture `scripts/ingest_flow_selftest.py` theo chuỗi intake →
+re-ingest v2 → Gate 3a → DuckDB/graph derive, cùng `scripts/lint_history_selftest.py`
+và `scripts/review_selftest.py`. Luồng `ingest_flow.py --run` mặc định chạy live
+Gate 3b bằng Claude; `--no-review` chỉ dành cho fixture/offline, không được dùng
+để merge. Selftest CI kiểm tra chắc chắn logic đồng thuận K lượt không bị bỏ qua
+khi chạy offline.
 
 ## 5. Quyền nói “CHẮC CHẮN KHÔNG”
 

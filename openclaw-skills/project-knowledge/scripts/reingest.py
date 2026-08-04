@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Plan an evidence-preserving re-ingest from one document version to another.
 
-The planner never rewrites wiki content. It produces the exact raw diff and the
-minimal page set for Stage 4, distinguishing 1:1 pages (supersede the page) from
-N:1 pages (edit only claims sourced from the old raw paths).
+The planner produces the exact raw diff and the minimal page set for Stage 4,
+distinguishing 1:1 pages (supersede the page) from N:1 pages (edit only claims
+sourced from the old raw paths). Its archive helper moves 1:1 pages only after
+the plan has passed its registry/artifact checks.
 """
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ import argparse
 import difflib
 import json
 import re
+import shutil
 from pathlib import Path
 
 import yaml
@@ -25,9 +27,23 @@ def frontmatter(path: Path) -> dict:
     return yaml.safe_load(match.group(1)) or {} if match else {}
 
 
+def _artifact_kind(rel: str) -> str:
+    name = Path(rel).name
+    if name.endswith(".facts.json"):
+        return "facts"
+    if name.endswith(".fulltext.md"):
+        return "fulltext"
+    return Path(name).suffix.lower().lstrip(".") or "file"
+
+
 def artifact_key(root: Path, rel: str) -> str:
     path = root / rel
-    if path.exists() and path.suffix.lower() == ".md":
+    name = path.name
+    if name.endswith(".facts.json"):
+        value = name[:-len(".facts.json")]
+    elif name.endswith(".fulltext.md"):
+        value = name[:-len(".fulltext.md")]
+    elif path.exists() and name.endswith(".md"):
         fm = frontmatter(path)
         if fm.get("raw_id"):
             value = str(fm["raw_id"])
@@ -37,7 +53,8 @@ def artifact_key(root: Path, rel: str) -> str:
             value = path.stem
     else:
         value = path.stem
-    return re.sub(r"(?:[@._-](?:v|version)\d+)$", "", value, flags=re.I).casefold()
+    identity = re.sub(r"(?:[@._-](?:v|version)\d+)$", "", value, flags=re.I).casefold()
+    return f"{identity}::{_artifact_kind(rel)}"
 
 
 def _by_artifact(root: Path, paths: list[str]) -> dict[str, str]:
@@ -66,6 +83,12 @@ def raw_diff(root: Path, old_paths: list[str], new_paths: list[str]) -> list[dic
                          "removed_lines": sum(line.startswith("-") and not line.startswith("---") for line in diff),
                          "diff": diff})
     return rows
+
+
+def _require_artifacts(root: Path, paths: list[str], label: str) -> None:
+    missing = [rel for rel in paths if not (root / rel).is_file()]
+    if missing:
+        raise ValueError(f"{label} thiếu artifact đã đăng ký: {', '.join(missing)}")
 
 
 def impacted_pages(root: Path, old_paths: list[str]) -> list[dict]:
@@ -103,6 +126,8 @@ def build_plan(root: Path, doc_id: str, from_version: int, to_version: int) -> d
     new_paths = list(new.get("raw_paths") or [])
     if not old_paths or not new_paths:
         raise ValueError("cả hai version phải khai raw_paths trong documents.yml")
+    _require_artifacts(root, old_paths, f"{doc_id}@v{from_version}")
+    _require_artifacts(root, new_paths, f"{doc_id}@v{to_version}")
     return {
         "schema": "project-knowledge/reingest-plan/v1",
         "doc_id": doc_id,
@@ -119,6 +144,62 @@ def build_plan(root: Path, doc_id: str, from_version: int, to_version: int) -> d
     }
 
 
+def _archive_path(root: Path, page_rel: str, version: int) -> Path:
+    page = root / page_rel
+    stem = page.stem
+    stem = re.sub(r"@v\d+$", "", stem, flags=re.IGNORECASE)
+    return page.with_name(f"{stem}@v{version}{page.suffix}")
+
+
+def archive_one_to_one_pages(root: Path, plan: dict) -> list[dict]:
+    """Move 1:1 pages to an immutable versioned path before rebuilding them.
+
+    The new ingest can then write the canonical page path again.  The archived
+    page keeps its old provenance and explicitly points at the replacement;
+    current-page readers ignore it because its frontmatter still carries the
+    superseded document version.
+    """
+    archived = []
+    from_version = int(plan["from_version"])
+    for item in plan.get("impacted_pages", []):
+        if item.get("strategy") != "supersede_page":
+            continue
+        page_rel = str(item["page"])
+        page = root / page_rel
+        target = _archive_path(root, page_rel, from_version)
+        if not page.is_file():
+            raise ValueError(f"trang 1:1 cần archive không tồn tại: {page_rel}")
+        if target.exists():
+            raise FileExistsError(
+                f"trang archive đã tồn tại, không ghi đè: {target.relative_to(root).as_posix()}"
+            )
+        text = page.read_text(encoding="utf-8")
+        match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+        if not match:
+            raise ValueError(f"trang 1:1 thiếu frontmatter, không archive: {page_rel}")
+        if re.search(r"(?m)^superseded_by:", match.group(1)):
+            raise ValueError(f"trang 1:1 đã có superseded_by, cần human review: {page_rel}")
+        replacement = page.relative_to(root).as_posix()
+        updated_header = match.group(1).rstrip() + f"\nsuperseded_by: {replacement}\n"
+        archived_text = f"---\n{updated_header}---\n" + text[match.end():]
+        page.write_text(archived_text, encoding="utf-8")
+        shutil.move(str(page), str(target))
+        archived.append({
+            "old_page": page_rel,
+            "archived_page": target.relative_to(root).as_posix(),
+            "superseded_by": replacement,
+        })
+    plan["archived_pages"] = archived
+    return archived
+
+
+def write_plan(root: Path, plan: dict) -> Path:
+    destination = root / "derived" / "reingest-plan.json"
+    destination.parent.mkdir(exist_ok=True)
+    destination.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return destination
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--doc-id", required=True)
@@ -126,9 +207,7 @@ def main() -> int:
     parser.add_argument("--to-version", type=int, required=True)
     args = parser.parse_args()
     plan = build_plan(ROOT, args.doc_id, args.from_version, args.to_version)
-    destination = ROOT / "derived" / "reingest-plan.json"
-    destination.parent.mkdir(exist_ok=True)
-    destination.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    destination = write_plan(ROOT, plan)
     print(json.dumps({"plan": destination.relative_to(ROOT).as_posix(),
                       "changed_raw": len(plan["raw_diff"]),
                       "impacted_pages": len(plan["impacted_pages"]),

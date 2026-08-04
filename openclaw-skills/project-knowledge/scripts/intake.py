@@ -14,6 +14,7 @@ import hashlib
 import json
 import re
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
@@ -103,6 +104,15 @@ def _original_path(doc_id: str, version: int, source: Path) -> str:
     return f"originals/{doc_id}@v{version}{suffix}"
 
 
+def extractor_for(doc_id: str, kind: str) -> str:
+    """Select only an actually implemented downstream lane."""
+    if doc_id == "nexus-plan":
+        return "nexus"
+    if kind in {"docx", "pdf"}:
+        return "van"
+    return "unsupported"
+
+
 def _same_doc_candidates(root: Path, documents: list[dict[str, Any]], source: Path) -> list[dict[str, Any]]:
     target_identity = identity_name(source)
     target_kind = file_kind(source)
@@ -113,8 +123,31 @@ def _same_doc_candidates(root: Path, documents: list[dict[str, Any]], source: Pa
     ]
 
 
-def decide(root: Path, source: Path) -> dict[str, Any]:
-    """Return a deterministic intake decision without mutating ``root``."""
+def _doc_candidates(documents: list[dict[str, Any]], doc_id: str) -> list[dict[str, Any]]:
+    return [document for document in documents if str(document.get("doc_id")) == str(doc_id)]
+
+
+def _new_doc_id(root: Path, source: Path, source_hash: str) -> str:
+    """Generate a collision-checked ID for a genuinely new document identity."""
+    slug = identity_name(source) or "document"
+    now = dt.datetime.now(dt.timezone.utc)
+    stamp = now.strftime("%Y%m%dT%H%M%SZ")
+    existing = {str(document.get("doc_id")) for document in document_registry.load(root)}
+    nonce = time.time_ns()
+    while True:
+        token = hashlib.sha256(f"{source_hash}|{stamp}|{nonce}".encode()).hexdigest()[:10]
+        candidate = f"{slug}-{stamp}-{token}"
+        if candidate not in existing:
+            return candidate
+        nonce += 1
+
+
+def decide(root: Path, source: Path, confirmed_doc_id: str | None = None) -> dict[str, Any]:
+    """Return an intake decision without mutating ``root``.
+
+    Existing identities are deterministic; a new identity deliberately includes
+    the UTC intake timestamp and a hash nonce so repeated uploads cannot collide.
+    """
     source = source.expanduser().resolve()
     if not source.is_file():
         raise ValueError(f"file upload không tồn tại: {source}")
@@ -126,30 +159,54 @@ def decide(root: Path, source: Path) -> dict[str, Any]:
         raise ValueError("file trùng hash với nhiều version, cần human review")
     if exact:
         document = exact[0]
+        if confirmed_doc_id and str(document["doc_id"]) != str(confirmed_doc_id):
+            raise ValueError(
+                f"file đã đăng ký ở `{document['doc_id']}`, không khớp doc_id xác nhận `{confirmed_doc_id}`"
+            )
         return {
             "schema": "nexus-project-knowledge/intake-decision/v1",
             "flow": "duplicate",
             "source": str(source),
             "sha256": source_hash,
+            "source_name": source.name,
+            "kind": file_kind(source),
             "doc_id": document["doc_id"],
             "version": int(document["version"]),
             "reason": "sha256 trùng version đã đăng ký; không tạo version mới",
         }
 
-    candidates = _same_doc_candidates(root, documents, source)
+    candidates = (_doc_candidates(documents, confirmed_doc_id)
+                  if confirmed_doc_id else _same_doc_candidates(root, documents, source))
     candidate_ids = sorted({str(document["doc_id"]) for document in candidates})
     if not candidate_ids:
+        if confirmed_doc_id:
+            raise ValueError(f"doc_id `{confirmed_doc_id}` không tồn tại trong documents.yml")
         return {
             "schema": "nexus-project-knowledge/intake-decision/v1",
             "flow": "initial_ingest",
             "source": str(source),
             "sha256": source_hash,
-            "doc_id": identity_name(source),
+            "source_name": source.name,
+            "kind": file_kind(source),
+            "doc_id": _new_doc_id(root, source, source_hash),
             "version": 1,
             "reason": "không có document identity tương ứng trong registry",
         }
     if len(candidate_ids) != 1:
         raise ValueError(f"file khớp nhiều document identity: {candidate_ids}")
+
+    if not confirmed_doc_id:
+        return {
+            "schema": "nexus-project-knowledge/intake-decision/v1",
+            "flow": "identity_review",
+            "source": str(source),
+            "sha256": source_hash,
+            "source_name": source.name,
+            "kind": file_kind(source),
+            "candidate_doc_ids": candidate_ids,
+            "candidate_versions": sorted({int(document["version"]) for document in candidates}),
+            "reason": "file khớp identity heuristic; cần người xác nhận --doc-id trước khi re-ingest",
+        }
 
     doc_id = candidate_ids[0]
     document_registry.require_version_1(doc_id, root)
@@ -161,6 +218,8 @@ def decide(root: Path, source: Path) -> dict[str, Any]:
             "flow": "no_op",
             "source": str(source),
             "sha256": source_hash,
+            "source_name": source.name,
+            "kind": file_kind(source),
             "doc_id": doc_id,
             "version": int(current["version"]),
             "reason": "semantic content không đổi; chỉ khác binary/formatting",
@@ -174,6 +233,8 @@ def decide(root: Path, source: Path) -> dict[str, Any]:
         "flow": "reingest",
         "source": str(source),
         "sha256": source_hash,
+        "source_name": source.name,
+        "kind": file_kind(source),
         "doc_id": doc_id,
         "from_version": from_version,
         "to_version": to_version,
@@ -234,6 +295,8 @@ def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, An
             "version": version,
             "original": original,
             "sha256": sha256(source),
+            "source_name": source.name,
+            "kind": file_kind(source),
             "status": "canonical",
             "current": True,
             "supersedes": from_version,
@@ -251,13 +314,14 @@ def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, An
             "doc_id": doc_id,
             "version": 1,
             "original": original,
+            "source_name": source.name,
             "kind": file_kind(source),
             "sha256": sha256(source),
             "status": "canonical",
             "current": True,
             "supersedes": None,
             "visibility": "internal",
-            "extractor": "nexus" if doc_id == "nexus-plan" else "van",
+            "extractor": extractor_for(doc_id, file_kind(source)),
             "raw_paths": [],
         }
 
@@ -280,16 +344,20 @@ def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, An
 def main() -> int:
     parser = argparse.ArgumentParser(description="Automatic Project Knowledge file intake")
     parser.add_argument("--file", required=True, type=Path)
+    parser.add_argument("--doc-id", help="xác nhận document identity hiện có trước khi re-ingest")
     parser.add_argument("--root", type=Path, default=ROOT,
                         help="staging/worktree skill root; mặc định là skill root hiện tại")
     parser.add_argument("--apply", action="store_true",
                         help="copy source và đăng ký version vào root; không merge/publish")
     args = parser.parse_args()
     root = args.root.resolve()
-    decision = decide(root, args.file)
-    result = register(root, args.file, decision) if args.apply else decision
+    decision = decide(root, args.file, confirmed_doc_id=args.doc_id)
+    if args.apply and decision["flow"] not in {"initial_ingest", "reingest"}:
+        result = decision
+    else:
+        result = register(root, args.file, decision) if args.apply else decision
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
+    return 2 if decision["flow"] == "identity_review" else 0
 
 
 if __name__ == "__main__":
