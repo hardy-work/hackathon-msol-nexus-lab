@@ -89,6 +89,39 @@ ACCESS_TOKEN=$(bash openclaw-skills/slack-evidence-sheet/scripts/get-token.sh)
 
 ---
 
+## Preview Format (Khi --dry-run, trước khi tạo sheet)
+
+Trả lời theo format này để PM xác nhận:
+
+```
+Chào anh {PM_name}. Em đã đọc cả thread và gom được ảnh của mọi người rồi. Trước khi tạo Google Sheet, anh check preview giúp em:
+
+📋 Sắp tạo sheet "{sheetTitle}" từ thread {channelName}
+• Số người có evidence: {totalPeople} ({displayNames})
+• Tổng số ảnh: {totalFiles}
+• Mỗi người 1 dòng, ảnh gom vào 1 ô dạng link bấm ra Drive
+
+⚠️ Chế độ chia sẻ ảnh đang là {sharingMode} — {sharingExplain}
+
+Anh xác nhận tạo không ạ? (có / không)
+```
+
+Các biến:
+- `{PM_name}` — Tên PM gọi skill
+- `{sheetTitle}` — Tên sheet từ config
+- `{channelName}` — **Tên** kênh Slack (`#cydas-people-dev`), KHÔNG phải channel ID. Script chỉ in ra ID (`C0606MMATEV`) → gọi `conversations.info` hoặc lấy từ link PM đưa để có tên
+- `{totalPeople}` — Số người có evidence
+- `{displayNames}` — **Display name của từng người** (MH_HoangMV, PhongDT, ...), cách nhau bằng dấu phẩy
+- `{totalFiles}` — Tổng số ảnh
+- `{sharingMode}` — "anyone" hoặc "restricted"
+- `{sharingExplain}` — Giải thích chi tiết về chế độ chia sẻ
+
+**Lưu ý:**
+- Dùng **display_name** từ Slack (MH_HoangMV, không phải "Viethoang Mai")
+- Nếu script báo có người **thiếu email** → thêm 1 dòng `• Thiếu email: {tên}` vào preview, đừng bỏ qua
+
+---
+
 ## Action 1: Tổng hợp thread thành sheet mới
 
 ### Nhận diện intent
@@ -117,22 +150,7 @@ Script tải toàn bộ file về `./downloads/` và sinh `downloads/manifest.js
 node scripts/build-sheet.js ./downloads/manifest.json ./config.json --dry-run
 ```
 
-Hiển thị cho PM:
-
-```
-Sắp tạo sheet "<sheetTitle>" từ thread <kênh>:
-─────────────────────────────────────────
-• Số người có evidence : <N>
-• Tổng số ảnh          : <M>
-• Thiếu email          : <danh sách tên, nếu có>
-• File tải lỗi         : <danh sách, nếu có>
-• Chế độ chia sẻ ảnh   : <anyone = ai có link cũng xem được / restricted>
-• Người được share     : <viewers, hoặc "chỉ mình bạn">
-─────────────────────────────────────────
-Xác nhận tạo? (có / không)
-```
-
-Nếu `imageSharing` là `anyone` → nêu rõ thành một câu riêng, đây là thông tin PM cần biết để quyết định, không được giấu trong bảng.
+Script in ra số liệu thô. Diễn đạt lại cho PM đúng theo **Preview Format** ở trên — KHÔNG dán nguyên output của script.
 
 **Bước 4 — Thực thi (chỉ sau khi PM xác nhận rõ ràng)**
 
@@ -144,17 +162,39 @@ Script tự làm theo thứ tự: tạo folder → upload ảnh → set chia s�
 
 **Bước 5 — Phản hồi**
 
-```
-✓ Đã tạo sheet "<tên>" với <N> dòng.
-Sheet : <link>
-Folder: <link>
-```
-
-Ghi Audit Log.
+Script in ra link sheet + link folder. Diễn đạt lại cho PM đúng theo **Response Format** ở dưới — KHÔNG dán nguyên output của script.
 
 **Bước 6 — Dọn dẹp**
 
 Hỏi PM có muốn xoá thư mục `downloads/` không (ảnh đã nằm trên Drive). Mặc định **giữ lại**, KHÔNG tự xoá.
+
+---
+
+## Response Format (Khi skill chạy xong)
+
+Trả lời theo format cố định này:
+
+```
+✓ Xong rồi anh {PM_name}. Em đã tổng hợp {totalFiles} ảnh của {totalPeople} người trong thread thành sheet:
+
+📋 Sheet: {sheetLink}
+📁 Folder: {folderLink}
+
+Mỗi người 1 dòng, ảnh gom vào ô Evidence dạng link bấm ra Drive xem được. Anh check thử nhé, cần thêm cột gì hay bổ sung ai chưa nộp thì báo em.
+```
+
+Các biến cần điền:
+- `{PM_name}` — Tên PM gọi skill
+- `{totalFiles}` — Tổng số ảnh được tải
+- `{totalPeople}` — Tổng số người có evidence
+- `{sheetLink}` — Link đến Google Sheet vừa tạo
+- `{folderLink}` — Link đến Google Drive folder
+
+**Bắt buộc về link — đã hỏng một lần, đừng lặp lại:**
+
+- Sheet và Folder nằm trên **2 dòng riêng**, KHÔNG gộp chung một dòng
+- Emoji đặt ở **đầu dòng**, tuyệt đối không đặt sau link. Slack nuốt ký tự đứng sát sau URL vào chính URL đó → link hỏng
+- Mỗi dòng kết thúc ngay sau link, không thêm dấu câu hay chữ nào phía sau
 
 ---
 

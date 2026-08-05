@@ -174,6 +174,19 @@ Sửa `columns`, `sheetTitle`, `viewers` theo đợt. Hai field cần cân nhắ
 
 Đợt sau đổi nghiệp vụ thì sửa `config.json`, không sửa `SKILL.md` — `SKILL.md` được commit và đồng bộ cho cả team, `config.json` thì gitignored, riêng từng máy.
 
+## Tên hiển thị
+
+Hai thứ không lấy nguyên bản từ Slack:
+
+- **Tên người** — lấy `profile.display_name` (`MH_HoangMV`, `PhongDT`), không phải `real_name` (`Viethoang Mai`). Đây là tên team thực sự gọi nhau trong Slack nên dễ đối chiếu hơn. Ai không đặt display name thì tự động rơi về `real_name`.
+- **Tên ảnh** — rút gọn thành `ảnh 1`, `ảnh 2`, … cả trong ô Evidence lẫn tên file trên Drive (`MH_HoangMV — ảnh 1`). Tên gốc từ Slack thường là `Screenshot 2026-07-29 at 15.18.55.png`, dài và không mang thông tin gì.
+
+## Định dạng câu trả lời
+
+`SKILL.md` có hai section **Preview Format** và **Response Format** quy định bot nói gì với PM ở bước xác nhận và bước báo kết quả. Đây là nguồn duy nhất — các bước trong Action 1 chỉ trỏ tới chúng.
+
+OpenClaw **không** đọc template từ frontmatter (`metadata.openclaw` chỉ dùng để gating `requires.bins` / `requires.env`), nên template phải nằm trong phần body của `SKILL.md` thì model mới thấy. Muốn đổi cách bot phát biểu thì sửa hai section đó.
+
 ## Chạy tay (không qua agent)
 
 ```bash
@@ -190,7 +203,7 @@ node scripts/build-sheet.js ./downloads/manifest.json ./config.json             
 - Scope `drive.file` chỉ cho app đụng vào file **do chính nó tạo** → skill luôn tạo folder gốc mới, không ghi được vào folder có sẵn trên Drive.
 - File tạo ra thuộc sở hữu **cá nhân** đã bấm đồng ý. Người đó rời dự án thì phải chuyển quyền sở hữu tay. Dùng Shared Drive sẽ giải quyết triệt để nếu sau này tài khoản được nâng lên Google Workspace.
 - Sheet tạo qua API mặc định `locale: vi_VN` + `timeZone: Etc/GMT`; script tự sửa về `en_US` + `Asia/Ho_Chi_Minh`. Không sửa thì mọi công thức nhiều tham số (`=HYPERLINK("a","b")`) đều `#ERROR!` vì vi_VN ngăn tham số bằng `;`.
-- Ở chế độ `imageDisplay: "link"`, mọi ảnh của một người nằm gọn trong **1 ô**, mỗi ảnh một dòng. Không dùng `=HYPERLINK` được (một ô chỉ chứa 1 link) nên script gắn link bằng `textFormatRuns` — sửa tay nội dung ô đó trong Sheets sẽ làm mất link, phải chạy lại script.
+- Ở chế độ `imageDisplay: "link"`, mọi ảnh của một người nằm gọn trong **1 ô**, mỗi ảnh một dòng. Không dùng `=HYPERLINK` được (một ô chỉ chứa 1 link) nên script gắn link bằng `textFormatRuns` — link được gắn theo **offset ký tự**, nên sửa tay nội dung ô đó trong Sheets sẽ làm lệch hoặc mất link, phải chạy lại script.
 - Ở chế độ `imageDisplay: "image"` thì ngược lại: một ô chỉ chứa được 1 `=IMAGE()`, nên cột `images` nở ra thành `Evidence 1`, `Evidence 2`, … đúng bằng số ảnh nhiều nhất của một người. Số cột vì vậy thay đổi theo dữ liệu.
 - Chỉ tổng hợp người **có gửi file**. Muốn liệt kê cả người chưa nộp thì yêu cầu riêng (Action 2 trong `SKILL.md`).
 - Bot phải được `/invite` vào kênh trước khi chạy. Theo tài liệu Slack, `channels:history` cho đọc cả lịch sử **trước** lúc bot tham gia nên ảnh cũ vẫn tải được — nhưng điều này **chưa được kiểm chứng thực tế**, cần thử ngay lần chạy đầu với một thread cũ.
