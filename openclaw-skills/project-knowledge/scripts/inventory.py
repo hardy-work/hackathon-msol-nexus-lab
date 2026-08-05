@@ -34,6 +34,8 @@ def kind(path: Path, head: bytes) -> str:
         return {".xlsx": "xlsx", ".docx": "docx", ".pptx": "pptx"}.get(path.suffix.lower(), "zip")
     if head.startswith(b"\x89PNG") or head.startswith(b"\xff\xd8\xff"):
         return "image"
+    if path.suffix.lower() in {".md", ".markdown"}:
+        return "text/markdown"
     return mimetypes.guess_type(path.name)[0] or "binary"
 
 

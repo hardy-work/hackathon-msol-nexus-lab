@@ -28,6 +28,7 @@ from pathlib import Path
 
 import yaml
 from artifact_paths import current_versions, frontmatter_is_current, payload_is_current
+import filesystem_boundary
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "raw"
@@ -188,7 +189,9 @@ class AnswerGuard:
     (chuỗi kiểu 'wiki/entities/qc-lan.md → 2.8.Sprint 7!G10') resolve bằng cách khớp
     substring với khoá của ba chỉ mục rồi hợp các tập dạng-số lại."""
 
-    def __init__(self):
+    def __init__(self, root: Path = ROOT):
+        self.root = Path(root).resolve()
+        self.boundary = filesystem_boundary.ReadOnlyCorpus(self.root)
         self.values: set[str] = set()          # TOÀN CỤC (fallback / self-test)
         self.provenance: dict[str, str] = {}
         self.value_units: dict[str, set] = {}   # TOÀN CỤC: dạng-số -> {đơn vị chuẩn}
@@ -198,10 +201,10 @@ class AnswerGuard:
         self.units_by_page: dict[str, dict] = {}   # trang  -> {dạng-số: {đơn vị}}
         self.units_by_file: dict[str, dict] = {}   # file   -> {dạng-số: {đơn vị}}
         self.units_by_sheet: dict[str, dict] = {}  # sheet  -> {dạng-số: {đơn vị}}
-        versions = current_versions(ROOT)
-        for f in sorted(RAW.glob("*.facts.json")):
-            data = json.loads(f.read_text(encoding="utf-8"))
-            if not payload_is_current(data, ROOT, versions):
+        versions = current_versions(self.root)
+        for f in self.boundary.files("raw", "*.facts.json"):
+            data = json.loads(self.boundary.read_text(f.relative_to(self.root)))
+            if not payload_is_current(data, self.root, versions, path=f):
                 continue
             bucket: set = set()
             ubucket: dict = {}
@@ -281,8 +284,9 @@ class AnswerGuard:
     def _wiki_resolve(self, ref):
         try:
             fpath, dotted = ref.split("#", 1)
-            node = json.loads((ROOT / fpath).read_text(encoding="utf-8"))
-            if not payload_is_current(node, ROOT):
+            path = self.boundary.resolve(fpath, must_exist=True)
+            node = json.loads(path.read_text(encoding="utf-8"))
+            if not payload_is_current(node, self.root, path=path):
                 return None
             node = node.get("facts", node)
             for part in dotted.split("."):
@@ -295,15 +299,16 @@ class AnswerGuard:
         """Số đo của trang wiki -> by_page[đường dẫn] (và toàn cục). Cả hai chế độ khai:
         `facts_ref` (trỏ raw) và `facts` chép."""
         for sub in ("entities", "sources", "case-studies", "concepts"):
-            for p in sorted((WIKI / sub).glob("*.md")) if (WIKI / sub).exists() else []:
-                m = re.match(r"^---\n(.*?)\n---\n", p.read_text(encoding="utf-8"), re.S)
+            for p in self.boundary.files(f"wiki/{sub}", "*.md"):
+                m = re.match(r"^---\n(.*?)\n---\n",
+                             self.boundary.read_text(p.relative_to(self.root)), re.S)
                 if not m:
                     continue
                 try:
                     fm = yaml.safe_load(m.group(1)) or {}
                 except yaml.YAMLError:
                     continue
-                if not frontmatter_is_current(fm, ROOT):
+                if not frontmatter_is_current(fm, self.root):
                     continue
                 # LUẬT OCR: trang OCR là bản ĐOÁN — KHÔNG đăng ký số (thực thi ở CODE).
                 is_ocr = fm.get("ocr") in (True, "true")
@@ -329,7 +334,7 @@ class AnswerGuard:
                         if u:
                             self.value_units.setdefault(f, set()).add(u)
                             ubucket.setdefault(f, set()).add(u)
-                path = p.relative_to(ROOT).as_posix()
+                path = p.relative_to(self.root).as_posix()
                 self.by_page[path] = bucket
                 self.units_by_page[path] = ubucket
 
@@ -435,20 +440,22 @@ class AnswerGuard:
         return bad
 
 
-_guard = None
+_guards: dict[str, AnswerGuard] = {}
 
 
-def reset() -> None:
+def reset(root: Path | None = None) -> None:
     """Drop the corpus-scoped guard after a new current version is built."""
-    global _guard
-    _guard = None
+    if root is None:
+        _guards.clear()
+    else:
+        _guards.pop(str(Path(root).resolve()), None)
 
 
-def check_answer(text, cites=None):
-    global _guard
-    if _guard is None:
-        _guard = AnswerGuard()
-    return _guard.check(text, cites)
+def check_answer(text, cites=None, root: Path = ROOT):
+    key = str(Path(root).resolve())
+    if key not in _guards:
+        _guards[key] = AnswerGuard(Path(root))
+    return _guards[key].check(text, cites)
 
 
 def check(policy, **kw):
@@ -456,7 +463,7 @@ def check(policy, **kw):
     if policy == "ingest":
         return check_ingest(kw["name"], kw["value"], kw["unit"], kw["src"])
     if policy == "answer":
-        return check_answer(kw["text"], kw.get("cites"))
+        return check_answer(kw["text"], kw.get("cites"), kw.get("root", ROOT))
     raise ValueError(f"policy không hợp lệ: {policy}")
 
 

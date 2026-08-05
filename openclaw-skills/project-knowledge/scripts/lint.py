@@ -4,6 +4,7 @@
   lint-vocab    schema.yml  ==  raw/*.facts.json  (từ vựng không được drift)
   lint-schema   mọi trang đủ trường bắt buộc; giá trị DIMENSION nằm trong enum
   lint-refs     mọi raw_paths tồn tại; mọi liên kết [[x]] có đích; liên kết HAI CHIỀU
+  lint-history  page version cũ phải có superseded_by, hoặc retired_by nếu source identity đã biến mất
   lint-numbers  mọi MEASURE là facts_ref trỏ tới key có thật, HOẶC facts+unit+src
 
 Đỏ ở đây = HALT. Không xuất bản. Đây là chỗ chặn LLM bịa.
@@ -16,7 +17,7 @@ from pathlib import Path
 
 import yaml
 import document_registry
-from artifact_paths import frontmatter_is_current, payload_is_current
+from artifact_paths import frontmatter_is_current, is_current_raw_path, payload_is_current
 
 ROOT = Path(__file__).resolve().parent.parent
 WIKI = ROOT / "wiki"
@@ -67,7 +68,7 @@ def load_facts():
     versions = document_registry.current_versions(ROOT)
     for p in sorted(RAW.glob("*.facts.json")):
         payload = json.loads(p.read_text(encoding="utf-8"))
-        if payload_is_current(payload, ROOT, versions):
+        if payload_is_current(payload, ROOT, versions, path=p):
             facts[p.name] = payload
     return facts
 
@@ -180,7 +181,7 @@ def lint_contract(schema):
 def lint_vocab(schema):
     versions = document_registry.current_versions(ROOT)
     cfgs = [p for p in sorted(RAW.glob("*-config*.facts.json"))
-            if payload_is_current(json.loads(p.read_text(encoding="utf-8")), ROOT, versions)]
+            if payload_is_current(json.loads(p.read_text(encoding="utf-8")), ROOT, versions, path=p)]
     cfg = cfgs[0] if cfgs else None
     if cfg is None or not cfg.exists():
         warn("lint-vocab", "raw/", "chưa có *-config.facts.json, bỏ qua đối chiếu")
@@ -206,7 +207,7 @@ def lint_observed(schema):
     versions = document_registry.current_versions(ROOT)
     for p in sorted(RAW.glob("*-sprint*.facts.json")):
         payload = json.loads(p.read_text(encoding="utf-8"))
-        if not payload_is_current(payload, ROOT, versions):
+        if not payload_is_current(payload, ROOT, versions, path=p):
             continue
         obs = payload.get("observed_dimensions", {})
         for dim, vals in obs.items():
@@ -263,7 +264,6 @@ LINK = re.compile(r"\[\[([^\]]+)\]\]")
 
 def lint_refs(pages):
     slugs = {Path(rel).stem: rel for rel in pages}
-    current = document_registry.current_versions(ROOT)
 
     for rel, pg in pages.items():
         for rp in pg["fm"].get("raw_paths") or []:
@@ -275,10 +275,9 @@ def lint_refs(pages):
             match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
             metadata = yaml.safe_load(match.group(1)) if match else {}
             doc_id = metadata.get("doc_id") if metadata else None
-            version = metadata.get("version") if metadata else None
-            if doc_id in current and int(version or 0) != current[doc_id]:
+            if doc_id and not is_current_raw_path(ROOT, rp, str(doc_id)):
                 err("lint-refs", rel,
-                    f"tham chiếu raw superseded `{rp}` ({doc_id}@v{version}); current=v{current[doc_id]}")
+                    f"tham chiếu raw không thuộc current registry `{rp}` ({doc_id})")
 
     # liên kết hai chiều: A nhắc B thì B phải nhắc lại A
     out = {rel: set(LINK.findall(pg["body"]) + LINK.findall(str(pg["fm"]))) for rel, pg in pages.items()}
@@ -290,6 +289,127 @@ def lint_refs(pages):
             elif me not in out[slugs[t]]:
                 err("lint-refs", rel,
                     f"liên kết MỘT CHIỀU [[{t}]] — {slugs[t]} không trỏ ngược lại [[{me}]]")
+
+
+def _read_page(path):
+    """Read a wiki page without applying current-version filtering."""
+    text = path.read_text(encoding="utf-8")
+    match = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.S)
+    if not match:
+        return None
+    try:
+        metadata = yaml.safe_load(match.group(1)) or {}
+    except yaml.YAMLError:
+        return None
+    return {"path": path, "fm": metadata, "body": match.group(2)}
+
+
+def lint_history(root=ROOT):
+    """Validate superseded page metadata and historical references.
+
+    ``load_pages`` intentionally excludes non-current pages from the normal
+    schema/number gate.  This separate pass keeps that behavior for current
+    retrieval while still making version history fail-closed.
+    """
+    registered = document_registry.load(root)
+    versions = {str(doc["doc_id"]): int(doc["version"])
+                for doc in registered if doc.get("current")}
+    registered_versions = {
+        (str(doc["doc_id"]), int(doc["version"])) for doc in registered
+    }
+    historical = {}
+    pages = [
+        page for page in sorted((root / "wiki").rglob("*.md"))
+        if page.name not in {"index.md", "log.md"}
+    ]
+    all_slugs = {}
+    for page in pages:
+        rel = page.relative_to(root).as_posix()
+        all_slugs.setdefault(page.stem, rel)
+        historical_stem = re.sub(r"@v\d+$", "", page.stem, flags=re.IGNORECASE)
+        if historical_stem != page.stem:
+            all_slugs.setdefault(historical_stem, rel)
+    for page in pages:
+        rel = page.relative_to(root).as_posix()
+        parsed = _read_page(page)
+        if parsed is None:
+            continue
+        fm = parsed["fm"]
+        doc_id = fm.get("doc_id")
+        raw_version = fm.get("version")
+        if not doc_id or raw_version is None:
+            continue
+        try:
+            version = int(raw_version)
+            current_version = int(versions[str(doc_id)])
+        except (KeyError, TypeError, ValueError):
+            err("lint-history", rel,
+                f"metadata version/doc_id không khớp registry: {doc_id}@v{raw_version}")
+            continue
+        if (str(doc_id), version) not in registered_versions:
+            err("lint-history", rel,
+                f"page history {doc_id}@v{version} không có version tương ứng trong documents.yml")
+
+        if version == current_version:
+            if fm.get("superseded_by"):
+                err("lint-history", rel,
+                    "page current không được mang metadata superseded_by")
+            continue
+        if version > current_version:
+            err("lint-history", rel,
+                f"page khai version tương lai {doc_id}@v{version}; current=v{current_version}")
+            continue
+
+        historical[rel] = parsed
+        for field in ("page", "name", "raw_paths"):
+            if field not in fm or fm[field] in (None, "", []):
+                err("lint-history", rel, f"page lịch sử thiếu metadata `{field}`")
+
+        retired = bool(fm.get("retired"))
+        relation_field = "retired_by" if retired else "superseded_by"
+        relation = fm.get(relation_field)
+        if not isinstance(relation, str) or not relation.strip():
+            err("lint-history", rel,
+                f"page {doc_id}@v{version} thiếu {relation_field} trỏ tới page current")
+        else:
+            target = (root / relation).resolve()
+            try:
+                target.relative_to(root.resolve())
+            except ValueError:
+                err("lint-history", rel,
+                    f"{relation_field} nằm ngoài skill root: {relation}")
+                target = None
+            if target is not None:
+                if not target.is_file():
+                    err("lint-history", rel,
+                        f"{relation_field} trỏ tới page không tồn tại: {relation}")
+                else:
+                    replacement = _read_page(target)
+                    replacement_fm = replacement["fm"] if replacement else {}
+                    try:
+                        replacement_version = int(replacement_fm.get("version", 0))
+                    except (TypeError, ValueError):
+                        replacement_version = 0
+                    if (str(replacement_fm.get("doc_id")) != str(doc_id)
+                            or replacement_version != current_version):
+                        err("lint-history", rel,
+                            f"{relation_field} phải trỏ tới {doc_id}@v{current_version}: {relation}")
+                    if not retired and replacement_fm.get("superseded_by"):
+                        err("lint-history", rel,
+                            f"superseded_by target vẫn là page lịch sử: {relation}")
+
+        for raw_path in fm.get("raw_paths") or []:
+            if not (root / str(raw_path)).is_file():
+                err("lint-history", rel,
+                    f"raw_paths lịch sử trỏ tới file không tồn tại: {raw_path}")
+
+        # Historical pages are not required to satisfy the current-page
+        # backlink invariant, but links must never point at a missing page.
+        for target_slug in LINK.findall(parsed["body"]):
+            if target_slug not in all_slugs:
+                err("lint-history", rel,
+                    f"liên kết lịch sử [[{target_slug}]] không có trang đích")
+    return historical
 
 
 # ----------------------------------------------------------- 4. numbers
@@ -321,6 +441,7 @@ def lint_numbers(pages, facts):
 def main():
     schema = yaml.safe_load((ROOT / "schema.yml").read_text(encoding="utf-8"))
     pages = load_pages()
+    historical = lint_history()
     facts = load_facts()
 
     lint_contract(schema)
@@ -330,7 +451,8 @@ def main():
     lint_refs(pages)
     lint_numbers(pages, facts)
 
-    print(f"GATE 3a · {len(pages)} trang wiki · {len(facts)} nguồn facts\n")
+    print(f"GATE 3a · {len(pages)} current pages + {len(historical)} historical pages · "
+          f"{len(facts)} nguồn facts\n")
     for lint, where, msg in warns:
         print(f"{YEL}⚠ {lint:13s}{OFF} {DIM}{where}{OFF}  {msg}")
     for lint, where, msg in errors:

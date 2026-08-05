@@ -42,7 +42,7 @@ def covered_cells():
     versions = document_registry.current_versions(ROOT)
     for p in sorted((ROOT / "raw").glob("*.facts.json")):
         payload = json.loads(p.read_text(encoding="utf-8"))
-        if payload_is_current(payload, ROOT, versions):
+        if payload_is_current(payload, ROOT, versions, path=p):
             walk(payload)
     return cov
 

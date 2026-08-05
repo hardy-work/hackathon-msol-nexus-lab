@@ -58,6 +58,7 @@
 - Eval Nexus: 12/12 câu hỏi qua, gồm in-KB, not-in-KB, confident-no và numeric.
 - Publish: `dim_value=16`, `person=7`, `person_sprint=6`, `doc_cell=964`, `coverage=2`.
 - Vector embedding: lần chạy đầu không tải được metadata do môi trường không có outbound network; chạy offline từ model cache đã thành công, tạo `derived/wiki_vectors.npz` cho 8 trang với vector 1024 chiều.
+- Stage 5 RAG: thay vector `.npz` tùy chọn bằng persistent Chroma; thêm BM25 `bm25s`, manifest digest `derived/rag_indexes.json` và fail-closed khi một trong hai index thiếu/stale. Offline CI dùng embedding hash deterministic nhưng vẫn dựng Chroma thật.
 
 ## 2026-08-03 — đóng gói skill demo
 

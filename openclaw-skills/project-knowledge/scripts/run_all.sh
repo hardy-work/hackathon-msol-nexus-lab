@@ -21,9 +21,10 @@ export PYTHONUTF8=1
 export PROJECT_KNOWLEDGE_ACTOR="${PROJECT_KNOWLEDGE_ACTOR:-local-demo}"
 export PROJECT_KNOWLEDGE_ROLES="${PROJECT_KNOWLEDGE_ROLES:-project_member}"
 export PROJECT_KNOWLEDGE_DEMO_MODE="${PROJECT_KNOWLEDGE_DEMO_MODE:-1}"
-# Test state is isolated from the persistent production volume and recreated
-# with derived/. This prevents a prior cache entry from hiding a regression.
-export PROJECT_KNOWLEDGE_STATE_DIR="$PWD/derived/test-runtime"
+# Test state is isolated from the persistent production volume.  It must not
+# live under derived/: the corpus and all derived indexes are a read-only input
+# boundary for the query runtime.
+export PROJECT_KNOWLEDGE_STATE_DIR="$PWD/.runtime/test-runtime"
 if [ -z "${PROJECT_KNOWLEDGE_COVERAGE_GRANTS:-}" ]; then
   export PROJECT_KNOWLEDGE_COVERAGE_GRANTS='{"Đô":["project_knowledge:approve_coverage"]}'
 fi
@@ -39,6 +40,7 @@ echo; echo "══ Stage 0/1 · INVENTORY & CANONICAL REVIEW ══"; "$PY" scri
 
 echo; echo "══ Stage 2 · EXTRACT (NEXUS PLAN · .xlsx) ══";  "$PY" scripts/extract_nexus.py
 echo; echo "══ Stage 2 · EXTRACT (VĂN / OCR · opt-in) ══"; "$PY" scripts/extract_van.py
+echo; echo "══ Stage 2 · EXTRACT (MARKDOWN · deterministic) ══"; "$PY" scripts/extract_markdown.py
 echo; echo "══ Stage 3 · STRUCTURE CONTRACT ══"; "$PY" scripts/structure_selftest.py
 echo; echo "══ Stage 4 · WIKI PAGES (NEXUS) ══"; "$PY" scripts/build_nexus_wiki.py
 echo; echo "══ Gate 3a · LINT ══";     "$PY" scripts/lint.py
@@ -46,14 +48,16 @@ echo; echo "══ Gate 2+4 · numeric_guard ══"; "$PY" scripts/numeric_guar
 echo; echo "══ ACCESS CONTROL ══"; "$PY" scripts/access_control.py
 echo; echo "══ Response style contract ══"; "$PY" scripts/response_style.py
 echo; echo "══ Stage 6 · PUBLISH ══";  "$PY" scripts/build_db.py
+echo; echo "══ Gate 4 · citation existence ══"; "$PY" scripts/gate4_selftest.py
 echo; echo "══ Stage 5 · DERIVE · bậc 3 graph (typed links + DIMENSION) ══"; "$PY" scripts/build_graph.py
-echo; echo "══ Stage 5 · DERIVE · vector wiki (bge-m3) ══"
+echo; echo "══ Stage 5 · DERIVE · BM25 + Chroma vector (Bậc 2, bắt buộc) ══"
 if [ "${PROJECT_KNOWLEDGE_SKIP_VECTOR:-0}" = "1" ]; then
-  echo "  (bỏ qua theo cấu hình offline/demo — keyword/graph deterministic vẫn chạy)"
-else
-  "$PY" scripts/embed_index.py 2>&1 | grep -v "Warning\|Loading weights\|HF_TOKEN\|Batches" \
-    || echo "  (bỏ qua — thiếu model/thư viện; bậc 2 vector sẽ tự tắt, keyword vẫn chạy)"
+  echo "✗ PROJECT_KNOWLEDGE_SKIP_VECTOR đã bị loại bỏ; muốn chạy offline hãy dùng " \
+       "PROJECT_KNOWLEDGE_EMBEDDING_BACKEND=hash" >&2
+  exit 2
 fi
+"$PY" scripts/build_rag_indexes.py
+echo; echo "══ RAG INDEX CONTRACT (offline) ══"; "$PY" scripts/rag_index_selftest.py
 echo; echo "══ CORPUS VERSION / FRESHNESS ══"; "$PY" scripts/versioning.py build --summary
 echo; echo "══ EVAL ══";               (cd scripts && "$PY" eval.py)
 echo; echo "══ EXTENDED EVAL + STYLE ══"; "$PY" scripts/eval_extended.py
@@ -65,17 +69,24 @@ echo; echo "══ LONG-LIVED RUNTIME BENCHMARK ══"; "$PY" scripts/benchmark
 echo; echo "══ ROUTER CONTRACT (offline) ══"; "$PY" scripts/router_selftest.py
 echo; echo "══ VERSION/FRESHNESS (offline) ══"; "$PY" scripts/version_selftest.py
 echo; echo "══ DOCUMENT LIFECYCLE (offline) ══"; "$PY" scripts/lifecycle_selftest.py
+echo; echo "══ SELECTIVE RE-INGEST PAGE SET (offline) ══"; "$PY" scripts/reingest_selftest.py
 echo; echo "══ VERSIONED ARTIFACTS (offline) ══"; "$PY" scripts/versioned_artifact_selftest.py
 echo; echo "══ RUNTIME ACCESS/CACHE/CONTEXT (offline) ══"; "$PY" scripts/runtime_selftest.py
+echo; echo "══ READ-ONLY FILESYSTEM BOUNDARY (offline) ══"; "$PY" scripts/filesystem_boundary_selftest.py
 echo; echo "══ GRAPH RETRIEVAL (offline) ══"; "$PY" scripts/graph_selftest.py
 echo; echo "══ INVENTORY (offline) ══"; "$PY" scripts/inventory_selftest.py
+echo; echo "══ AUTOMATIC FILE INTAKE (offline) ══"; "$PY" scripts/intake_selftest.py
+echo; echo "══ MARKDOWN INTAKE → WIKI (offline) ══"; "$PY" scripts/markdown_ingest_selftest.py
+echo; echo "══ GATE 3a HISTORY METADATA (offline) ══"; "$PY" scripts/lint_history_selftest.py
+echo; echo "══ GATE 3b CONSENSUS CONTRACT (offline) ══"; "$PY" scripts/review_selftest.py
 if [ "${PROJECT_KNOWLEDGE_RUN_SLACK_TESTS:-1}" = "1" ]; then
   echo; echo "══ SLACK HTTP BOUNDARY (offline) ══"; "$PY" adapters/slack/slack_http_selftest.py
   echo; echo "══ SLACK DURABLE QUEUE (offline) ══"; "$PY" adapters/slack/slack_queue_selftest.py
 fi
 
-# Gate 3b (LLM soát nội dung) — OPT-IN. Tốn 1 lệnh `claude -p` mỗi trang (~1-2 phút) và
-# KHÔNG tất định, nên KHÔNG bật mặc định (demo cần nhanh + lặp lại được). Bật khi cần:
+# Gate 3b (LLM soát nội dung) — full rebuild vẫn OPT-IN vì tốn 1 lệnh `claude -p`
+# mỗi trang (~1-2 phút) và không tất định. Luồng ingest worktree (`ingest_flow.py
+# --run`) thì mặc định bắt buộc Gate 3b; chỉ fixture/offline mới dùng --no-review.
 #   GATE3B=1 bash scripts/run_all.sh
 if [ "${GATE3B:-0}" = "1" ]; then
   echo; echo "══ Gate 3b · LLM SOÁT NỘI DUNG (opt-in, đồng thuận K=3) ══"

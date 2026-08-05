@@ -11,7 +11,9 @@ from pathlib import Path
 
 import access_control
 import answer
+import filesystem_boundary
 import query_cache
+import runtime_state
 import telemetry
 import versioning
 
@@ -34,7 +36,12 @@ class KnowledgeRuntime:
     """Reuse DuckDB/graph/vector state while isolating KB views by access fingerprint."""
 
     def __init__(self, root: Path = ROOT, max_access_views: int = 32):
-        self.root = root
+        self.boundary = filesystem_boundary.ReadOnlyCorpus(root)
+        self.boundary.assert_safe()
+        self.root = self.boundary.root
+        # Cache is operational state, not corpus.  It may be writable, but it
+        # must never overlap an input or derived index directory.
+        self.state_dir = self.boundary.assert_state_separate(runtime_state.state_dir(self.root))
         self.max_access_views = max_access_views
         self._lock = threading.RLock()
         self._views: OrderedDict[tuple[str, str], answer.KB] = OrderedDict()
@@ -63,13 +70,12 @@ class KnowledgeRuntime:
             self._views.clear()
             self._corpus_token = token
             # Derived graph/vector files may have changed with the corpus.
-            answer._GRAPH = False
-            answer._SEM = False
-            answer.numeric_guard.reset()
+            answer.reset_indexes()
+            answer.numeric_guard.reset(self.root)
         key = (access.fingerprint, token)
         kb = self._views.get(key)
         if kb is None:
-            kb = answer.KB(access=access)
+            kb = answer.KB(root=self.root, access=access, boundary=self.boundary)
             self._views[key] = kb
             while len(self._views) > self.max_access_views:
                 _, old = self._views.popitem(last=False)
@@ -109,6 +115,18 @@ class KnowledgeRuntime:
                            "answer": "Bạn không có quyền đọc Project Knowledge của dự án này.",
                            "confidence": "none", "citations": [], "reason": reason,
                            "tier": 0, "project": project, "suggested_actions": []})
+        if not versioning.indexes_ready(self.root):
+            return finish({
+                "status": "error",
+                "answer": "Kho truy vấn chưa sẵn sàng.",
+                "confidence": "none",
+                "citations": [],
+                "reason": "Thiếu hoặc stale BM25/Chroma index; chạy scripts/build_rag_indexes.py "
+                          "sau đó chạy scripts/versioning.py build.",
+                "tier": 0,
+                "project": project,
+                "suggested_actions": [],
+            })
         if not isinstance(history, list):
             return finish({"status": "error", "answer": "Conversation history không hợp lệ.",
                            "confidence": "none", "citations": [], "reason": "history must be a list",
@@ -128,7 +146,7 @@ class KnowledgeRuntime:
 
                 key = query_cache.cache_key(project, effective, token, access.fingerprint, llm, history)
                 if self._cache is None:
-                    self._cache = query_cache.QueryCache()
+                    self._cache = query_cache.QueryCache(self.state_dir / "query_cache.sqlite3")
                 cache = self._cache
                 cached = cache.get(key) if use_cache else None
                 if cached is not None:

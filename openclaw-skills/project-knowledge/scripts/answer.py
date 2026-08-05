@@ -34,49 +34,64 @@ import versioning
 import graph_retrieval
 import access_control
 import document_registry
-from artifact_paths import artifact_rel
+import bm25_index
+import filesystem_boundary
+from artifact_paths import artifact_rel, payload_is_current
 
-# Bậc 2 NGỮ NGHĨA (vector bge-m3 trên TRANG WIKI). Lười nạp: model ~2GB nên CHỈ nạp
-# khi thật sự dùng (câu mở, LLM bật). Không có chỉ mục / thiếu thư viện -> None,
-# hệ tự lui về keyword thuần, không sập.
-_SEM = False
-_GRAPH = False
-
-
-def SEM():
-    global _SEM
-    if _SEM is False:
-        try:
-            from embed_index import Semantic
-            # Transformers/tqdm may print model-loading progress.  Keep the
-            # JSON entrypoint stdout-clean; diagnostics belong on stderr.
-            with contextlib.redirect_stdout(sys.stderr), contextlib.redirect_stderr(sys.stderr):
-                _SEM = Semantic()
-        except Exception as e:
-            print(f"{D}(bậc 2 vector tắt: {type(e).__name__}){OFF}", file=sys.stderr)
-            _SEM = None
-    return _SEM
+# Bậc 2 uses the two mandatory derived indexes.  Both are lazy-loaded in the
+# long-lived runtime, but a missing/corrupt store is an infrastructure error,
+# never a reason to silently downgrade production retrieval.
+_SEM: dict[str, object] = {}
+_GRAPH: dict[str, object] = {}
+_KEYWORD: dict[str, object] = {}
 
 
-def semantic_pages(q, k=6, allowed=None):
-    sem = SEM()
-    if sem is None:
-        return []
-    try:
-        pages = [p for _, p in sem.search(q, k=max(k * 3, k))]
-        if allowed:
-            allowed = set(allowed)
-            pages = [p for p in pages if p in allowed]
-        return pages[:k]
-    except Exception:
-        return []
+def _root_key(root=None) -> str:
+    return str(Path(root or ROOT).resolve())
 
 
-def GRAPH():
-    global _GRAPH
-    if _GRAPH is False:
-        _GRAPH = graph_retrieval.load(ROOT)
-    return _GRAPH
+def reset_indexes() -> None:
+    """Drop corpus-scoped lazy indexes after a version/worktree changes."""
+    _SEM.clear()
+    _GRAPH.clear()
+    _KEYWORD.clear()
+
+
+def KEYWORD(root=None):
+    key = _root_key(root)
+    if key not in _KEYWORD:
+        root = Path(root or ROOT).resolve()
+        if not versioning.indexes_ready(root):
+            raise RuntimeError("BM25/Chroma index thiếu hoặc stale; chạy scripts/build_rag_indexes.py")
+        _KEYWORD[key] = bm25_index.KeywordIndex(root)
+    return _KEYWORD[key]
+
+
+def SEM(root=None):
+    key = _root_key(root)
+    if key not in _SEM:
+        root = Path(root or ROOT).resolve()
+        if not versioning.indexes_ready(root):
+            raise RuntimeError("BM25/Chroma index thiếu hoặc stale; chạy scripts/build_rag_indexes.py")
+        from embed_index import Semantic
+        # Transformers/tqdm may print model-loading progress.  Keep the JSON
+        # entrypoint stdout-clean; diagnostics belong on stderr.  Do not catch
+        # errors here: Chroma/vector is mandatory in the production contract.
+        with contextlib.redirect_stdout(sys.stderr), contextlib.redirect_stderr(sys.stderr):
+            _SEM[key] = Semantic(root)
+    return _SEM[key]
+
+
+def semantic_pages(q, k=6, allowed=None, root=None):
+    sem = SEM(root)
+    return [p for _, p in sem.search(q, k=max(k * 3, k), allowed=allowed)][:k]
+
+
+def GRAPH(root=None):
+    key = _root_key(root)
+    if key not in _GRAPH:
+        _GRAPH[key] = graph_retrieval.load(Path(root or ROOT).resolve())
+    return _GRAPH[key]
 
 
 def rrf_merge(rank_lists, keep=6, pin=(), k0=60):
@@ -100,9 +115,9 @@ DB = ROOT / "derived" / "facts.duckdb"
 RAW = ROOT / "raw"
 
 
-def raw_ref(raw_id: str, kind: str = "md") -> str:
+def raw_ref(raw_id: str, kind: str = "md", root: Path = ROOT) -> str:
     """Resolve a current Nexus artifact for citations and raw fallback reads."""
-    document = document_registry.current("nexus-plan", ROOT)
+    document = document_registry.current("nexus-plan", root)
     return artifact_rel(document, raw_id, kind).as_posix()
 
 CO, NO, NF = "CÓ", "CHẮC CHẮN KHÔNG", "KHÔNG TÌM THẤY"
@@ -428,12 +443,20 @@ class Result:
 
 
 class KB:
-    def __init__(self, access=None):
-        if not DB.exists():
+    def __init__(self, root: Path = ROOT, access=None,
+                 boundary: filesystem_boundary.ReadOnlyCorpus | None = None):
+        self.boundary = boundary or filesystem_boundary.ReadOnlyCorpus(root)
+        self.boundary.assert_safe()
+        self.root = self.boundary.root
+        self.db = self.boundary.resolve("derived/facts.duckdb", must_exist=False)
+        if not self.db.exists():
             sys.exit("chưa có derived/facts.duckdb — chạy: python3 scripts/build_db.py")
-        self.freshness = versioning.check(ROOT)
+        self.freshness = versioning.check(self.root)
         self.access = access
-        self.con = duckdb.connect(str(DB), read_only=True)
+        # DuckDB is explicitly opened read-only.  All other corpus reads below
+        # go through the same boundary so a custom worktree cannot fall back to
+        # the process-global repository root.
+        self.con = duckdb.connect(str(self.db), read_only=True)
         people_rows = self.con.execute(
             "SELECT assignee,name,role,task_count,estimate_h,actual_h,page,src_task,src_actual "
             ",visibility,allowed_roles,allowed_users FROM person").fetchall()
@@ -450,7 +473,8 @@ class KB:
         self.psprint = {(r[0], r[1]): r[:6] for r in sprint_rows
                         if self.can_read_acl(*r[6:9])}
         self.sprint_metrics = {}
-        metrics_file = ROOT / raw_ref("nexus-sprint1", "facts")
+        metrics_file = self.boundary.resolve(raw_ref("nexus-sprint1", "facts", self.root),
+                                             must_exist=False)
         if metrics_file.exists():
             data = json.loads(metrics_file.read_text(encoding="utf-8"))
             self.sprint_metrics = data.get("summary_facts", {})
@@ -534,12 +558,13 @@ class KB:
 
     def can_read_page(self, rel):
         """Apply page-level visibility after the project-level boundary."""
+        try:
+            path = self.boundary.resolve(rel, must_exist=True)
+        except (filesystem_boundary.BoundaryError, FileNotFoundError):
+            return False
+        text = self.boundary.read_text(path.relative_to(self.root))
         if self.access is None:  # trusted offline build/eval process
             return True
-        path = ROOT / rel
-        if not path.exists():
-            return False
-        text = path.read_text(encoding="utf-8")
         match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
         metadata = yaml.safe_load(match.group(1)) if match else {}
         return access_control.can_read_metadata(self.access, metadata or {})
@@ -764,6 +789,10 @@ def doc_fallback(kb, q):
 
 # ------------------------------------------------------- BẬC 1 · có cấu trúc
 def tier1(kb, q):
+    # Keep citations/worktree resolution bound to the KB instance, never to a
+    # process-global ROOT.  This matters for isolated worktrees and for tests
+    # that run more than one corpus in the same process.
+    raw_ref = lambda raw_id, kind="md": globals()["raw_ref"](raw_id, kind, kb.root)
     q = normalize_query(q)
     qa = strip_accent(q)
     who = kb.find_people(q)
@@ -1106,12 +1135,12 @@ def tier0_pages(kb, q, limit=64):
     Đây là catalog bậc 0 của flow: không đọc nội dung wiki, không quét tự do. Các
     định danh đóng mà bậc 1 nhận ra (person/doc) được pin trước kết quả catalog.
     """
-    index = ROOT / "wiki" / "index.md"
+    index = kb.boundary.resolve("wiki/index.md", must_exist=False)
     if not index.exists():
         return []
     page_map = {
-        p.stem: p.relative_to(ROOT).as_posix()
-        for p in (ROOT / "wiki").rglob("*.md")
+        p.stem: p.relative_to(kb.root).as_posix()
+        for p in kb.boundary.files("wiki", "*.md")
         if p.name not in ("index.md", "log.md")
     }
     pinned = []
@@ -1127,7 +1156,7 @@ def tier0_pages(kb, q, limit=64):
     terms = [t for t in re.findall(r"[a-z0-9]+", strip_accent(q))
              if len(t) > 2 and t not in STOP]
     scored = []
-    for pos, line in enumerate(index.read_text(encoding="utf-8").splitlines()):
+    for pos, line in enumerate(kb.boundary.read_text("wiki/index.md").splitlines()):
         links = LINK.findall(line) if "LINK" in globals() else re.findall(r"\[\[([^\]]+)\]\]", line)
         if not links:
             continue
@@ -1145,41 +1174,22 @@ def tier0_pages(kb, q, limit=64):
     return out[:limit]
 
 
-# ---------------------------------------------------------- BẬC 2 · từ khoá
+# ---------------------------------------------------------- BẬC 2 · BM25 keyword
 def tier2(kb, q, candidates=None):
-    # GIỮ NGUYÊN DẤU và khớp theo biên từ. Bỏ dấu ở đây làm "chỉ" == "chi",
-    # "phí" == "phi" -> khớp giả, và câu "không tìm thấy" biến thành "có". Đã bị một lần.
-    terms = [t for t in re.findall(r"\w+", q.lower(), re.UNICODE)
-             if strip_accent(t) not in STOP and len(t) > 2]
-    if not terms:
-        return Result(2, NF, "Câu hỏi không có từ khoá nào để tìm.")
-    pats = {t: re.compile(rf"(?<!\w){re.escape(t)}(?!\w)", re.UNICODE) for t in terms}
-    best = []
-    # wiki/ (tầng tuyển): khớp biên từ trên cả trang — xương sống eval phụ thuộc, giữ nguyên.
-    paths = [ROOT / rel for rel in (candidates or [])]
-    for p in paths:
-        rel = p.relative_to(ROOT).as_posix() if p.exists() else ""
-        if (not p.exists() or p.name in ("index.md", "log.md")
-                or not kb.can_read_page(rel)):
-            continue
-        body = p.read_text(encoding="utf-8").lower()
-        hit = [t for t in terms if pats[t].search(body)]
-        if hit:
-            best.append((len(hit) / len(terms), p.relative_to(ROOT).as_posix(), hit))
-    best.sort(reverse=True)
-    if not best or best[0][0] < 0.6:
+    # Scope BM25 to the catalog/ACL-filtered candidate set.  The index itself
+    # is mandatory and read-only; no token-coverage fallback is allowed here.
+    best = KEYWORD(kb.root).search(q, k=6, allowed=candidates or None)
+    if not best:
         r = Result(2, NF,
             "Không tìm thấy thông tin này trong kho.",
-            reason=("không từ khoá nào khớp" if not best else
-                    f"khớp yếu nhất định ({best[0][0]:.0%} từ khoá, cao nhất `{best[0][1]}`) — "
-                    f"dưới ngưỡng, kho KHÔNG đoán bừa") +
-                   ". Lưu ý: đây là 'kho không biết', KHÔNG phải 'không có'. "
+            reason="BM25 không trả về trang nào trong phạm vi được phép. "
+                   "Lưu ý: đây là 'kho không biết', KHÔNG phải 'không có'. "
                    "Chỉ bậc 1 với DIMENSION đóng + coverage đã ký mới được nói 'chắc chắn không'.")
-        r.pages = [b[1] for b in best[:3]]   # vẫn đưa cho bậc 3 xem, nếu bậc 3 bật
+        r.pages = []
         return r
-    return Result(2, CO, f"Có trang liên quan, cần bậc 3 (LLM) đọc để trả lời:",
-                  cites=[b[1] for b in best[:3]],
-                  reason="bậc 2 chỉ định vị trang, không tự soạn câu trả lời.")
+    return Result(2, CO, "Có trang liên quan, cần bậc 3 (LLM) đọc để trả lời:",
+                  cites=[path for _, path in best],
+                  reason="BM25 định vị trang wiki; bậc 2 không tự soạn câu trả lời.")
 
 
 # ------------------------------------------------------------ BẬC 3 · LLM
@@ -1212,14 +1222,14 @@ def tier3(kb, q, pages, graph_context="", timeout=120):
     import subprocess
     pages = [p for p in pages if kb.can_read_page(p)]
     ctx = "\n\n".join(
-        f"--- {p} ---\n{(ROOT / p).read_text(encoding='utf-8')}" for p in pages)
+        f"--- {p} ---\n{kb.boundary.read_text(p)}" for p in pages)
     try:
         # prompt qua STDIN (nhiều trang wiki dễ vượt trần dòng lệnh ~32KB của Windows).
         out = subprocess.run(
             [models.CLAUDE, "-p", "--model", models.LIGHT, "--allowedTools", ""],
             input=TIER3_PROMPT.format(q=q, ctx=ctx, graph=graph_context or "(không có)"),
             capture_output=True, text=True,
-            encoding="utf-8", timeout=timeout, cwd=ROOT)
+            encoding="utf-8", timeout=timeout, cwd=kb.root)
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
         return Result(3, NF, "Bậc 3 không chạy được.", reason=f"{type(e).__name__}: {e}")
     if out.returncode != 0:
@@ -1231,7 +1241,66 @@ def tier3(kb, q, pages, graph_context="", timeout=120):
 
 
 # ------------------------------------------------------------ GATE 4
-def gate4(res):
+def _citation_base(citation: str) -> str:
+    """Extract the file-like part of a human-readable citation."""
+    value = str(citation or "").strip()
+    for separator in (" :: ", " → ", " ("):
+        if separator in value:
+            value = value.split(separator, 1)[0]
+            break
+    return value.split("#", 1)[0].strip()
+
+
+def _current_fact_locators(kb) -> set[str]:
+    """Return source locators present in the current facts corpus only."""
+    locators: set[str] = set()
+    versions = document_registry.current_versions(kb.root)
+
+    def visit(value) -> None:
+        if isinstance(value, dict):
+            source = value.get("src")
+            if isinstance(source, str) and source.strip():
+                locators.add(source.strip())
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    for path in kb.boundary.files("raw", "*.facts.json"):
+        try:
+            payload = json.loads(kb.boundary.read_text(path.relative_to(kb.root)))
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        if payload_is_current(payload, kb.root, versions, path=path):
+            visit(payload)
+    return locators
+
+
+def invalid_citations(kb, citations) -> list[str]:
+    """Find citations that cannot be resolved to current evidence."""
+    locators: set[str] | None = None
+    invalid: list[str] = []
+    for citation in citations or []:
+        raw = str(citation or "").strip()
+        base = _citation_base(raw)
+        if not base:
+            invalid.append(raw or "<empty citation>")
+            continue
+        try:
+            resolved = kb.boundary.resolve(base, must_exist=True)
+        except (filesystem_boundary.BoundaryError, FileNotFoundError):
+            if locators is None:
+                locators = _current_fact_locators(kb)
+            if base not in locators:
+                invalid.append(raw)
+            continue
+        if not resolved.is_file():
+            invalid.append(raw)
+    return invalid
+
+
+def gate4(res, kb):
     """numeric_guard(policy=answer). Chạy trên MỌI bậc, kể cả bậc 1 — cổng phải là
     cổng, không phải bộ lọc riêng cho bậc bị nghi ngờ.
 
@@ -1241,7 +1310,16 @@ def gate4(res):
     THEO NGỮ CẢNH: chỉ chấp nhận số thuộc facts của ĐÚNG nguồn câu trả lời đã trích
     (`res.cites`) — không phải cả vũ trụ số. Nhờ vậy '50 Điều' trích từ tài liệu OCR
     (0 facts đăng ký) không mở khoá được nhờ trùng một số ở nguồn khác."""
-    bad = numeric_guard.check(policy="answer", text=res.answer, cites=res.cites)
+    missing = invalid_citations(kb, res.cites)
+    if missing:
+        return Result(res.tier, NF,
+            "Đã CHẶN ở GATE 4 — câu trả lời có citation không tồn tại.",
+            cites=[],
+            reason="citation không resolve được trong current corpus: "
+                   + ", ".join(missing[:8]))
+
+    bad = numeric_guard.check(policy="answer", text=res.answer, cites=res.cites,
+                              root=kb.root)
     if not bad:
         return res
     return Result(res.tier, NF,
@@ -1271,16 +1349,16 @@ def ask(kb, q, llm=True):
     # Flow bắt buộc bậc 1 chạy trước mọi retrieval mờ/graph.
     r = tier1(kb, q)
     if r:
-        return finish(gate4(r))
+        return finish(gate4(r, kb))
 
-    graph = GRAPH()
+    graph = GRAPH(kb.root)
     if graph is not None and graph_retrieval.is_relation_query(q):
         direct = graph.direct_answer(q, access=kb.access)
         if direct is not None:
             result = Result(2, CO, direct.answer, cites=list(direct.citations),
                             reason=direct.reason,
                             route=router.Decision("graph", 1.0, direct.reason, "graph"))
-            return gate4(result)
+            return gate4(result, kb)
         graph_context, graph_citations = graph.context(q, access=kb.access)
 
     # Vẫn còn trong BẬC 1: quét bảng đã nạp. Phải chạy TRƯỚC bậc 2 — sơ đồ quy định
@@ -1288,7 +1366,7 @@ def ask(kb, q, llm=True):
     # không phải câu trả lời, nên để nó chen lên trước là mất câu trả lời có thật.
     fb = doc_fallback(kb, q)
     if fb:
-        return finish(gate4(fb))
+        return finish(gate4(fb, kb))
 
     # Haiku is called only after the deterministic path has failed.  This keeps
     # normal PM lookups offline and cheap, while allowing ambiguous/open queries
@@ -1321,7 +1399,7 @@ def ask(kb, q, llm=True):
     use_semantic = llm and (model_route is None or model_route in ("semantic", "open"))
     if use_semantic:
         pin = [kb.person(s)[6] for s in kb.find_people(q)]
-        sem = semantic_pages(q, k=6, allowed=catalog or None)
+        sem = semantic_pages(q, k=6, allowed=catalog or None, root=kb.root)
         if sem:
             pages = rrf_merge([catalog, pages, sem], keep=6, pin=pin)
     # A structured route that missed Tier 1 may still have useful wiki context
@@ -1333,7 +1411,7 @@ def ask(kb, q, llm=True):
         r3 = tier3(kb, q, pages, graph_context=graph_context)
         if graph_citations:
             r3.cites = list(dict.fromkeys([*r3.cites, *graph_citations]))
-        r3 = gate4(r3)
+        r3 = gate4(r3, kb)
         # Bậc 3 nói KHÔNG TÌM THẤY thì vẫn dùng câu của nó — nó nêu ĐÍCH DANH cái
         # đang thiếu, hữu ích hơn câu chung chung của bậc 2. Nhưng phải gắn kèm
         # lời cảnh báo của bậc 2, vì LLM không được phép tự nói câu đó.
@@ -1344,7 +1422,10 @@ def ask(kb, q, llm=True):
         return finish(r3)
     if r2.outcome == CO:   # bậc 3 tắt: đừng vờ như đã trả lời
         r2.outcome = NF
-    return finish(gate4(r2))
+        r2.answer = "Không tìm thấy thông tin này trong kho."
+        r2.reason = (r2.reason + " Bậc 3 đang tắt nên các trang BM25 chỉ được xem là "
+                     "candidate, chưa đủ để kết luận nội dung.").strip()
+    return finish(gate4(r2, kb))
 
 
 # Câu NỐI TIẾP RÚT GỌN: chỉ nhắc tên người, ý còn lại lấy từ câu trước.
