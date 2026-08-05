@@ -65,7 +65,9 @@ Cấu trúc `config.json`:
       "gid": "...",           // sheetId (gid) của tab
       "name": "...",          // tên tab, dùng cho API values.get/A1 notation
       "note": "...",          // ghi chú riêng của tab (schema khác, cảnh báo lệch cột giữa các tab...)
-      "columns": { "A": "No.", "B": "...", ... } // map cột→field, null nếu tab không phải dạng task list
+      "columns": { "A": "No.", "B": "...", ... }, // map cột→field, null nếu tab không phải dạng task list
+      "headerSnapshotRange": "A1:S2", // range A1 chính xác đã đọc để lấy headerSnapshot — dùng lại đúng range này mỗi lần verify, không tự đoán lại
+      "headerSnapshot": [ ["...","...",...], ["...","...",...] ] // NGUYÊN VĂN (các) header row đã đọc lúc characterize tab này — dùng để phát hiện khi sheet đổi cấu trúc sau này, xem mục "Verify columns còn khớp header thật". Ghi kèm cả khi `columns` = `null` nhưng `note` đã mô tả cấu trúc cụ thể (vd tab kiểu Overtime/Resource plan dùng cột-theo-ngày, note mô tả rõ cột nào ứng ngày nào) — vì phần mô tả trong `note` cũng có thể bị sheet đổi làm sai theo. Chỉ để `null`/vắng mặt khi CHƯA characterize gì cả (note rỗng, columns null)
     }
   ],
   "numberFormat": "...",      // ghi chú định dạng số nếu khác chuẩn (vd dùng dấu phẩy thập phân)
@@ -119,6 +121,8 @@ ACCESS_TOKEN=$(bash openclaw-skills/gg-sheet/scripts/get-token.sh)
 Nếu `$ACCESS_TOKEN` rỗng → xem Error Handling (thường do Service Account chưa được share quyền Editor vào sheet, hoặc `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` sai đường dẫn).
 
 > ⚠️ Script dùng `Buffer.toString('base64url')` → cần **Node ≥15.7**. Nếu `node --version` trong môi trường đang là Node 14 (mặc định của máy này) → script lỗi `ERR_UNKNOWN_ENCODING: base64url` và `ACCESS_TOKEN` rỗng dù credentials đúng. Kiểm tra `nvm ls` để tìm bản mới hơn đã cài sẵn, rồi chạy: `export PATH="$(nvm which 20 2>/dev/null | xargs dirname):$PATH"` hoặc trỏ thẳng `PATH` vào thư mục bin của bản Node ≥15.7 (vd `~/.nvm/versions/node/v20.20.1/bin`) trước khi gọi `get-token.sh`.
+>
+> ⚠️ `.env` khai `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` dạng đường dẫn **tương đối** (vd `./service-account.json`, tính từ thư mục skill `openclaw-skills/gg-sheet`) — nếu chạy `get-token.sh` từ 1 cwd khác (vd project root) mà **không** `source .env` + `cd` vào đúng thư mục skill trước, script sẽ lỗi `ENOENT: no such file or directory, open './service-account.json'` dù credentials/token đều đúng. Luôn `cd openclaw-skills/gg-sheet && set -a && source .env && set +a` trước khi gọi `get-token.sh`, kể cả khi đã source `.env` từ nơi khác trước đó trong cùng phiên.
 
 > ⚡ **Tối ưu tốc độ**: chỉ mint `ACCESS_TOKEN` **1 lần cho cả action**, dùng lại cho mọi lệnh ghi trong action đó — không mint lại giữa các bước (mỗi lần mint tốn 1 round-trip tới `oauth2.googleapis.com`). Việc mint token (dùng Service Account) độc lập với bước đọc dữ liệu (dùng API key) nên có thể chạy 2 lệnh này song song trong cùng 1 lời gọi Bash (`... & PID=$!; ...; wait $PID`) thay vì tuần tự, để giảm thời gian chờ trước khi ghi.
 
@@ -260,24 +264,26 @@ Ghi Audit Log.
 
 ### Bối cảnh
 
-PM báo 1 task của assignee có `Re-estimate(h) Actual` (cột J) > `Estimate(h) Plan` (cột G) → phần dư giờ (overrun) làm lệch lịch các task **Open** phía sau của **cùng assignee đó** trong tab. Giả định mỗi assignee làm việc theo capacity cố định 8h/ngày làm việc (thứ 2–6, bỏ qua thứ 7/CN), các task xếp tuần tự theo đúng thứ tự dòng trong sheet.
+PM báo 1 task của assignee có `Re-estimate(h) Actual` (cột K) > `Estimate(h) Plan` (cột H) → phần dư giờ (overrun) làm lệch lịch các task **Open** phía sau của **cùng assignee đó** trong tab. Giả định mỗi assignee làm việc theo capacity cố định 8h/ngày làm việc (thứ 2–6, bỏ qua thứ 7/CN), các task xếp tuần tự theo đúng thứ tự dòng trong sheet.
 
-> ⚠️ So sánh đúng **Estimate (G) vs Re-estimate (J)** để tính overrun — KHÔNG dùng `Actual Effort(h)` (cột M), vì cột M thường bằng đúng Estimate ban đầu (số giờ đã tiêu tới thời điểm báo cáo) và không phản ánh việc task được ước lại tổng effort cao hơn.
+> ⚠️ Chữ cột nêu ở Action này khớp `columns` hiện tại của tab "Sprint 1" trong `config.json` — nếu dùng cho tab/project khác có cấu trúc cột khác, LUÔN đối chiếu lại `columns` thật trong `config.json` trước, không mặc định các chữ cột dưới đây đúng cho mọi tab.
+>
+> ⚠️ So sánh đúng **Estimate (H) vs Re-estimate (K)** để tính overrun — KHÔNG dùng `Actual Effort(h)` (cột N), vì cột N thường bằng đúng Estimate ban đầu (số giờ đã tiêu tới thời điểm báo cáo) và không phản ánh việc task được ước lại tổng effort cao hơn.
 
 ### Quy trình
 
-**Bước 1** — Đọc lại toàn bộ task của assignee đó trong tab (`values:batchGet` cột No./Task/Assignee/H/I/J/K/L/M/N/R), theo đúng thứ tự dòng trong sheet — đây chính là thứ tự làm việc thực tế.
+**Bước 1** — Đọc lại toàn bộ task của assignee đó trong tab (`values:batchGet` cột TaskID/Assignee/H/I/J/K/L/M/N/R), theo đúng thứ tự dòng trong sheet — đây chính là thứ tự làm việc thực tế.
 
-**Bước 2** — Xác định task bị trễ: `Re-estimate(h) Actual` (J) > `Estimate(h) Plan` (G) → `overrun = Re-estimate - Estimate` (giờ dư).
+**Bước 2** — Xác định task bị trễ: `Re-estimate(h) Actual` (K) > `Estimate(h) Plan` (H) → `overrun = Re-estimate - Estimate` (giờ dư).
 
 **Bước 3** — Cascade lại theo capacity 8h/ngày, **KHÔNG làm tròn nguyên khối** (tránh tạo ngày trống vô lý). **Chỉ ghi vào cột Plan (`Start Date Plan`/`End Date Plan`) — KHÔNG BAO GIỜ ghi vào `Start Date Actual`/`End Date Actual`**: 2 cột Actual chỉ do chính assignee tự điền tay khi task thực sự bắt đầu/hoàn thành (100%), agent không tự đoán hộ hay đại diện điền, kể cả khi đang re-schedule task đó:
 
-- Task bị trễ: dùng `Start Date Actual` (K, đã có sẵn — chỉ **đọc** để tính, không sửa) làm mốc, cộng dồn giờ dư (`overrun`) theo capacity 8h/ngày (bỏ qua T7/CN) → ra ngày task này thực sự cần đến để xong với effort đã ước lại → ghi ngày đó vào `End Date (Plan)` của chính task này. `End Date (Actual)` giữ nguyên hiện trạng (trống nếu đang trống) — chỉ assignee tự điền khi Progress=100%/Status=Done.
+- Task bị trễ: dùng `Start Date Actual` (L, đã có sẵn — chỉ **đọc** để tính, không sửa) làm mốc, cộng dồn giờ dư (`overrun`) theo capacity 8h/ngày (bỏ qua T7/CN) → ra ngày task này thực sự cần đến để xong với effort đã ước lại → ghi ngày đó vào `End Date (Plan)` của chính task này. `End Date (Actual)` giữ nguyên hiện trạng (trống nếu đang trống) — chỉ assignee tự điền khi Progress=100%/Status=Done.
 - Mỗi task **Open** kế tiếp của assignee: `Start Date (Plan)` mới = `End Date (Plan)` mới của task ngay trước nó — KHÔNG nhảy cách 1 ngày trống. `End Date (Plan)` = `Start Date (Plan)` mới + phần giờ còn dư sau khi trừ capacity ngày hôm đó, cứ thế cộng dồn tới task cuối cùng bị ảnh hưởng.
 - Bỏ qua thứ 7/CN khi cộng ngày (nếu rơi vào cuối tuần → nhảy sang thứ 2 kế tiếp).
 - Các task đã Done/có Actual rồi (không phải Open) thì KHÔNG động vào.
 
-**Bước 4** — Hiển thị preview đầy đủ cascade (liệt kê từng task, ngày cũ → ngày mới), xác nhận PM trước khi ghi — **đặc biệt lưu ý PM dễ phát hiện lỗi "ngày trống"** nếu cascade tính sai (task sau nhảy quá xa so với ngày task trước kết thúc) → nếu PM phản hồi phát hiện gap vô lý, tính lại theo đúng nguyên tắc Bước 3 (start = end của task liền trước, không làm tròn nguyên khối).
+**Bước 4** — Hiển thị preview đầy đủ cascade (liệt kê từng task, ngày cũ → ngày mới). **Không hỏi có/không đơn thuần** — luôn hỏi thêm PM có muốn **bổ sung hoặc bớt task** khỏi danh sách trước khi ghi không (vd PM biết 1 phụ thuộc nghiệp vụ ngoài dữ liệu sheet nên muốn thêm task khác vào cùng đợt dời, hoặc muốn bớt 1 task đã có phương án riêng như OT/nhờ người khác). Nếu PM chỉ nói "ok"/"giữ nguyên" → chốt đúng danh sách đã đưa. Nếu PM thêm/bớt task → cập nhật danh sách, tính lại cascade nếu thay đổi đó ảnh hưởng tới các task khác trong chuỗi, hiển thị preview mới rồi mới hỏi xác nhận ghi. **Đặc biệt lưu ý PM dễ phát hiện lỗi "ngày trống"** nếu cascade tính sai (task sau nhảy quá xa so với ngày task trước kết thúc) → nếu PM phản hồi phát hiện gap vô lý, tính lại theo đúng nguyên tắc Bước 3 (start = end của task liền trước, không làm tròn nguyên khối).
 
 **Bước 5** — Ghi từng ô đổi qua `values:batchUpdate` (giống Bước 5 của Action 2), verify, ghi Audit Log.
 
@@ -374,8 +380,24 @@ Ghi Audit Log.
       " "<gid>"
   ```
   Sau khi resolve → thêm 1 phần tử mới vào mảng `tabs` trong `config.json` (`{gid, name, note: "", columns: null}`).
-- Trước khi thao tác 1 tab lần đầu (hoặc tab có `columns: null`) → đọc thử 2-3 hàng đầu của tab đó để xác định cấu trúc cột thật, rồi cập nhật lại `columns` (và `note` nếu có gì đặc biệt, vd lệch cột so với tab khác) vào đúng phần tử trong `config.json`.
+- Trước khi thao tác 1 tab lần đầu (hoặc tab có `columns: null`) → đọc thử header thật của tab đó (số dòng tuỳ cấu trúc — 1 dòng nếu header đơn giản như "Risk management", 2 dòng nếu có nhóm cột như "Sprint 1"/"Overtime") để xác định cấu trúc cột, rồi ghi vào đúng phần tử trong `config.json`: cập nhật `columns`, `note` (nếu có gì đặc biệt, vd lệch cột so với tab khác), **và `headerSnapshotRange` + `headerSnapshot`** = đúng range A1 vừa đọc + nguyên văn (các) header row đọc được (dùng để verify sau này, xem mục ngay dưới).
 - Nếu PM không cho tên tab/gid/link nào, và câu hỏi không đủ rõ để suy ra → hỏi lại PM.
+
+### Verify `columns` còn khớp header thật trước khi dùng (chống config lệch sheet)
+
+`config.json` chỉ là **cache** của cấu trúc cột tại thời điểm resolve — không tự phát hiện khi sheet thật đổi cấu trúc sau đó (thêm/xoá/đổi thứ tự cột). Vì vậy, **mỗi lần chuẩn bị dùng `columns` của 1 tab đã có `headerSnapshot`** (không chỉ lúc `columns: null` như bước trên) — dù để đọc (report) hay **bắt buộc trước khi ghi** (Action 1/2/3/2b) — làm theo:
+
+1. Đọc lại đúng `headerSnapshotRange` hiện tại trên sheet thật (đúng range A1 đã lưu, không tự đoán lại).
+   - `gg-sheet-daily-report`: gần như miễn phí — skill này vốn đã đọc trọn tab (kể cả header) ở Bước 2, chỉ cần lấy đúng số dòng đầu trong response đó ra so sánh, không cần gọi API riêng.
+   - `gg-sheet` (Action 1/2/3/2b): đọc theo cột lẻ để tiết kiệm token nên cần thêm 1 lệnh nhỏ đọc đúng (các) header row **trước khi ghi** — chi phí không đáng kể so với rủi ro ghi sai cột.
+2. So sánh (deep-equal từng ô, kể cả thứ tự) header vừa đọc với `headerSnapshot` đã lưu:
+   - **Khớp** → `columns` vẫn đáng tin, dùng bình thường, không cần nói gì với PM.
+   - **Lệch** → `columns` đã stale, **KHÔNG dùng để đọc/ghi tiếp ngay**:
+     - Thử map lại từng field theo tên (so khớp/gần khớp tên cột cũ trong `columns` với header mới) để tự suy ra `columns` mới.
+     - Map được hết (mọi field cũ đều tìm được vị trí tương ứng trong header mới, dù đổi chữ cái) → cập nhật `columns` + `headerSnapshot` (+ `headerSnapshotRange` nếu range cũng đổi, vd thêm/bớt cột làm dải rộng ra) mới vào `config.json`, báo ngắn gọn cho PM những cột nào đã đổi (vd "Cột F trước là 'Priority', giờ là 'Assignee' — mình đã cập nhật lại config") rồi tiếp tục Action/report bình thường với mapping mới.
+     - Map KHÔNG hết (có field cũ không tìm thấy tên tương ứng, hoặc header mới có cột lạ không rõ ý nghĩa) → dừng lại, liệt kê rõ phần đọc được và phần không chắc, hỏi PM xác nhận cách map trước khi tiếp tục — **không tự đoán liều khi không chắc**, đặc biệt là ngay trước 1 lượt ghi.
+
+Bước này **bổ sung**, không thay thế bước "đọc thử header khi `columns: null`" ở trên — nó bảo vệ những tab **đã có** `columns` khỏi bị dùng sai khi sheet đổi cấu trúc về sau, thay vì chỉ tin `config.json` mãi mãi sau lần resolve đầu tiên.
 
 ---
 
@@ -412,3 +434,5 @@ Ví dụ:
 | API trả lỗi `404` (không tìm thấy range)                                          | Tên tab sai hoặc tab đã bị đổi tên/xoá → hỏi lại PM tên tab hiện tại                                                                                     |
 | PM trả lời "không" ở bước xác nhận                                                | "Đã huỷ, không có thay đổi nào trên sheet."                                                                                                              |
 | JSON thiếu `values` hoặc parse lỗi                                                | Báo PM: "Không đọc được dữ liệu tab này để xác định vị trí dòng, cấu trúc cột có thể đã thay đổi."                                                       |
+| Header thật lệch với `headerSnapshot` (xem "Verify columns còn khớp header thật"), tự map lại được hết | Cập nhật `columns`/`headerSnapshot` mới vào `config.json`, báo ngắn gọn cột nào đã đổi rồi tiếp tục Action bình thường với mapping mới |
+| Header lệch nhưng map lại KHÔNG hết | Dừng lại **trước khi ghi**, liệt kê phần đọc được/không chắc, hỏi PM xác nhận cách map cột mới trước khi tiếp tục — không tự đoán liều |

@@ -21,7 +21,7 @@ Bạn là trợ lý tổng hợp report cuối ngày cho PM của team MOR, trê
 
 1. Trong các task **thuộc phạm vi hôm nay**, assignee nào đã cập nhật tiến độ, ai chưa? (khác Jira — sheet **không có worklog/timestamp** tự động, nên "đã report" ở đây nghĩa là đã **điền tay `Start Date Actual`** cho task đang tới lượt chạy theo lịch — xem mục "Trạng thái task" và Bước 3-4.)
 2. Trong các task **thuộc phạm vi hôm nay**, task nào có dấu hiệu quên cập nhật Status (đã log work nhưng Status vẫn "Open"), hoặc đã đạt điều kiện effort (`Remaining(h)=0`/`Progress=100%`) nhưng chưa khớp đủ checklist "Hoàn thành" (xem mục "Trạng thái task")? — chỉ **hiển thị** cho PM xem, không tự kết luận đúng/sai ngoài phần "quên chưa đổi trạng thái" đã có tiêu chí rõ ràng.
-3. Trong các task **thuộc phạm vi hôm nay**, có task nào bị trễ không (`Re-estimate(h) Actual (J) > Estimate(h) Plan (G)`) — nếu có, các task **Open** khác của assignee đó trong tab cần dời lịch bao nhiêu? (Nếu PM hỏi riêng, không kèm "hôm nay" — vd "có task nào trễ trong tab X không?" — thì mới quét toàn tab, xem mục Nhận diện intent.)
+3. Trong các task **thuộc phạm vi hôm nay**, có task nào bị trễ không — **theo 2 tiêu chí độc lập** (xem Bước 6): (a) `Re-estimate(h) Actual (K) > Estimate(h) Plan (H)` (đã có dữ liệu effort thật, vượt ước tính), hoặc (b) đã qua **mốc chốt report 17h00** của `End Date Plan` (hạn ở ngày trước hôm nay, hoặc đúng hôm nay nhưng giờ hiện tại đã ≥17h00) **và** task chưa `Status = "Done"` (kể cả khi chưa điền tiến độ gì — trễ theo lịch/quên report, không cần chờ sang ngày hôm sau mới biết, xem "Giờ chốt report" ở mục Config) — nếu có, các task **Open** khác của assignee đó trong tab cần dời lịch bao nhiêu? (Nếu PM hỏi riêng, không kèm "hôm nay" — vd "có task nào trễ trong tab X không?" — thì mới quét toàn tab, xem mục Nhận diện intent.)
 
 **Quy tắc bất biến:**
 - Luôn giao tiếp bằng tiếng Việt
@@ -83,8 +83,12 @@ Nếu tab đang check thiếu 1 trong các field trên trong `columns` → coi n
 Timezone: **Asia/Ho_Chi_Minh (UTC+7)**. "Hôm nay" = ngày hiện tại theo giờ VN — **trừ khi ngày hiện tại rơi vào Thứ 7/CN** (không phải ngày làm việc, không assignee nào có task "đang tới lượt chạy" theo lịch), khi đó dùng **ngày làm việc gần nhất trước đó** (luôn là Thứ 6 liền trước) làm "hôm nay" cho toàn bộ report. Luôn nói rõ với PM khi có lùi ngày, vd: "Hôm nay Thứ 7 (dd/mm), không phải ngày làm việc — báo cáo theo Thứ 6 gần nhất (dd/mm):".
 
 **Lịch làm việc chuẩn** (dùng để dựng lịch giờ tích luỹ ở Bước 3, và quy đổi ra ngày dời lịch ở Bước 6) — giống quy ước đã dùng ở Action 2b của `gg-sheet`:
-- Ngày làm việc: **Thứ 2 → Thứ 6**. Thứ 7, Chủ nhật **không tính**.
+- Ngày làm việc: **Thứ 2 → Thứ 6**, khung giờ **8h30–17h30**. Thứ 7, Chủ nhật **không tính**.
 - Capacity cố định **8h/ngày làm việc/assignee** (sheet không có field effort-per-day riêng như `DAILY_WORK_HOURS` của Jira skill — hardcode 8h theo đúng quy ước Action 2b, không tự đổi).
+
+**Giờ chốt report — 17h00**: Team thống nhất report tiến độ lúc **17h00** (giờ VN) mỗi ngày làm việc, sớm hơn giờ tan làm (17h30). Vì vậy, mốc để đánh giá 1 task **đến hạn đúng hôm nay** (`End Date Plan` = ngày hiện tại thật) có bị trễ/quên report hay không là **17h00 của chính ngày đó**, KHÔNG phải đợi sang ngày làm việc kế tiếp: trước 17h00, task chưa Done/chưa điền gì vẫn là bình thường (còn trong giờ làm, có thể update trước giờ chốt); **từ 17h00 trở đi cùng ngày, task đến hạn mà chưa Done → tính là trễ/quên report ngay lập tức**, dùng đúng logic ở mục "Trễ deadline theo lịch" và tiêu chí (b) ở Bước 6 (không cần chờ ngày hiện tại thật lớn hơn `End Date Plan` mới kết luận được).
+
+> ⚠️ **BẮT BUỘC lấy giờ thật bằng lệnh trước khi kết luận** — KHÔNG suy đoán/bỏ qua/nói "không rõ giờ hiện tại": chạy `TZ="Asia/Ho_Chi_Minh" date "+%H:%M"` (hoặc tương đương) mỗi lần cần so với mốc 17h00, kể cả khi đã biết ngày qua system reminder — ngày và giờ là 2 thông tin khác nhau, biết ngày không có nghĩa biết giờ. Nếu vì lý do nào đó không lấy được giờ thật (không có quyền chạy lệnh...) → nói rõ với PM là chưa xác định được giờ hiện tại nên tạm chưa áp dụng mốc chốt, KHÔNG mặc định là "đã qua 17h00" hay "chưa qua 17h00".
 
 **Vì sao không dùng trực tiếp Status/ngày trên sheet để xác định "task của hôm nay":** sheet chỉ có 1 cặp Start/End Date Actual mỗi task (không phải worklog theo ngày như Jira), và PM/member có thể điền tay không đều (quên cập nhật, điền dồn). Vì vậy skill dùng **lịch giờ tích luỹ** (Bước 3) — dựng lại lịch làm việc lý tưởng theo thứ tự dòng trong tab (đúng quy ước đã dùng ở Action 2b của `gg-sheet` — thứ tự dòng phản ánh thứ tự làm việc thật, không dùng Start Date Plan để sắp xếp vì PM có thể chưa điền đều) — để suy ra chính xác task nào, bao nhiêu giờ, thực sự "thuộc về" hôm nay.
 
@@ -141,6 +145,8 @@ curl -s "https://sheets.googleapis.com/v4/spreadsheets/<fileId>/values/${TAB_ENC
 
 Đọc trọn `A:R` (hoặc đúng dải cột theo `columns` của tab) 1 lần — không cần nhiều `values:batchGet` rời rạc như bên `gg-sheet` vì đây là đọc 1 lượt cho cả tab, không tìm 1 dòng cụ thể.
 
+**Trước khi dùng `columns` để parse response này** (nếu tab đã có `headerSnapshot` trong `config.json`) — so sánh đúng (các) header row đầu response vừa đọc với `headerSnapshot` đã lưu, theo mục **"Verify columns còn khớp header thật"** ở `gg-sheet/SKILL.md`. Việc này gần như miễn phí ở đây vì response đã có sẵn header rồi, chỉ cần so sánh, không cần gọi API thêm. Lệch → xử lý theo đúng mục đó (tự map lại nếu được, hoặc dừng hỏi PM) trước khi tiếp tục Bước 3 trở đi — không parse dữ liệu bằng `columns` đã stale.
+
 - Bỏ qua dòng subtotal/category-subtotal (No. trống hoặc không phải số) và dòng không có `Assignee`.
 - Với dòng còn lại, gom theo `Assignee`, giữ nguyên **thứ tự dòng trong sheet** (đây chính là thứ tự làm việc giả định, theo đúng quy ước Action 2b của `gg-sheet`).
 - Task nào thiếu `Estimate(h) Plan` → đánh dấu "không đủ dữ liệu time tracking", loại khỏi Bước 3 nhưng vẫn xét được ở Bước 5 (hết effort) nếu có `Remaining(h)`/`Status`.
@@ -161,26 +167,51 @@ Nếu không xác định được mốc bắt đầu đáng tin (không task n�
 
 Với mỗi task, xác định trạng thái thực tế bằng cách đối chiếu chéo nhiều field — **không suy luận từ 1 field đơn lẻ** (đặc biệt không chỉ nhìn `Status`, vì đây là dropdown tự điền tay, dễ bị bỏ quên):
 
-- **Chưa làm** ⟺ `Start Date Actual` (K) trống. Đây là trạng thái **bình thường/kỳ vọng** cho task chưa tới lượt chạy theo lịch — chưa cần điền Actual Date ở trạng thái này, không phải lỗi/thiếu report.
-- **Đang làm** ⟺ `Start Date Actual` (K) đã điền **và** `End Date Actual` (L) còn trống. Ở trạng thái này **chỉ cần điền `Start Date Actual` là đủ** để coi là đã report — chưa bắt buộc phải có `End Date Actual`, `Actual Effort`, hay `Progress` đầy đủ ngay (có thể đang cập nhật dần trong lúc làm).
+- **Chưa làm** ⟺ `Start Date Actual` (L) trống. Đây là trạng thái **bình thường/kỳ vọng** cho task chưa tới lượt chạy theo lịch, hoặc task đến hạn đúng hôm nay nhưng **chưa qua mốc chốt report 17h00** — chưa cần điền Actual Date ở trạng thái này, không phải lỗi/thiếu report. **Nhưng nếu đã qua mốc chốt của `End Date Plan` (J)** (xem "Giờ chốt report" ở mục Config: hạn ở ngày trước hôm nay, hoặc đúng hôm nay nhưng đã ≥17h00) → xem thêm mục "Trễ deadline theo lịch" bên dưới, "bình thường" chỉ đúng khi task còn trong hạn/còn trước giờ chốt.
+- **Đang làm** ⟺ `Start Date Actual` (L) đã điền **và** `End Date Actual` (M) còn trống. Ở trạng thái này **chỉ cần điền `Start Date Actual` là đủ** để coi là đã report — chưa bắt buộc phải có `End Date Actual`, `Actual Effort`, hay `Progress` đầy đủ ngay (có thể đang cập nhật dần trong lúc làm).
 - **Hoàn thành** ⟺ đủ **tất cả** các điều kiện sau (thiếu bất kỳ điều kiện nào thì KHÔNG coi là hoàn thành, dù các field khác đã đúng):
-  - `Re-estimate(h) Actual` (J) đã điền
-  - `Start Date Actual` (K) đã điền
-  - `End Date Actual` (L) đã điền
-  - `Actual Effort(h)` (M) đã điền
-  - `Progress` (N) = 100%
-  - `Remaining(h)` (P) = 0
-  - `Status` (Q) = "Done"
-- **Quên chưa đổi trạng thái** ⟺ `Status` (Q) vẫn là "Open" (giá trị mặc định ban đầu) **nhưng** đã có bằng chứng đang làm (`Start Date Actual` đã điền, hoặc `Actual Effort(h) > 0`). Đây là dấu hiệu dev quên cập nhật `Status` dù đã bắt đầu/đang làm — khác với "Chưa làm" thật sự (không có bằng chứng nào).
+  - `Re-estimate(h) Actual` (K) đã điền
+  - `Start Date Actual` (L) đã điền
+  - `End Date Actual` (M) đã điền
+  - `Actual Effort(h)` (N) đã điền
+  - `Progress` (O) = 100%
+  - `Remaining(h)` (Q) = 0
+  - `Status` (R) = "Done"
+- **Quên chưa đổi trạng thái** ⟺ `Status` (R) vẫn là "Open" (giá trị mặc định ban đầu) **nhưng** đã có bằng chứng đang làm (`Start Date Actual` đã điền, hoặc `Actual Effort(h) > 0`). Đây là dấu hiệu dev quên cập nhật `Status` dù đã bắt đầu/đang làm — khác với "Chưa làm" thật sự (không có bằng chứng nào).
 
 Trường hợp biên: task đạt các điều kiện effort (`Remaining(h)=0`, `Progress=100%`) nhưng `Status` không phải "Done" và cũng không phải "Open" (vd 1 giá trị trung gian khác của project) → không phải "Hoàn thành" (thiếu điều kiện Status), cũng không phải "Quên chưa đổi trạng thái" (không phải case Open) → xem như "hết effort nhưng Status chưa chuyển Done", hiển thị ở Bước 5 để PM tự đánh giá, không tự kết luận đúng/sai.
 
+### Trễ deadline theo lịch (áp dụng cho mọi trạng thái ở trên trừ "Hoàn thành")
+
+Độc lập với việc đã có dữ liệu effort (`Re-estimate(h) Actual`) hay chưa: task bị coi là **TRỄ DEADLINE** khi **thời điểm hiện tại thật (ngày + giờ, Asia/Ho_Chi_Minh) đã qua mốc chốt của `End Date Plan` (J)** — mốc chốt = **17h00 của chính ngày `End Date Plan`** (xem "Giờ chốt report" ở mục Config), không phải 24h00/sang ngày hôm sau — **VÀ** `Status` (R) ≠ "Done". Cụ thể:
+- Ngày hiện tại thật **>** `End Date Plan` (đã qua hẳn 1 ngày làm việc trở lên) → luôn trễ, không cần xét giờ (đã qua mốc 17h00 của ngày đó từ lâu).
+- Ngày hiện tại thật **=** `End Date Plan` (task đến hạn đúng hôm nay) → chỉ trễ nếu **giờ hiện tại (VN) ≥ 17h00**; trước 17h00 cùng ngày, task chưa Done vẫn là bình thường (còn trong giờ làm, chưa tới giờ chốt report), **chưa** tính trễ.
+- Ngày hiện tại thật **<** `End Date Plan` → chưa tới hạn, không trễ.
+
+Áp dụng kể cả khi task còn ở trạng thái "Chưa làm" (chưa điền gì cả — im lặng không có nghĩa là chưa tính giờ, qua mốc chốt mà chưa Done là trễ/quên report). Đây là tiêu chí lịch (calendar-based), tách biệt và **cộng thêm** vào tiêu chí effort-based (`Re-estimate(h) Actual > Estimate(h) Plan`) đã có ở Bước 6 — một task có thể trễ theo tiêu chí này dù chưa đủ dữ liệu tính overrun giờ. Số ngày trễ = số ngày làm việc (T2-T6) từ `End Date Plan` đến ngày hiện tại thật (0 ngày nếu trễ ngay trong hôm đó do đã qua 17h00 — vẫn nêu rõ với PM là "trễ giờ chốt report hôm nay", không viết "trễ 0 ngày" gây khó hiểu).
+
 ### Task bị block (phụ thuộc task khác)
 
-Ngoài 4 trạng thái ở trên, kiểm tra thêm cột `Note` (R) của mỗi `T_i`: nếu `Note` chứa từ khóa kiểu "block" (không phân biệt hoa/thường, vd "bị block bởi", "block by", "blocked") → task này đang **bị chặn bởi 1 task khác** (Note thường ghi rõ task nào chặn).
+Ngoài 4 trạng thái ở trên, kiểm tra thêm cột `Note` (S) của mỗi `T_i`: nếu `Note` chứa từ khóa kiểu "block" (không phân biệt hoa/thường, vd "bị block bởi", "block by", "blocked") → task này đang **bị chặn bởi 1 task khác** (Note thường ghi rõ task nào chặn).
 
 - Task **Chưa làm** (`Start Date Actual` trống) **và** `Note` báo đang bị block → KHÔNG tính là "chưa report" ở Bước 4 (đây là lý do chính đáng, không phải quên) — hiển thị riêng ở Bước 7 kèm lý do block (verbatim theo Note), không gộp chung nhóm "chưa report".
-- Đây chỉ là phát hiện dựa trên `Note` do PM/member tự ghi tay — sheet không có cột dependency chính thức, nên KHÔNG tự suy luận block nếu `Note` không nói rõ (vd 2 task cùng 1 feature BE/FE có thể phụ thuộc ngầm về nghiệp vụ, nhưng không ghi Note thì vẫn coi là bình thường, không tự đoán).
+- Đây là phát hiện dựa trên `Note` do PM/member tự ghi tay cho các trường hợp phụ thuộc **không theo cấu trúc chuẩn BE→FE cùng nhóm** (vd phụ thuộc chéo giữa 2 feature khác nhóm `Task`, phụ thuộc vào 1 service ngoài...) — sheet không có cột dependency chính thức cho các case này, nên KHÔNG tự suy luận nếu `Note` không nói rõ. Với riêng phụ thuộc BE→FE trong cùng nhóm `Task`, xem mục **"Phụ thuộc cấu trúc: FE phụ thuộc BE cùng nhóm"** ngay dưới đây — case đó suy luận được tự động, không cần Note.
+
+### Phụ thuộc cấu trúc: FE phụ thuộc BE gần nhất cùng nhóm Task (cột B)
+
+Khác với "Task bị block" ở trên (dựa vào Note ghi tay), phụ thuộc này **suy luận tự động từ cấu trúc bảng** — không cần Note, áp dụng cho mọi tab có đủ cột `Task` (B) và `Role` (E):
+
+- Xác định nhóm: giá trị cột `Task` (B) — chỉ dòng đầu nhóm điền, các dòng sau để trống nhưng vẫn thuộc nhóm đó (forward-fill xuống, giống cách đọc `Category Milestone` ở cột A).
+- Với mỗi task có `Role` (E) = "FE" → **blocker** của nó = task `Role` = "BE" **gần nhất đứng ngay trước nó theo thứ tự dòng, trong cùng nhóm `Task`** (bỏ qua các task FE khác xen giữa, chỉ tìm BE gần nhất).
+  - Nhóm không có task BE nào trước nó (hoặc FE task đó là dòng đầu nhóm) → không có phụ thuộc cấu trúc này, task FE độc lập theo rule này (vẫn có thể bị block theo Note riêng).
+  - Task **BE không tự động phụ thuộc gì** từ rule này — chỉ FE bị chặn bởi BE, không có chiều ngược lại, và các FE task với nhau **không** chặn lẫn nhau (mỗi FE chỉ phụ thuộc đúng 1 BE gần nhất, không phụ thuộc bắc cầu qua FE khác).
+- **Điều kiện "sẵn sàng bắt đầu"**: FE task chỉ thực sự bắt đầu được từ ngày làm việc **kế tiếp sau khi** blocker BE của nó đạt `Status = "Done"` (dùng `End Date Actual` nếu blocker đã Done thật; nếu blocker đang trễ và đã có ngày hoàn thành mới theo cascade ở Bước 6 thì dùng ngày đó).
+  - FE task đã có `Start Date Actual` điền dù blocker BE **chưa Done** → tín hiệu bất thường (bắt đầu trước khi API sẵn sàng — có thể code song song với mock, hoặc điền nhầm ngày) → nêu cho PM biết ở Bước 5, không tự kết luận sai.
+
+**Dùng trong cascade ở Bước 6**: khi 1 task BE bị trễ, ngoài cascade theo capacity của chính assignee đó (Action 2b), phải cascade tiếp sang:
+1. Mọi task FE **trực tiếp** phụ thuộc vào nó (theo rule trên, dù khác assignee) — ngày bắt đầu mới = ngày làm việc kế tiếp sau ngày hoàn thành mới (dự kiến) của blocker.
+2. Sau khi 1 FE task bị dời, tiếp tục cascade theo **capacity chain của chính assignee FE đó** (Action 2b) — có thể chạm tới 1 FE task khác phụ thuộc 1 BE task khác cũng đã bị đẩy do capacity chain của người BE kia → tiếp tục lan tương tự.
+3. Lặp lại (1)+(2) cho tới khi không còn task nào bị ảnh hưởng thêm — 1 task BE trễ có thể ảnh hưởng dây chuyền tới **nhiều assignee khác nhau**, không chỉ người giữ task gốc. Luôn trình bày **toàn bộ chuỗi ảnh hưởng** cho PM, không chỉ phần của assignee bị trễ ban đầu.
 
 **Khi 1 task thuộc phạm vi hôm nay đang bị block** (theo Note), ưu tiên đề xuất theo thứ tự sau (thay vì mặc định để assignee đó rảnh tay hôm nay):
 
@@ -204,7 +235,29 @@ Với mỗi `T_i` có slot giao với hôm nay (hoặc toàn tab nếu PM hỏi 
   - `End Date Actual` đã điền nhưng task chưa thực sự xong (`Remaining(h) > 0`, hoặc `Progress < 100%`, hoặc `Status` khác "Done") → có thể member điền nhầm ngày hoàn thành khi task chưa xong thật.
   - `Progress` hoặc `Remaining(h)` hiện có **không khớp công thức kỳ vọng** từ `Actual Effort(h)`/`Re-estimate(h) Actual` đang có (`Progress ≠ Actual Effort(h) / Re-estimate(h) Actual`, hoặc `Remaining(h) ≠ Re-estimate(h) Actual − Actual Effort(h)`) → nghi ngờ công thức trên sheet bị ghi đè bằng tay hoặc dữ liệu bị sửa sau khi tính, KHÔNG tự suy đoán lý do — chỉ nêu đúng số liệu lệch để PM tự kiểm tra trực tiếp trên sheet.
 
-Mọi phát hiện ở trên hiển thị verbatim (kèm giá trị hiện tại), dùng ở Bước 5 (và ở Bước 7 khi trình bày — mục "nếu số liệu tự mâu thuẫn" trong format đã có sẵn).
+Mọi phát hiện ở trên hiển thị verbatim (kèm giá trị hiện tại), dùng ở Bước 5 (và ở Bước 7 khi trình bày — nối vào ô "Tiến độ" của đúng task đó trong bảng, theo format đã có sẵn).
+
+### Cross-check "vượt giờ" với Overtime + Risk management (3 mức) — dùng chung cho Bước 5 (allocation) và Bước 6 (task effort)
+
+Áp dụng bất cứ khi nào phát hiện 1 khoản giờ vượt cần giải trình — dù là **task-level** (`Re-estimate(h) Actual > Estimate(h) Plan` ở Bước 6, tiêu chí (a)) hay **member-level** (tổng `Actual Effort(h)` trong ngày vượt giờ allocate, xem mục "Kiểm tra tổng effort/ngày" ngay dưới) — luôn phân đúng **1 trong 3 mức**, không gộp:
+
+1. **Khớp đầy đủ** — `Overtime` có giờ OT khớp đúng người/đúng ngày/đúng số giờ chênh lệch, **và** dòng `Risk management` tương ứng có `Status = "Done"` → đã hợp lệ hoá hoàn toàn. Không liệt kê ở đâu cả, không cần nói gì thêm.
+2. **Gần đủ, chỉ thiếu bước đóng Status** — giờ OT đã khớp đúng người/ngày/số giờ, dòng risk tồn tại và `Description` nhất quán với `Task`/`Next Action`/`Related Assignee` của chính dòng đó (không mâu thuẫn nội bộ), nhưng `Status` risk **chưa** chuyển "Done" → không phải bất thường thật, chỉ quên đóng risk. KHÔNG dựng bảng, KHÔNG liệt kê vào bảng "Trễ deadline"/"Vượt giờ allocate" — chỉ 1 câu ngắn gọn, tự nhiên ở cuối report: "<member> đã OT <n>h để hoàn thành task <TaskID>. Mặc dù task đã DONE nhưng status của risk <ID> vẫn chưa được update. Bạn muốn mình mention <member> nhắc hay để bạn tự xử lý?"
+3. **Thật sự chưa rõ** — thiếu log OT, hoặc giờ/ngày/người không khớp, hoặc không có risk nào, hoặc risk có nhưng `Description` mâu thuẫn với chính `Task`/`Next Action` của dòng đó (dấu hiệu dữ liệu bị sửa đè dở dang, tái dùng ID cũ) → bất thường thật, cần PM chú ý — liệt kê đầy đủ trong bảng tương ứng ở Bước 7 (bảng "Trễ deadline" nếu task-level, bảng "Vượt giờ allocate" nếu member-level), nêu rõ phần cross-check tìm được (nếu có nhưng không đủ điều kiện, không báo trống trơn).
+
+Lưu ý cấu trúc cột: `Risk management` có cột `Related Assignee` và `Task` **tách riêng** (không phải 1 cột gộp "Related Assignee/Task") — đối chiếu đúng theo `columns` trong `config.json`, khớp cả 2 cột này với assignee/TaskID đang xét. `Overtime` = tra đúng dòng assignee, đúng cột ngày (khớp `Start Date Actual`/`End Date Actual` của task, hoặc ngày cần xét nếu là member-level). 2 tab này `columns` = `null`/chưa xác nhận → xử lý theo `note` trong `config.json`; nếu tab `Risk management` chưa có `columns` → báo PM chạy `gg-sheet` trên tab đó 1 lần trước.
+
+### Kiểm tra tổng effort/ngày so với allocation (tab Resource plan) — dùng ở Bước 5
+
+Đây là cross-check ở cấp **member/ngày**, khác với check "1 task vượt effort so với chính estimate của nó" ở Bước 6 (cấp task): 1 member có thể không có task nào tự vượt estimate riêng lẻ, nhưng nếu cộng dồn effort của **nhiều task cùng ngày** lại vẫn có thể vượt quá số giờ họ thực sự được allocate vào dự án hôm đó — 2 việc này phải kiểm tra độc lập.
+
+- Đọc allocation từ tab `Resource plan` — khối **"Thời gian làm việc mỗi ngày"** (bắt đầu từ cột U, xem `note` của tab này trong `config.json` để biết cấu trúc — khác hẳn khối "Kế hoạch phân bổ nguồn lực" (cột A→R, tính theo Man-Month, KHÔNG dùng cho check này)). Với mỗi member, lấy giá trị allocate đúng **ngày cần xét** → `allocated_hours`.
+- Với mỗi member có ít nhất 1 task thuộc phạm vi ngày cần xét (đã xác định ở Bước 3-4): cộng tổng `Actual Effort(h)` của **tất cả** task của member đó có slot giao với ngày cần xét → `total_actual_hours`.
+- Nếu `total_actual_hours > allocated_hours` → chênh lệch = `total_actual_hours - allocated_hours` — áp dụng mục **"Cross-check Overtime + Risk management (3 mức)"** ở trên với chênh lệch này.
+- `allocated_hours` trống (cuối tuần/chưa phân bổ) mà vẫn có `total_actual_hours > 0` → nêu rõ cho PM, không tự suy đoán lý do (coi như mức 3, dùng bảng).
+- Member không có dòng nào khớp trong khối "Thời gian làm việc mỗi ngày" → không đánh giá được, nêu "không đủ dữ liệu allocation", KHÔNG tự giả định mặc định 8h/ngày.
+
+Kết quả hiển thị ở Bước 7: mức 3 dùng bảng riêng theo **member**; mức 2 chỉ 1 dòng text ngắn, không bảng — xem template.
 
 ### Bước 4 — Report hôm nay: assignee nào đã cập nhật, assignee nào chưa
 
@@ -213,7 +266,10 @@ Với mỗi assignee, tìm các `T_i` có slot giao với hôm nay (từ Bước
 - Không có `T_i` nào giao với hôm nay (theo lịch, hôm nay assignee không có task nào đang chạy) → không xét assignee này ở mục report hôm nay (không phải lỗi, chỉ là không có gì tới lượt).
 - Có `T_i` giao với hôm nay:
   - `T_i` ở trạng thái **Đang làm** hoặc **Hoàn thành** (tức `Start Date Actual` đã điền) → **đã report**.
-  - `T_i` ở trạng thái **Chưa làm** (`Start Date Actual` trống) dù theo lịch phải đang chạy task đó hôm nay → **chưa report** — **trừ khi** `Note` báo task đang bị block (xem mục "Task bị block" ở trên), trường hợp đó không tính vào nhóm chưa report, hiển thị riêng ở Bước 7.
+  - `T_i` ở trạng thái **Chưa làm** (`Start Date Actual` trống) dù theo lịch phải đang chạy task đó hôm nay:
+    - Giờ hiện tại thật (VN) **chưa tới 17h00** của hôm nay → tạm coi là bình thường ("chưa report" nhưng chưa tới giờ chốt, không phải vấn đề), hiển thị trung tính ở Bước 7, KHÔNG đưa vào bảng "Trễ deadline".
+    - Giờ hiện tại thật (VN) **đã ≥ 17h00** của hôm nay (hoặc `End Date Plan` đã ở ngày trước đó) → **chưa report VÀ trễ deadline** theo tiêu chí (b) ở Bước 6 — đưa vào bảng "Trễ deadline" ở Bước 7, không chỉ ghi "chưa điền tiến độ" trung tính nữa.
+    - **Trừ khi** `Note` báo task đang bị block (xem mục "Task bị block" ở trên) — trường hợp đó không tính vào nhóm chưa report/trễ, hiển thị riêng ở Bước 7 kèm lý do.
 
 Không có cách tính "report thiếu giờ" chính xác như Jira (không có worklog theo giờ/ngày) — chỉ phân 2 nhóm: đã report / chưa report. Nếu PM muốn biết giờ đã làm hôm nay, dùng trực tiếp `Actual Effort(h)` của task đang giao với hôm nay (giá trị PM tự điền, không đảm bảo chính xác theo ngày).
 
@@ -224,6 +280,7 @@ Không có cách tính "report thiếu giờ" chính xác như Jira (không có 
 - `T_i` ở trạng thái **Quên chưa đổi trạng thái** → liệt kê rõ, đây là dấu hiệu khá chắc chắn dev quên cập nhật (đã log work nhưng Status còn "Open").
 - `T_i` đạt điều kiện effort (`Remaining(h)=0`/`Progress=100%`) nhưng chưa phải **Hoàn thành** đầy đủ theo checklist (thiếu 1 trong 7 điều kiện, vd `Status` chưa chuyển "Done", hoặc thiếu `End Date Actual`/`Re-estimate`) → liệt kê kèm field còn thiếu/chưa khớp (verbatim, không gắn nhãn đúng/sai) để PM tự xem và đánh giá.
 - Chạy thêm mục **"Validate dữ liệu member tự điền"** ở trên cho `T_i` → liệt kê mọi field thiếu/sai lúc/mâu thuẫn công thức phát hiện được, verbatim kèm giá trị hiện tại.
+- Chạy thêm mục **"Kiểm tra tổng effort/ngày so với allocation (tab Resource plan)"** ở trên — cho **từng member** (không phải từng task) có task thuộc phạm vi hôm nay → liệt kê member nào vượt giờ allocate mà chưa có OT hợp lệ.
 
 ### Bước 6 — Xác định task bị trễ & đề xuất reschedule
 
@@ -231,15 +288,25 @@ Không có cách tính "report thiếu giờ" chính xác như Jira (không có 
 - PM hỏi "report/tổng hợp **hôm nay**" (mặc định) → chỉ xét trễ trong tập `T_i` **giao với hôm nay** đã xác định ở Bước 4 (không lôi task tương lai/quá khứ chưa tới lượt vào, dù task đó đã có sẵn `Re-estimate(h) Actual` điền trước).
 - PM hỏi riêng, không kèm "hôm nay" (vd "task nào trễ trong tab X?") → xét trễ trên **toàn bộ tab**, không giới hạn ngày.
 
-Trong tập đã xác định ở trên, dùng trực tiếp:
+Trong tập đã xác định ở trên, 1 task được coi là **Task bị trễ** nếu khớp **1 trong 2 tiêu chí độc lập** sau (không cần cả 2, chỉ cần 1):
 
-- **Task bị trễ** ⟺ `Re-estimate(h) Actual (J)` đã điền **và** `> Estimate(h) Plan (G)` → `overrun_hours_i = J_i - G_i`. Task chưa có `Re-estimate(h) Actual` (còn trống) → chưa xét được, bỏ qua (chưa có dữ liệu overrun). Task bị trễ **luôn được liệt kê** trong report (mục "Task bị trễ") bất kể có cascade hay không — chỉ phần cascade bên dưới là có điều kiện.
-- **Chỉ đề xuất cascade reschedule khi slippage là thật** (không phải chỉ lệch giờ trên giấy):
-  - `Status = "Done"` (hoặc tương đương đã đóng) **và** `End Date Actual` đã điền **và** `End Date Actual <= End Date Plan` → task tuy vượt giờ (K > H) nhưng vẫn đóng đúng/sớm hơn ngày kế hoạch, **không có tràn lịch thật** → **không** đề xuất dời các task Open sau của assignee đó (vẫn hiện task này ở mục "trễ" để PM biết, chỉ bỏ khối cascade).
-  - Mọi trường hợp còn lại — `Status` khác "Done" (task còn đang chạy, còn `Remaining` chưa xong), hoặc `End Date Actual` còn trống (chưa xác nhận xong), hoặc `End Date Actual > End Date Plan` (đã đóng nhưng đóng trễ thật) — → coi là còn ảnh hưởng lịch thật, áp dụng cascade như bình thường.
-  - Với mỗi task bị trễ **có cascade**, các task **Status = "Open"** khác của **cùng assignee đó**, nằm **sau** nó theo thứ tự dòng trong tab → bị ảnh hưởng dây chuyền. Tính ngày dời lịch mới theo đúng công thức đã dùng ở **Action 2b (Re-schedule) của skill `gg-sheet`** (cascade 8h/ngày làm việc T2-T6, không làm tròn nguyên khối, start = end của task liền trước, cập nhật cả `Start Date Plan` lẫn `End Date Plan`) — không tính lại công thức riêng ở đây, tham chiếu thẳng logic đó để tránh lệch 2 nơi.
+- **(a) Trễ theo effort** ⟺ `Re-estimate(h) Actual (K)` đã điền **và** `> Estimate(h) Plan (H)` → `overrun_hours_i = K_i - H_i`. Task chưa có `Re-estimate(h) Actual` (còn trống) → chưa xét được theo tiêu chí này (chưa có dữ liệu overrun giờ), nhưng vẫn có thể dính tiêu chí (b) bên dưới.
+- **(b) Trễ theo lịch** ⟺ theo đúng định nghĩa mục "Trễ deadline theo lịch" ở trên (so **thời điểm hiện tại thật, gồm cả giờ** với mốc chốt **17h00 của `End Date Plan (J)`**, không chỉ so ngày) **và** `Status (R)` ≠ "Done" — áp dụng **kể cả khi task chưa điền gì** (`Start Date Actual` còn trống, tức đang ở trạng thái "Chưa làm"): task đến hạn hôm nay mà đã qua 17h00 chưa Done, hoặc hạn đã qua hẳn ngày trước đó, đều tính là trễ, bất kể đã có effort log hay chưa. `overrun_hours_i` không xác định được trong trường hợp này (ghi "chưa rõ số giờ, mới biết trễ theo lịch") trừ khi đồng thời khớp cả tiêu chí (a).
 
-**Trước khi đề xuất cách xử lý cho task bị trễ có cascade — kiểm tra `Priority` (F) của chính task đó:**
+**Trước khi liệt kê 1 task trễ-theo-effort (a) vào report — áp dụng mục "Cross-check Overtime + Risk management (3 mức)"** ở trên với `overrun_hours_i` làm chênh lệch cần giải trình:
+- **Mức 1 (khớp đầy đủ)** hoặc **Mức 2 (gần đủ, chỉ thiếu đóng Status)** → task này **KHÔNG đưa vào bảng "Task bị trễ"** ở Bước 7 nữa (dù kỹ thuật vẫn khớp tiêu chí (a)) — mức 1 không nói gì thêm, mức 2 chỉ 1 câu ngắn cuối report theo đúng mẫu ở mục cross-check. Đây là điểm khác với tiêu chí (b) thuần (task còn "Chưa làm", chưa có gì để cross-check) — (b) thuần luôn vào bảng vì không có OT nào để giải trình cho việc "chưa bắt đầu".
+- **Mức 3 (thật sự chưa rõ)** → đưa vào bảng "Task bị trễ" như bất thường thật, nêu rõ phần cross-check tìm được.
+
+Task bị trễ theo tiêu chí (b) thuần (không đồng thời khớp (a), hoặc (a) rơi vào mức 3), hoặc khớp (a) ở mức 3 → **luôn được liệt kê** trong bảng "Task bị trễ" ở Bước 7 — chỉ phần cascade bên dưới là có điều kiện.
+
+**Chỉ đề xuất cascade reschedule khi slippage là thật** (không phải chỉ lệch giờ trên giấy, và không phải overrun đã được OT hợp lệ hoá theo cross-check ở trên):
+  - Cross-check ở trên xác nhận overrun ở **mức 1 hoặc mức 2** (đã hợp lệ hoá qua OT, dù risk chưa đóng Status) **và** `End Date Actual` đã điền **và** `End Date Actual <= End Date Plan` → **không** đề xuất cascade, bất kể `Status` hiển thị trên sheet đúng "Done" hay còn giá trị khác chưa kịp đổi (vd "In progress") — hiệu lực thực tế đã đóng đúng hạn nhờ OT, dropdown `Status` chưa cập nhật chỉ là data-hygiene, không phải tràn lịch thật.
+  - `Status = "Done"` (hoặc tương đương đã đóng) **và** `End Date Actual` đã điền **và** `End Date Actual <= End Date Plan` (không cần OT) → task tuy vượt giờ (K > H) nhưng vẫn đóng đúng/sớm hơn ngày kế hoạch, **không có tràn lịch thật** → **không** đề xuất dời các task Open sau của assignee đó (vẫn hiện task này ở mục "trễ" để PM biết, chỉ bỏ khối cascade).
+  - Mọi trường hợp còn lại — `Status` khác "Done" (task còn đang chạy, còn `Remaining` chưa xong), hoặc `End Date Actual` còn trống (chưa xác nhận xong), hoặc `End Date Actual > End Date Plan` (đã đóng nhưng đóng trễ thật) — → coi là còn ảnh hưởng lịch thật, áp dụng cascade như bình thường. Trễ-theo-lịch thuần (tiêu chí (b), task còn "Chưa làm") luôn thuộc nhóm này — hạn đã qua mà chưa bắt đầu chắc chắn ảnh hưởng lịch các task sau.
+  - Với mỗi task bị trễ **có cascade**, các task **Status = "Open"** khác của **cùng assignee đó**, nằm **sau** nó theo thứ tự dòng trong tab → bị ảnh hưởng dây chuyền. Tính ngày dời lịch mới theo đúng công thức đã dùng ở **Action 2b (Re-schedule) của skill `gg-sheet`** (cascade 8h/ngày làm việc T2-T6, không làm tròn nguyên khối, start = end của task liền trước, cập nhật cả `Start Date Plan` lẫn `End Date Plan`) — không tính lại công thức riêng ở đây, tham chiếu thẳng logic đó để tránh lệch 2 nơi. Với trễ-theo-lịch thuần (chưa có `overrun_hours` cụ thể vì task chưa bắt đầu), lấy `overrun_hours_i` = số giờ làm việc đã trôi qua từ `End Date Plan` đến ngày hiện tại thật (tính theo T2-T6, `DAILY_WORK_HOURS` mặc định 8h) làm giờ cần bù tối thiểu để cascade.
+  - **Nếu task bị trễ là BE**, ngoài cascade theo assignee ở trên, áp dụng thêm mục **"Phụ thuộc cấu trúc: FE phụ thuộc BE cùng nhóm"** — mọi task FE trực tiếp phụ thuộc vào nó (dù khác assignee) cũng bị đẩy lịch, và từ đó tiếp tục cascade theo capacity chain của chính assignee FE đó, lặp lại tới khi hết ảnh hưởng. Kết quả cascade cuối cùng có thể gồm **nhiều assignee khác nhau**, không chỉ người giữ task BE bị trễ — liệt kê đủ toàn bộ chuỗi (xem ví dụ tính ở mục đó).
+
+**Trước khi đề xuất cách xử lý cho task bị trễ có cascade — kiểm tra `Priority` (G) của chính task đó** (áp dụng cho cả 2 tiêu chí (a)/(b), kể cả trễ-theo-lịch thuần chưa có `overrun_hours` cụ thể):
 - `Priority` = **Highest** hoặc **High** → đây là task gấp, không nên để trễ deadline chồng thêm bằng cách dời lịch — **ưu tiên cảnh báo PM và đề xuất OT** (làm thêm giờ bù `overrun_hours`) thay vì reschedule. KHÔNG tự in sẵn danh sách cascade trong report — chỉ liệt kê danh sách task cần dời khi PM xác nhận vẫn muốn dời lịch sau khi đã thấy cảnh báo này.
 - `Priority` = **Medium**, **Low** (hoặc thấp hơn) → đề xuất reschedule bình thường, in kèm danh sách cascade ngay trong report như hiện tại.
 
@@ -247,42 +314,90 @@ Trong tập đã xác định ở trên, dùng trực tiếp:
 
 ### Bước 7 — Tổng hợp báo cáo
 
-Trình bày theo format — văn phong **tự nhiên, như PM nói chuyện với nhau**, không dịch nguyên thuật ngữ nội bộ (vd không viết "theo lịch tích luỹ", "tràn lịch thật", "tới lượt chạy task" ra report — những cụm đó chỉ dùng để mô tả logic tính toán ở Bước 3-6, không phải văn phong hiển thị cho PM):
+Trình bày dạng **2 bảng markdown** — bảng 1 liệt kê **toàn bộ** task thuộc phạm vi ngày đang xét (không chỉ task có vấn đề), bảng 2 tách riêng các task **trễ deadline** để PM dễ nhìn, kết thúc bằng 1 câu hỏi xác nhận hướng xử lý — **KHÔNG tự in sẵn chi tiết ngày dời lịch mới hay số giờ OT cụ thể trong report ban đầu**, chỉ nêu đề xuất sơ bộ (loại hành động) và chờ PM chọn, việc tính chi tiết (ngày mới cho từng task cascade, hoặc số giờ OT chính xác) chỉ làm **sau khi PM xác nhận hướng xử lý**. Văn phong tự nhiên, không dịch nguyên thuật ngữ nội bộ (vd không viết "theo lịch tích luỹ", "tràn lịch thật", "tới lượt chạy task" ra report — những cụm đó chỉ mô tả logic tính toán ở Bước 3-6, không phải văn phong hiển thị cho PM). Định danh task bằng **tên task** (không dùng "No.<X>") trừ khi tab đó không merge cell No. theo từng dòng — nhiều tab (vd Sprint 1) merge No. dọc theo nhóm task nên hầu hết các dòng sau task đầu tiên trong nhóm sẽ trống No., dùng No. lúc đó sẽ sai/thiếu.
 
 ```
 📋 TỔNG HỢP REPORT NGÀY <YYYY-MM-DD> — <tên tab>
 ════════════════════════════════════════
-• "<task>" (<tên assignee>) — <mô tả tự nhiên tiến độ, vd "đã xong, Done, 8/8h" / "đang làm, còn <X>h" / "chưa điền tiến độ dù lẽ ra đang phải làm hôm nay">
-  [CHỈ khi có vấn đề mới thêm dòng cảnh báo — task ổn thì dừng ở dòng trên, KHÔNG viết thêm nhận xét kiểu "dữ liệu đầy đủ"/"khớp công thức"/mọi lời khen tình trạng bình thường:]
-  [nếu quên đổi status → "⚠️ có vẻ quên đổi Status — đã bắt đầu làm (hoặc đã log effort) nhưng Status vẫn để 'Open'"]
-  [nếu gần xong nhưng chưa khớp đủ checklist "Hoàn thành" → "ℹ️ gần xong nhưng chưa đủ để tính Done — còn thiếu <field còn thiếu/chưa khớp>"]
-  [nếu thiếu/sai theo mục "Validate dữ liệu member tự điền" → "⚠️ thiếu/sai dữ liệu: <đúng field bị thiếu hoặc lệch công thức>, cần kiểm tra lại" — nêu đúng field, KHÔNG chỉ định một người cụ thể phải kiểm tra (không viết "nhờ X kiểm tra")]
-  [nếu số liệu tự mâu thuẫn khác → 1 dòng ngắn nêu đúng số liệu lệch, không suy đoán lý do]
-  [nếu đang bị block theo Note (xem mục "Task bị block") → "⏸ đang chờ <task/lý do chặn theo Note>, chưa tính là thiếu report"
-  → Đề xuất hoán đổi: đẩy "<task Open kế tiếp không bị block>" lên làm hôm nay, dời task này sang <ngày mới> (không ảnh hưởng các task khác của <assignee>). Bạn xác nhận với <assignee> task đó thực sự làm được luôn trước khi mình đổi nhé.
-  [nếu không tìm được task nào để hoán đổi → "→ Không có task Open nào khác của <assignee> để đổi chỗ, cần cascade dời các task Open phía sau (xem mục Task trễ tiến độ/Bước 6)."]]
 
-**1 dòng = 1 task, KHÔNG gộp theo assignee** — 1 assignee có thể có nhiều task cùng thuộc phạm vi hôm nay (vd task hôm qua overrun tràn sang + task mới bắt đầu cùng ngày) → liệt kê mỗi task 1 dòng riêng, tên assignee lặp lại ở từng dòng nếu cần. Chỉ thêm dòng flag khi thực sự phát sinh, KHÔNG gộp thành mục riêng kiểu "❌ Chưa cập nhật (0 người)" hay "⚠️ Quên đổi trạng thái: không có" khi không có gì.
+**Toàn bộ task ngày <YYYY-MM-DD> (<N> task)**
 
-🕐 Task trễ tiến độ (<N> task[, quét toàn bộ tab — chỉ thêm cụm này khi PM hỏi riêng về trễ không kèm "hôm nay", xem Bước 6])
-• <assignee> — "<task>" (Priority: <priority>): làm hết <K>h thay vì <H>h dự kiến (vượt <overrun>h)
-  [nếu Status = "Done" và End Date Actual <= End Date Plan → thêm dòng: "Task đã Done đúng/sớm ngày kế hoạch nên không ảnh hưởng các task sau, không cần dời lịch.", KHÔNG xét OT/cascade bên dưới]
-  [ngược lại, nếu Priority = Highest/High → in cảnh báo OT, KHÔNG in sẵn danh sách cascade:]
-  ⚠️ Đây là task ưu tiên <priority> — không nên để trễ deadline thêm bằng cách dời lịch. Đề xuất <assignee> OT bù <overrun>h thay vì dời các task sau.
-  Nếu bạn vẫn muốn dời lịch, nói mình liệt kê danh sách task cần dời nhé.
-  [ngược lại (Priority Medium/Low), hoặc PM đã xác nhận muốn dời lịch dù Highest/High → in khối cascade:]
-  → Đề xuất dời lịch (cập nhật cả Start Date Plan lẫn End Date Plan) các task Open sau của <assignee>:
-     - "<task Y>": <Start Plan cũ>–<End Plan cũ> → <Start Plan mới>–<End Plan mới>
-     - "<task Z>": <Start Plan cũ>–<End Plan cũ> → <Start Plan mới>–<End Plan mới>
+| Task | Assignee | Tiến độ |
+|---|---|---|
+| "<task>" | <assignee> | <mô tả tự nhiên tiến độ, vd "Done, 8/8h" / "Đang làm, còn <X>h" / "Chưa điền tiến độ" — nếu có thêm vấn đề (quên đổi status, gần xong chưa đủ checklist, thiếu/sai dữ liệu theo mục Validate, đang bị block theo Note) thì nối thêm icon + mô tả ngắn ngay trong cùng ô, vd "Đang làm, còn 2h — ⚠️ quên đổi Status (vẫn để Open)"> |
 
-ℹ️ <N> task trong tab thiếu dữ liệu Estimate/Remaining nên chưa đánh giá được effort hết/trễ
+[Liệt kê đủ N dòng, 1 dòng = 1 task, kể cả task bình thường không có vấn đề gì — KHÔNG bỏ bớt để "cho gọn". Nếu 1 task đang bị block (Note) và đã tìm được task hoán đổi (xem mục "Task bị block") → ghi đề xuất hoán đổi ngay trong ô Tiến độ, vd "⏸ Đang chờ <lý do theo Note> — đề xuất đổi lịch với '<task Open kế tiếp>' (không ảnh hưởng task khác), bạn xác nhận với <assignee> task kia làm được luôn không nhé"]
+
+[CHỈ khi có ít nhất 1 task trễ **thật sự cần bảng** — tiêu chí (b) thuần, hoặc (a) ở mức 3 (xem Bước 6) — mới thêm bảng dưới đây. Task (a) ở mức 1/2 KHÔNG vào bảng này (mức 1 im lặng, mức 2 dùng câu ngắn riêng ở dưới). Không có task nào đủ điều kiện thì bỏ hẳn phần bảng, không viết "không có task trễ"]
+
+🔴 **Trễ deadline (<N> task) — cần bạn xác nhận hướng xử lý**
+
+| Task | Assignee | Priority | Trễ | Đề xuất sơ bộ |
+|---|---|---|---|---|
+| "<task>" | <assignee> | <priority> | <nếu có effort (a) mức 3: "vượt <overrun>h (làm <K>h/<H>h dự kiến) — chưa rõ có OT hợp lệ hay không (nêu phần cross-check tìm được nếu có)"> <nếu chỉ trễ lịch (b), chưa effort: "quá hạn <N> ngày làm việc (hạn <End Date Plan>), chưa điền tiến độ"> <nếu cả 2: nối cả 2 mô tả> | <nếu Status=Done và End Date Actual<=End Date Plan (không cần OT, task đóng đúng/sớm hạn dù có overrun): "Đã đóng đúng/sớm hạn — không ảnh hưởng lịch sau, không cần xử lý"> <nếu Priority Highest/High và chưa xử lý: "Đề xuất OT bù <overrun hoặc 'số giờ tương ứng'>h (ưu tiên cao, không nên dời lịch)"> <nếu Priority Medium/Low và chưa xử lý: "Đề xuất dời lịch (cascade) các task Open sau của <assignee>"> |
+
+Với các task trễ **chưa xử lý** ở trên (bỏ qua task đã "Đã đóng đúng/sớm hạn"), hỏi PM đúng theo dạng:
+
+Bạn muốn xử lý các task trễ trên theo hướng nào?
+- "<task 1>" (<assignee>): giữ đề xuất <OT/dời lịch> ở trên, hay đổi sang <dời lịch/OT>?
+- "<task 2>" (<assignee>): ...
+[Nếu PM chỉ trả lời chung chung "theo đề xuất" → áp dụng đúng đề xuất sơ bộ đã nêu cho từng task]
+
+[CHỈ khi có ít nhất 1 member ở **mức 3** ("Thật sự chưa rõ") theo mục "Kiểm tra tổng effort/ngày so với allocation" mới thêm bảng dưới đây — member ở mức 1 không nói gì, mức 2 xem dòng text riêng bên dưới]
+
+⚠️ **Vượt giờ allocate trong ngày (<N> người) — chưa rõ có OT hợp lệ hay không**
+
+| Member | Tổng Actual Effort hôm đó | Giờ được allocate | Chênh lệch | Cross-check Overtime + Risk management |
+|---|---|---|---|---|
+| <member> | <total_actual_hours>h (task: <liệt kê tên task đóng góp>) | <allocated_hours>h | +<chênh lệch>h | ⚠️ Chưa thấy log OT hoặc risk hợp lệ tương ứng — nêu cụ thể phần đã tìm thấy nếu có (vd risk tồn tại nhưng giờ/ngày không khớp, hoặc Description mâu thuẫn với Task/Next Action của chính dòng đó) |
+
+[Với mỗi member ở **mức 2** ("gần đủ, chỉ thiếu đóng Status") — 1 dòng ngắn/member, KHÔNG dựng bảng:]
+<member> đã OT <chênh lệch>h để hoàn thành task <TaskID>. Mặc dù task đã DONE nhưng status của risk <ID> vẫn chưa được update. Bạn muốn mình mention <member> nhắc hay để bạn tự xử lý?
+
+[ℹ️ <N> task trong tab thiếu dữ liệu Estimate/Remaining nên chưa đánh giá được effort hết/trễ — chỉ thêm dòng này nếu có phát sinh]
 ════════════════════════════════════════
-Bạn có muốn mình dùng skill gg-sheet (Action 2b) để dời lịch theo đề xuất trên không?
 ```
 
-Chỉ hiện các mục có dữ liệu — không tự thêm mục/dòng báo "không có" cho trường hợp không phát sinh (vd không ai quên report thì không cần nói ra). Định danh task bằng **tên task** (không dùng "No.<X>") trừ khi tab đó không merge cell No. theo từng dòng — nhiều tab (vd Sprint 1) merge No. dọc theo nhóm task nên hầu hết các dòng sau task đầu tiên trong nhóm sẽ trống No., dùng No. lúc đó sẽ sai/thiếu.
+Chỉ hiện các mục có dữ liệu — không tự thêm dòng/mục báo "không có" cho trường hợp không phát sinh.
 
-Nếu PM đồng ý reschedule, **không tự ghi** — nhắc PM xác nhận rồi gọi skill `gg-sheet` (Action 2b: Re-schedule) để thực hiện, giữ nguyên luồng preview/confirm/verify của skill đó.
+### PM quyết định Next Action của risk — member chỉ thực thi
+
+**Nguyên tắc**: `Next Action` của 1 risk (task trễ) là **quyết định của PM**, không phải của member — member chỉ là người **thực thi** hành động đã được quyết định (vd làm OT thật), còn quyết định chọn OT hay dời lịch, và cả việc dời lịch (thực hiện qua agent, PM chỉ follow theo), đều thuộc về PM. Vì vậy ngay khi PM xác nhận hướng xử lý ở Bước 7, quyết định đó phải được **ghi lại vào `Risk management` ngay lúc đó** — không chờ member tự ghi hộ.
+
+**Xác định risk row liên quan**: tìm trong `Risk management` dòng có `Task` (cột `Task` theo `columns`) = đúng TaskID đang xét, `Related Assignee` = đúng assignee, và `Status ≠ "Done"` (risk gần nhất chưa đóng) → dùng đúng dòng đó để cập nhật. Không tìm thấy dòng nào phù hợp → cần tạo dòng mới.
+
+- **PM chọn OT** → tính `overrun_hours` chính xác (nếu trễ-theo-lịch thuần thì lấy số giờ đã trôi qua như mô tả ở Bước 6), rồi ghi vào `Risk management`:
+  - Risk đã tồn tại → cập nhật `Next Action` = "OT `<n>`h", **giữ nguyên `Status` = "Open"** — vì member mới là người thực thi (làm OT thật + tự log giờ vào `Overtime`), `Status` chỉ lên "Done" sau khi 1 lần report sau cross-check xác nhận giờ đã log khớp (xem mục 3-mức cross-check) hoặc PM/member tự đổi tay.
+  - Risk chưa tồn tại → tạo dòng mới: `ID` = mã tiếp theo (tăng dần từ ID lớn nhất hiện có, vd R-01, R-02 → R-03), `Date Detected` = ngày cần xét, `Description` = mô tả ngắn lý do trễ (vd "Vượt estimate `<n>`h"), `Priority` = Priority của task, `Related Assignee` = assignee, `Task` = TaskID, `Next Action` = "OT `<n>`h", `Status` = "Open".
+  - Báo lại PM: "Đã ghi Next Action = OT `<n>`h vào risk `<ID>`, Status để Open — khi `<assignee>` log OT xong (hoặc report lần sau), mình sẽ cross-check để đóng risk."
+- **PM chọn dời lịch** → tính cascade chi tiết theo Bước 6, **gồm cả nhánh phụ thuộc BE→FE cùng nhóm** nếu task gốc là BE (xem mục "Phụ thuộc cấu trúc") — nhóm kết quả theo **từng assignee bị ảnh hưởng** (có thể nhiều hơn 1 người), hiển thị:
+  ```
+  → Đề xuất dời lịch (cập nhật cả Start Date Plan lẫn End Date Plan):
+
+  <assignee 1> (capacity chain):
+     - "<task Y>": <Start Plan cũ>–<End Plan cũ> → <Start Plan mới>–<End Plan mới>
+
+  <assignee 2> (phụ thuộc "<task blocker BE>" của <assignee 1>):
+     - "<task Z>": <Start Plan cũ>–<End Plan cũ> → <Start Plan mới>–<End Plan mới>
+     - "<task tiếp theo cùng assignee 2, do capacity>": ...
+
+  [Nếu chuỗi dời lịch đẩy task nào đó qua khỏi ngày kết thúc sprint (tra "End date" của sprint ở tab "Summary project") → cảnh báo riêng: "⚠️ Phương án này khiến '<task>' dời sang <ngày>, vượt ra ngoài ngày kết thúc Sprint (<ngày kết thúc sprint>)."]
+
+  Danh sách trên có cần bổ sung hoặc bớt task nào không, hay bạn muốn giữ nguyên để mình dời lịch luôn?
+  ```
+  **Không hỏi kiểu có/không đơn thuần** ("bạn có muốn dời lịch theo trên không?") — luôn mời PM chỉnh danh sách trước (thêm task PM biết nhưng cascade không tự suy ra được — vd phụ thuộc nghiệp vụ ngoài rule BE→FE, hoặc bớt task PM đã có phương án riêng như nhờ người khác hỗ trợ). Nếu PM chỉ trả lời "ok"/"giữ nguyên" → hiểu là chốt đúng danh sách đã đưa, không cần hỏi lại. Nếu PM thêm/bớt task cụ thể → cập nhật lại danh sách theo đúng yêu cầu (không tự tính lại toàn bộ cascade trừ khi task PM thêm/bớt ảnh hưởng tới các task khác trong chuỗi, lúc đó tính lại và hiển thị preview mới trước khi ghi).
+
+  **Không tự ghi** — sau khi danh sách đã chốt, nhắc PM xác nhận lần cuối rồi gọi skill `gg-sheet` (Action 2b: Re-schedule) để thực hiện, giữ nguyên luồng preview/confirm/verify của skill đó.
+
+  **Sau khi dời lịch ghi thành công (đã verify)** — vì đây là hành động PM quyết định VÀ tự thực thi (thông qua agent, PM chỉ follow theo, không cần chờ member làm gì thêm) → **cập nhật ngay `Status` = "Done"** cho risk tương ứng, không tách thành bước riêng chờ xác nhận sau:
+  - Risk đã tồn tại → cập nhật `Next Action` = "Re-schedule (dời lịch)" + `Status` = "Done".
+  - Risk chưa tồn tại → tạo dòng mới với `Next Action` = "Re-schedule (dời lịch)" + `Status` = "Done" luôn (hành động đã hoàn tất ngay lúc ghi lịch mới).
+  - Báo PM: "Đã dời lịch xong và cập nhật risk `<ID>` sang Done."
+
+**Cách ghi vào `Risk management`** (dùng `columns` của tab này trong `config.json`, đọc/ghi qua Service Account như mọi thao tác ghi khác):
+- Cập nhật dòng đã có → giống Action 2 (Sửa Task) của `gg-sheet`: đọc lại dòng theo `Task`/`Related Assignee` khớp để xác định đúng row index, ghi đè đúng ô `Next Action`/`Status` qua `values:batchUpdate`.
+- Tạo dòng mới → xác định dòng trống tiếp theo sau dòng cuối có `ID` (đọc cột `ID` để tìm `lastRow`), ghi 1 lần bằng `values:batchUpdate` — `Risk management` không có merge cell/format phức tạp như tab Sprint nên **không cần** bước copy format riêng như Action 1 của `gg-sheet`.
+- Luôn hiển thị preview (đúng field nào đổi/dòng nào thêm) trước khi ghi, và verify lại sau khi ghi — theo đúng nguyên tắc chung của `gg-sheet`. Việc ghi risk này gộp chung vào **cùng 1 lượt xác nhận** với việc dời lịch/đề xuất OT ở trên, không hỏi PM xác nhận thêm 1 lần riêng cho phần risk.
 
 ---
 
@@ -292,6 +407,8 @@ Nếu PM đồng ý reschedule, **không tự ghi** — nhắc PM xác nhận r�
 |-----|---------|
 | `config.json` chưa cấu hình (`fileId` rỗng/null) | "Chưa cấu hình Google Sheet lịch trình nào cả, bạn chạy skill `gg-sheet` để cấu hình trước nhé, rồi quay lại mình tổng hợp report cho." |
 | Tab PM muốn check không có trong `tabs`, hoặc `columns` = `null` | "Tab <tên> chưa xác định cấu trúc cột, bạn thao tác 1 lần qua skill `gg-sheet` trên tab đó rồi quay lại đây." |
+| Header thật của tab lệch với `headerSnapshot` trong `config.json` (xem "Verify columns còn khớp header thật" ở `gg-sheet/SKILL.md`), tự map lại được hết | Tự cập nhật `columns`/`headerSnapshot` mới, báo ngắn gọn cột nào đã đổi, rồi tiếp tục report bình thường với mapping mới |
+| Header lệch nhưng map lại KHÔNG hết (field cũ mất tích, hoặc cột mới không rõ nghĩa) | Dừng lại, liệt kê phần đọc được/không chắc, báo PM: "Cấu trúc cột tab <tên> có vẻ đã đổi và mình không tự map lại chắc chắn được — bạn thao tác 1 lần qua skill `gg-sheet` trên tab đó để xác nhận lại cấu trúc cột giúp mình." |
 | PM không nói tên tab, và "Summary project" chưa có trong `tabs`/`columns` = `null` | "Mình chưa đọc được cấu trúc tab 'Summary project' để tự xác định sprint hiện tại, bạn cho biết tên tab muốn check hôm nay nhé (hoặc thao tác 1 lần qua `gg-sheet` trên tab 'Summary project' để mình đọc được cấu trúc cột)." |
 | Không có dòng nào trong "Summary project" có `Start date <= hôm nay <= End date` | "Hôm nay (<ngày>) không nằm trong khoảng ngày của sprint nào trong 'Summary project' (sprint gần nhất: <tên>, <start>–<end>) — bạn cho biết tab muốn check nhé." |
 | Tên `Sprint` trong "Summary project" không khớp tên tab nào trong `tabs`, hoặc tab đó `columns` = `null` | "Summary project ghi sprint hiện tại là '<tên>' nhưng mình chưa xác định được cấu trúc cột của tab đó — bạn thao tác 1 lần qua `gg-sheet` trên tab '<tên>' rồi quay lại đây." |
