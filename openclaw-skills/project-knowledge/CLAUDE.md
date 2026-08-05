@@ -102,7 +102,7 @@ dành cho CI/offline contract và vẫn phải tạo Chroma thật.
 
 Query runtime bị khóa trong `scripts/filesystem_boundary.py`: chỉ đọc corpus và
 index trong skill root, không nhận path tuyệt đối, `..` hoặc symlink thoát root.
-DuckDB mở `read_only=True`; cache, conversation, telemetry và Slack queue là
+DuckDB mở `read_only=True`; cache, conversation và telemetry là
 operational state riêng ở `.runtime/` hoặc volume persistent, tuyệt đối không đặt
 vào `originals/`, `raw/`, `wiki/` hay `derived/`. Production nên mount corpus ở chế
 độ read-only của container/volume để có thêm enforcement ở OS.

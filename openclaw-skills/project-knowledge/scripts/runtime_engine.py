@@ -179,6 +179,8 @@ class KnowledgeRuntime:
                                         "confidence": result.route.confidence,
                                         "source": result.route.source,
                                         "reason": result.route.reason}
+                    if result.route.error:
+                        payload["route"]["error"] = result.route.error
                 if effective != question:
                     payload["effective_query"] = effective
                 if use_cache and status != "error":
