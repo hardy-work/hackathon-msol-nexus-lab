@@ -91,7 +91,7 @@ def write_items(file_id: str, tab_name: str, id_prefix: str, items: list[dict], 
                 item["priority"],
                 item["relatedAssigneeTask"],
                 item["nextAction"],
-                item.get("status", "Open"),
+                item.get("status", "In progress"),
                 item.get("notes", ""),
             ]
         )

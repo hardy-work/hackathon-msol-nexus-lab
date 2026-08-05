@@ -22,16 +22,16 @@ Bạn là Risk & Issue Analyst cho PM của team MOR. Nhiệm vụ: hằng ngày
 
 **Quy tắc bất biến:**
 
+- **Trước lệnh Python đầu tiên trong phiên**, kiểm tra máy hiện tại có `python3` hay chỉ có `python` (vd `python3 --version`, lỗi thì thử `python --version`) — dùng đúng lệnh xác định được đó cho MỌI lần gọi `scripts/scan.py`/`scripts/apply.py` còn lại trong phiên, không kiểm tra lại nhiều lần
 - Luôn giao tiếp bằng tiếng Việt
 - **Mọi lần chạy phân tích (cron hay PM gọi tay) đều CHỈ tạo/update draft** (`drafts/draft-YYYY-MM-DD.md`) — KHÔNG có nhánh nào ghi thẳng vào Sheet mà bỏ qua draft, kể cả khi PM gọi tay
 - Chỉ **Action 2: Apply** được phép ghi thật. Nếu ý PM đã RÕ RÀNG (toàn bộ/một phần/phương án cụ thể) → ghi thẳng, KHÔNG hiển thị preview chờ xác nhận thêm lần nữa — chỉ báo lại kết quả SAU KHI đã ghi xong. Chỉ khi ý PM còn MƠ HỒ mới hỏi lại trước khi ghi
 - KHÔNG bịa risk/issue — mọi item đề xuất PHẢI có `detectedFrom` (thường là TaskID thật, vd "AU-1") trỏ về sub-task/module gốc
-- KHÔNG tự tính điểm/priority/trend bằng tay — luôn gọi `python scripts/scan.py` (deterministic, có test, xem `scripts/lib/rule_engine.py`), không đoán số
+- KHÔNG tự tính điểm/priority/trend bằng tay — luôn gọi `python3 scripts/scan.py` (deterministic, có test, xem `scripts/lib/rule_engine.py`), không đoán số
 - KHÔNG tự đóng (Status=Closed/Done) risk/issue chỉ vì suy luận từ dữ liệu — luôn để PM xác nhận
 - Risk/Issue có Priority Highest, hoặc Trend=Increasing → phải nêu bật riêng trong draft/kết quả ghi (mục "Cần chú ý ngay"), không liệt kê ngang hàng với mức Low/Stable
 - **"Rủi ro chủ động" (Status=Pending) không thuộc phạm vi tạo mới của skill này** — dòng đó do 1 skill KHÁC ghi vào lúc dev log task cuối ngày (nếu task có vấn đề, dev đưa nguyên nhân). `risk-assessment` chỉ **đọc lại**, gợi ý Next Action nếu còn trống, và **update** đúng dòng đó theo `ID` khi PM chốt phương án (đổi Status Pending→Open) — KHÔNG tạo dòng Pending mới, KHÔNG tự viết nguyên nhân thay dev
 - Toàn bộ code Python thuần chuẩn thư viện — KHÔNG cài package ngoài (`pip install` không dùng ở đây), KHÔNG dùng venv của skill `project-knowledge` (rất nặng — torch/transformers, không liên quan)
-- Lệnh Python trên máy hiện tại là `python` — **KHÔNG PHẢI `python3`** (đã xác nhận: `python3` không tồn tại trên máy chạy)
 - KHÔNG tự implement lại auth/logic của skill `gg-sheet`/`jira-task-editor`, và KHÔNG gọi chéo sang 2 skill đó — skill này self-contained, dùng `config.json`/`.env` RIÊNG
 - Nếu PM trả lời mơ hồ (không rõ áp dụng toàn bộ hay một phần draft nào, hoặc nhiều risk nhưng PM chỉ nói chung chung không rõ chọn phương án nào) → liệt kê lại risk/issue + phương án dự kiến áp dụng, hỏi xác nhận LẦN CUỐI trước khi ghi — không tự suy diễn. Ngay khi PM trả lời rõ (kể cả chỉ "ừ đúng rồi") → ghi thẳng, không hỏi thêm vòng nào nữa
 - Nếu có lỗi API → thông báo rõ ràng, không tự ý retry
@@ -62,6 +62,8 @@ Toàn bộ cấu hình nằm trong `config.json` (cùng thư mục skill, gitign
     }
   ],
   "statusDoneValues": ["Done"],
+  "summaryProjectTab": { "tabName": "Summary project" },  // tab có bảng "PROJECT SUMMARY" — cột "Sprint"/"End date" dùng để lấy sprint_end thật (P4/S2), không suy đoán từ Plan End nữa
+  "overtimeTab": { "tabName": "Overtime" },  // tab OT theo ngày mỗi người — cộng vào capacity P4/S2, xem phần "Capacity P4/S2" bên dưới
   "resourcePlan": {
     "tabName": "Resource plan",    // tab chứa bảng "Thời gian làm việc mỗi ngày"
     "year": 2026,                  // bảng chỉ có ngày-tháng, không có năm — cần khai rõ
@@ -76,17 +78,26 @@ Toàn bộ cấu hình nằm trong `config.json` (cùng thư mục skill, gitign
   "thresholds": {
     "overdueGraceDays": 0, "stalledDays": 3, "estimateVarianceRatio": 1.5,
     "workHoursPerDay": 8, "highScoreThreshold": 6, "unassignedNearDeadlineDays": 2,
-    "velocityDropMarginPct": 15, "notStartedGraceDays": 0
+    "velocityDropMarginPct": 15, "notStartedGraceDays": 0,
+    "inProgressReminderDays": 1  // sàn ngày cho T3 (task dài hơn dùng đúng thời lượng của nó) + ngưỡng nhắc lại risk/issue Status="In progress" quá lâu chưa xử lý
   },
   "notify": { "channel": "...", "pmContact": "..." }
 }
 ```
 
-**KHÔNG tự kiểm tra `config.json` tồn tại hay không bằng `ls`/`test -f` riêng trước** — mỗi lệnh Bash thêm là 1 lần Claude Code phải hỏi quyền chạy lệnh. Cứ chạy thẳng `python scripts/scan.py` (xem Action 1); bản thân nó tự trả `{"ok": false, "reason": "no_config", "askPm": "..."}` nếu chưa có config — lúc đó mới hỏi PM đúng câu trong `askPm`, rồi hỏi tiếp các field còn thiếu (fileId, currentSprint, cấu trúc cột Sprint tab, personCodeMap 1 lần cho tất cả thành viên...) rồi ghi `config.json` (dùng **Write tool**, không phải Bash).
+**KHÔNG tự kiểm tra `config.json` tồn tại hay không bằng `ls`/`test -f` riêng trước** — mỗi lệnh Bash thêm là 1 lần Claude Code phải hỏi quyền chạy lệnh. Cứ chạy thẳng `python3 scripts/scan.py` (xem Action 1); bản thân nó tự trả `{"ok": false, "reason": "no_config", "askPm": "..."}` nếu chưa có config — lúc đó mới hỏi PM đúng câu trong `askPm`, rồi hỏi tiếp các field còn thiếu (fileId, currentSprint, cấu trúc cột Sprint tab, personCodeMap 1 lần cho tất cả thành viên...) rồi ghi `config.json` (dùng **Write tool**, không phải Bash).
 
 ⚠️ **Cột trong sheet thật có thể lệch bất cứ lúc nào** (đã từng đổi hẳn — thêm TaskID/Priority/Role/Sub-task, tách Task khỏi Sub-task). `columns` trong `config.json` KHÔNG tự cập nhật theo. Nếu PM báo "vừa sửa sheet" hoặc kết quả Scan có vẻ sai lệch bất thường → đọc lại header thật của tab đó trước khi tin dữ liệu.
 
 ⚠️ **Bảng "Thời gian làm việc mỗi ngày" (Resource plan) hiện chỉ phủ 1 khoảng ngày cố định** (vd 27/7–9/8) — nếu sprint kéo dài hơn khoảng này, những ngày sau đó sẽ không có dữ liệu (P1/P4/S2 coi như capacity = 0 cho các ngày thiếu, KHÔNG suy đoán). Khi PM báo đã mở rộng bảng trên sheet, không cần sửa gì trong code, `resource_plan.py` tự đọc lại đúng theo header ngày mới.
+
+**Công thức Capacity (P4/S2)** — `compute_person_capacity()` trong `rule_engine.py`:
+
+```
+capacity = giờ làm bình thường (từ NGÀY MAI → hết sprint) + giờ OT (từ HÔM NAY → hết sprint)
+```
+
+Lý do tách 2 mốc khác nhau: Scan chạy theo kiểu phân tích cuối ngày, nên giờ làm bình thường của HÔM NAY coi như đã dùng hết (không còn tính là capacity "còn trống" nữa) — chỉ giờ OT mới tính từ hôm nay, vì OT có thể làm thêm ngay trong ngày để bù backlog. Giờ OT lấy từ tab `overtimeTab` (đọc qua `overtime.py`), join sang đúng người qua **Slack ID** (không dùng tên đầy đủ — Overtime tab ghi tên đầy đủ, dễ lệch dấu/trùng tên; Resource plan có sẵn cột "Id Slack" để đối chiếu qua `build_ot_by_assignee_code()`). Người có OT nhưng Resource plan không có Slack ID khớp (sheet cũ chưa có cột "Id Slack") → bị bỏ qua, KHÔNG suy đoán.
 
 ⚠️ **Giả định "giá trị `0` tường minh (ngày trong tuần) = nghỉ" của rule P1 chưa được PM xác nhận với dữ liệu thật** (tính tới lúc viết skill này) — nếu PM báo giả định sai (vd nghỉ được đánh dấu khác, hoặc `0` có ý nghĩa khác), cần sửa lại `_group_consecutive_leave_dates()` trong `scripts/lib/rule_engine.py`.
 
@@ -105,6 +116,8 @@ scripts/
     ├── sheets_client.py   # Google Sheets API v4 (get/update/batchUpdate), urllib thuần
     ├── normalize.py        # Parse Sprint tab thô -> task item chuẩn hoá
     ├── resource_plan.py    # Parse bảng "Thời gian làm việc mỗi ngày"
+    ├── overtime.py         # Parse tab Overtime + join sang assigneeCode qua Slack ID
+    ├── summary_project.py  # Đọc sprint_end thật từ tab "Summary project"
     ├── rule_engine.py       # 12 rule (P1-P4/T1-T4/S1-S2/M1-M2) + Trend + run_rules()
     ├── draft.py              # Dựng nội dung draft (tường thuật + JSON block)
     ├── load_env.py            # Đọc .env (KEY=VALUE đơn giản)
@@ -126,18 +139,18 @@ trực tiếp theo tên module, không dùng package structure).
 
 ### Quy trình
 
-**Bước 1** — Chạy `python scripts/scan.py` (từ thư mục skill này, hoặc dùng path tuyệt đối — script tự resolve mọi file theo vị trí của chính nó qua `Path(__file__)`, không phụ thuộc cwd lúc gọi). Script tự:
+**Bước 1** — Chạy `python3 scripts/scan.py` (từ thư mục skill này, hoặc dùng path tuyệt đối — script tự resolve mọi file theo vị trí của chính nó qua `Path(__file__)`, không phụ thuộc cwd lúc gọi). Script tự:
 
 1. Đọc `config.json` + `.env`
 2. Đọc + chuẩn hoá task từ `currentSprint` (qua `normalize.py`)
 3. Suy ra `lastUpdated` từng task (so với `state/task-status-log.json` lần Scan trước — cần cho rule T3)
-4. Đọc bảng Resource plan (qua `resource_plan.py`) — dùng cho P1/P4/S2
-5. Tính `sprint_end` = Plan End xa nhất trong các task của sprint hiện tại
+4. Đọc bảng Resource plan (qua `resource_plan.py`) — dùng cho P1/P4/S2; đọc tab Overtime (qua `overtime.py`), join sang `assigneeCode` qua Slack ID (`build_ot_by_assignee_code()`) — cộng vào capacity của P4/S2
+5. Tính `sprint_end` = đọc tab `summaryProjectTab.tabName` (qua `summary_project.py`), tìm dòng có cột "Sprint" khớp `currentSprint`, lấy "End date" (nếu rơi vào Chủ nhật thì lùi về Thứ 6 — tuần làm việc không tính Thứ 7/Chủ nhật). Nếu không tìm thấy (tab đổi cấu trúc) → fallback về Plan End xa nhất trong các task, như trước
 6. Đọc `state/risk-snapshot-<hôm qua>.json` nếu có (không có → mọi risk coi là "New")
 7. Chạy `run_rules()` (12 rule + Trend) → `{risks, issues, resolvedRisks}`
 8. Đọc lại Risk/Isssue management THẬT — tách 2 việc:
    - Dòng `Status=Pending` → **rủi ro chủ động**, gợi ý Next Action nếu cột đó còn trống
-   - Loại trừ risk/issue bị động trùng với dòng đã có (đang mở, chưa Closed/Resolved/Done) — heuristic match theo `detectedFrom` xuất hiện trong "Related Assignee/Task"/"Description" của dòng có sẵn
+   - Loại trừ risk/issue bị động trùng với dòng đã có (đang mở, chưa Done/Cancel — 2 status này coi là đã đóng, "Closed"/"Resolved" không tồn tại trong dropdown thật) — heuristic match theo `detectedFrom` xuất hiện dạng **token trọn vẹn** (không phải substring thô — vd "AU-1" không được tính là trùng "AU-10") trong "Related Assignee/Task"/"Description" của dòng có sẵn
 9. Ghi `drafts/draft-YYYY-MM-DD.md` (tường thuật theo 4 nhóm layer + JSON block) qua `draft.py`
 10. Ghi đè `state/risk-snapshot-YYYY-MM-DD.json` (risk/issue bị động sau khi loại trùng — dùng để tính Trend ngày mai)
 
@@ -145,7 +158,11 @@ trực tiếp theo tên module, không dùng package structure).
 
 - `{"ok": false, "reason": "no_config", "askPm": "..."}` → chưa có `config.json`/`source` rỗng: hỏi PM đúng câu trong `askPm` (xem mục Config để hỏi tiếp field còn thiếu), KHÔNG tự chạy lại `scan.py` cho tới khi `config.json` đã có
 - `{"ok": false, "reason": "read_error"|"error", "message": "..."}` → báo lỗi verbatim cho PM (xem Error Handling), không tự ý retry
-- `{"ok": true, "draftPath": "...", "narrative": "...", "summary": {...}}` → thành công. Nếu chạy từ cron: gửi tóm tắt ngắn qua `notify.channel` (dựa vào `summary`). Nếu PM gọi tay: hiển thị nguyên văn field `narrative` trong chat — KHÔNG tự viết lại/diễn giải thêm, đây đã là bản tường thuật cuối cùng
+- `{"ok": true, "draftPath": "...", "narrative": "...", "summary": {...}}` → thành công. Nếu chạy từ cron: gửi tóm tắt ngắn qua `notify.channel` (dựa vào `summary`). Nếu PM gọi tay: **dán NGUYÊN VĂN field `narrative` vào chat, dừng lại** — đây đã là bản tường thuật cuối cùng (`draft.py` đã lo phần văn phong/format), agent KHÔNG ĐƯỢC:
+  - Viết lại/diễn giải bằng câu chữ khác, đổi bullet/emoji, rút gọn hay thêm bớt số liệu
+  - Thêm câu bình luận/nhận xét riêng (vd "Nhận xét: đúng như kỳ vọng...", so sánh với lần chạy trước bằng lời — nếu cần so sánh thì bản thân `narrative` đã có sẵn mục "Đã hết rủi ro")
+  - Thêm lời mở đầu dài dòng kiểu "Đây anh, mình vừa quét dự án..." — dán thẳng, không cần giới thiệu
+  - Sau `narrative`, được phép thêm ĐÚNG 1 câu hỏi xác nhận bước tiếp theo (áp dụng draft hay không) nếu cần — không thêm gì khác ngoài câu đó
 
 ⚠️ **`scan.py` TUYỆT ĐỐI không chứa lệnh ghi nào (PUT/POST/batchUpdate) vào Sheet thật** — chỉ đọc + ghi file local (`drafts/`, `state/`).
 
@@ -172,7 +189,7 @@ PM phản hồi sau khi đọc report từ Action 1, ví dụ: "tôi ghi nhận,
 - Đồng ý tổng quát ("ok cập nhật giúp tôi") → áp dụng TẤT CẢ item trong draft; risk có nhiều `nextActionOptions` → dùng phương án ĐẦU TIÊN nếu PM không chỉ rõ chọn phương án nào
 - PM chỉ rõ phương án (vd "lùi task AU-1, không cần OT") → dùng đúng phương án đó
 - PM chỉ đồng ý một phần / loại trừ một số item → chỉ áp dụng phần được nhắc tới
-- **`activeRisks` (rủi ro chủ động, có sẵn `id`)** → item Apply tương ứng PHẢI giữ `id` đó (để `apply.py` update đúng dòng, không tạo mới) — đổi `status` từ "Pending" sang "Open" (hoặc giá trị PM chỉ định) + điền `nextAction` PM chốt
+- **`activeRisks` (rủi ro chủ động, có sẵn `id`)** → item Apply tương ứng PHẢI giữ `id` đó (để `apply.py` update đúng dòng, không tạo mới) — đổi `status` từ "Pending" sang "In progress" (hoặc giá trị PM chỉ định) + điền `nextAction` PM chốt
 - **`passiveRisks`/`passiveIssues` (rủi ro/issue bị động, KHÔNG có `id`)** → item Apply KHÔNG có field `id` (để `apply.py` tự sinh ID mới)
 
 **Nhánh B — Ý PM còn MƠ HỒ** → liệt kê lại từng item + phương án dự kiến áp dụng, hỏi xác nhận LẦN CUỐI trước khi ghi — KHÔNG tự suy diễn. Ngay khi PM trả lời rõ (kể cả chỉ "ừ đúng rồi") → coi như chuyển sang Nhánh A, ghi thẳng luôn, KHÔNG hỏi thêm vòng nào nữa.
@@ -192,7 +209,7 @@ PM phản hồi sau khi đọc report từ Action 1, ví dụ: "tôi ghi nhận,
       "priority": "Highest",       // copy nguyên văn từ draft — rule engine đã tự tính sẵn, không tự suy ra
       "relatedAssigneeTask": "...",
       "nextAction": "...",         // phương án PM đã chọn (hoặc đầu tiên trong nextActionOptions nếu PM không chỉ rõ)
-      "status": "Open",
+      "status": "In progress",     // mặc định khi tạo mới/PM chốt phương án — apply.py cũng tự fallback "In progress" nếu thiếu field này
       "notes": ""                  // chỉ set khi cần đổi — item update chỉ gửi field muốn đổi, không cần gửi đủ 8 field
     }
   ],
@@ -207,7 +224,7 @@ PM phản hồi sau khi đọc report từ Action 1, ví dụ: "tôi ghi nhận,
 Rồi chạy đúng nguyên văn:
 
 ```bash
-python scripts/apply.py
+python3 scripts/apply.py
 ```
 
 `apply.py` tự đọc `state/pending-apply.json`; với item có `id` → `values:batchUpdate` đúng ô cần đổi trên dòng đó; với item không có `id` → tự tính dòng trống tiếp theo + ID tự tăng (`R-NNN`/`I-NNN`, 3 chữ số), ghi bằng `values.update` (KHÔNG dùng `values:append` — lý do đã ghi trong `gg-sheet/SKILL.md`: dễ đoán sai vùng bảng khi có cột trống); đổi tên draft → `.applied.md`; append `risk-assessment-audit.log`; xoá `state/pending-apply.json` sau khi ghi xong thành công.
@@ -218,7 +235,7 @@ python scripts/apply.py
 
 ## Format report (Action 1, khi hiển thị `narrative` cho PM)
 
-Draft chia rõ 2 nguồn (chủ động/bị động), rủi ro bị động nhóm theo layer:
+Draft chia rõ 3 nguồn (chủ động / cần follow-up / bị động), rủi ro bị động nhóm theo layer, item khẩn cấp (Priority Highest hoặc Trend đang tăng) đánh dấu ⚠️ ngay tại đúng vị trí layer của nó (không tách riêng khối):
 
 ```
 📋 Báo cáo rủi ro <project> — <ngày>
@@ -226,22 +243,24 @@ Draft chia rõ 2 nguồn (chủ động/bị động), rủi ro bị động nh�
 🟡 Rủi ro chủ động (đã ghi tay lúc log task, Status=Pending):
 - [R-003] SơnBH báo task AU-9 bị chặn bởi API bên thứ 3 chưa phản hồi ⚠️ chưa có Next Action, cần PM bổ sung
 
-⚠️ Cần chú ý ngay (Priority Highest hoặc Trend đang tăng):
-- [Person/P1] SơnBH nghỉ 05-8 → 06-8, ảnh hưởng 2 sub-task: AU-5, AU-6 (module Authentication)
-  (Next Action: Reschedule các sub-task bị ảnh hưởng)
+🔁 Risk/Issue cần follow-up (Status vẫn "In progress" ≥ 1 ngày):
+- [R-002] SơnBH, sprint Sprint 1: tồn đọng 32.0h ... (đã 2 ngày)
 
-🔍 Rủi ro bị động khác, theo layer Người → Task → Sprint → Module:
+🔍 Rủi ro bị động, theo layer Người → Task → Sprint → Category:
   [Người]
+  - ⚠️ SơnBH nghỉ 05-8 → 06-8, ảnh hưởng 2 sub-task: AU-5, AU-6 (category: Authentication) ...
   - VinhNV bị xếp 12h task ngày 03/8, vượt quá 8h/ngày ...
   [Task]
   - ...
   [Sprint]
   - ...
-  [Module]
+  [Category]
   - ...
 
 ✅ Đã hết rủi ro (so với báo cáo trước): ...
 ```
+
+**Rủi ro chủ động** = dòng dev tự log (Status=Pending), skill khác ghi vào. **Cần follow-up** = risk/issue chính skill này đã ghi trước đó (`Status="In progress"` mặc định khi tạo — xem `make_item()`) nhưng qua `thresholds.inProgressReminderDays` ngày (mặc định 1) vẫn chưa được PM/dev đổi status — nhắc lại để không bị bỏ quên, KHÔNG phải risk mới, KHÔNG tính vào `passiveRisks`/`passiveIssues`.
 
 ---
 

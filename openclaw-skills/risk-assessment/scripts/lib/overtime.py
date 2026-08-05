@@ -1,10 +1,10 @@
-"""Parse bảng "Thời gian làm việc mỗi ngày" (tab Resource plan, nằm bên phải
-tab, header 2 tầng: tháng rồi tới số ngày trong tháng) thành giờ làm việc
-mỗi người mỗi ngày — dùng cho rule P1 (nghỉ -> cascade) và P4/S2 (capacity).
+"""Parse tab "Overtime" (bảng OT theo ngày mỗi người) — cấu trúc lưới ngày
+giống Resource plan (header 2 tầng: tháng rồi số ngày) nhưng đơn giản hơn:
+không có cột Name/Email phía sau, cột ngày nằm ngay sau Role tới hết dòng.
 
-Tự định vị bảng bằng cách tìm ô "Member" (không hardcode chữ cột) — layout
-bên trái tab có thể đổi mà không ảnh hưởng, miễn "Member"/"Role"/"Name" và
-2 dòng header ngay dưới nó còn giữ đúng cấu trúc.
+Join sang Sprint tab/Resource plan qua Slack ID (ổn định hơn so tên đầy đủ,
+tránh trùng/lệch dấu) thay vì thêm 1 map cấu hình tay mới — xem
+`build_ot_by_assignee_code()`.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ def _find_header_row(rows: list[list]) -> int:
     for i, row in enumerate(rows):
         if any(str(c).strip() == "Member" for c in row):
             return i
-    raise ValueError('Không tìm thấy header "Member" trong bảng Resource plan')
+    raise ValueError('Không tìm thấy header "Member" trong tab Overtime')
 
 
 def _find_col(row: list, target: str) -> int:
@@ -31,32 +31,21 @@ def _find_col(row: list, target: str) -> int:
     raise ValueError(f'Không tìm thấy cột "{target}"')
 
 
-def _find_col_optional(row: list, target: str) -> int | None:
-    for i, c in enumerate(row):
-        if str(c).strip() == target:
-            return i
-    return None
-
-
-def parse_resource_plan(rows: list[list], person_code_map: dict, year: int) -> list[dict]:
+def parse_overtime(rows: list[list], year: int) -> list[dict]:
     header_idx = _find_header_row(rows)
     header_row = rows[header_idx]
     day_row = rows[header_idx + 1]
 
     role_idx = _find_col(header_row, "Role")
-    name_idx = _find_col(header_row, "Name")
+    slack_id_idx = _find_col(header_row, "Slack ID")
     member_idx = _find_col(header_row, "Member")
-    # "Id Slack" -- optional, chỉ có ở bản sheet mới hơn (dùng để join sang
-    # tab Overtime qua Slack ID, xem overtime.py). Không có thì slackId=None,
-    # KHÔNG raise lỗi -- tránh vỡ các deployment sheet cũ chưa có cột này.
-    slack_id_idx = _find_col_optional(header_row, "Id Slack")
 
-    # Cột ngày nằm giữa Role và Name. Tháng xác định bằng cách quét header_row
-    # trong đúng dải cột đó, gặp tên tháng nào thì áp dụng cho các cột sau đó
-    # tới khi gặp tên tháng tiếp theo.
+    # Cột ngày nằm ngay sau Role tới hết dòng (KHÔNG có cột nào theo sau như
+    # Resource plan) -- dùng độ dài day_row làm biên phải vì header_row có
+    # thể ngắn hơn (chỉ ghi tên tháng 1 lần, không lặp lại mỗi cột).
     date_col_month: dict[int, int] = {}
     current_month = None
-    for col in range(role_idx + 1, name_idx):
+    for col in range(role_idx + 1, len(day_row)):
         cell = str(header_row[col]).strip().lower() if col < len(header_row) else ""
         if cell in _MONTH_NAMES:
             current_month = _MONTH_NAMES[cell]
@@ -81,18 +70,29 @@ def parse_resource_plan(rows: list[list], person_code_map: dict, year: int) -> l
         member = row[member_idx].strip() if member_idx < len(row) and row[member_idx] else ""
         if not member:
             break
-        name_code = row[name_idx].strip() if name_idx < len(row) and row[name_idx] else ""
-        assignee_code = person_code_map.get(name_code, name_code)
-        slack_id = (
-            row[slack_id_idx].strip() if slack_id_idx is not None and slack_id_idx < len(row) and row[slack_id_idx] else None
-        )
+        slack_id = row[slack_id_idx].strip() if slack_id_idx < len(row) and row[slack_id_idx] else None
 
         daily_hours = {}
         for col, iso_date in date_col_iso.items():
             raw = row[col] if col < len(row) else ""
             daily_hours[iso_date] = parse_hours(raw)
 
-        people.append({"member": member, "assigneeCode": assignee_code, "slackId": slack_id, "dailyHours": daily_hours})
+        people.append({"member": member, "slackId": slack_id, "dailyHours": daily_hours})
         row_idx += 1
 
     return people
+
+
+def build_ot_by_assignee_code(overtime_people: list[dict], resource_plan_people: list[dict]) -> dict[str, dict]:
+    """Nối OT (keyed theo Slack ID) sang đúng `assigneeCode` (keyed theo
+    Resource plan, đã map qua personCodeMap) — join qua Slack ID vì Overtime
+    tab dùng tên đầy đủ, không phải code ngắn như Resource plan.
+    """
+    slack_to_code = {p["slackId"]: p["assigneeCode"] for p in resource_plan_people if p.get("slackId")}
+    result = {}
+    for person in overtime_people:
+        code = slack_to_code.get(person.get("slackId"))
+        if not code:
+            continue
+        result[code] = person["dailyHours"]
+    return result

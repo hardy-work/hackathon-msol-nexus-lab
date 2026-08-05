@@ -19,7 +19,7 @@ Phân loại Risk vs Issue theo quy ước PM cổ điển (giữ nguyên từ v
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 DEFAULT_THRESHOLDS = {
     "overdueGraceDays": 0,
@@ -30,6 +30,7 @@ DEFAULT_THRESHOLDS = {
     "unassignedNearDeadlineDays": 2,
     "velocityDropMarginPct": 15,
     "notStartedGraceDays": 0,
+    "inProgressReminderDays": 1,
 }
 
 
@@ -75,7 +76,10 @@ def make_item(
         "relatedAssigneeTask": related_assignee_task or detected_from,
         "nextAction": next_action_options[0] if next_action_options else "",
         "nextActionOptions": list(next_action_options or []),
-        "status": "Open",
+        # Ghi "In progress" ngay từ đầu (không phải "Open") — PM coi như đã
+        # tiếp nhận, và Date Detected trở thành mốc để nhắc lại nếu quá lâu
+        # không xử lý (xem find_stale_in_progress() trong scan.py).
+        "status": "In progress",
         "notes": "",
         "source": "AI",
         "trend": "New",
@@ -156,7 +160,16 @@ def rule_T3_stalled(tasks: list[dict], today: str, th: dict) -> list[dict]:
         if t["isDone"] or not t.get("lastUpdated"):
             continue
         idle_days = days_between(t["lastUpdated"], today)
-        if idle_days >= th["stalledDays"]:
+        # Ngưỡng không nên cố định cho mọi task: task dự kiến làm nhiều ngày
+        # (Plan End - Plan Start dài) đứng ở "In progress" suốt thời gian đó
+        # là bình thường, không phải bị đứng yên. Nếu biết được thời lượng dự
+        # kiến của task, lấy max(stalledDays, thời lượng đó) làm ngưỡng riêng;
+        # task không có đủ Plan Start/End thì dùng lại stalledDays mặc định.
+        duration = (
+            days_between(t["planStart"], t["planEnd"]) if t.get("planStart") and t.get("planEnd") else None
+        )
+        threshold = max(duration, th["stalledDays"]) if duration and duration > 0 else th["stalledDays"]
+        if idle_days >= threshold:
             out.append(
                 make_item(
                     layer="Task",
@@ -223,18 +236,23 @@ def rule_S1_velocity_drop(tasks: list[dict], today: str, th: dict) -> list[dict]
 
 # --- S2: Sprint có nguy cơ không kịp (team-wide) -> Risk ----------------------
 def rule_S2_sprint_at_risk(
-    tasks: list[dict], resource_plan_people: list[dict], today: str, sprint_end: str, sprint_name: str, th: dict
+    tasks: list[dict],
+    resource_plan_people: list[dict],
+    today: str,
+    sprint_end: str,
+    sprint_name: str,
+    th: dict,
+    ot_by_person: dict[str, dict] | None = None,
 ) -> list[dict]:
-    by_person = compute_capacity_backlog_by_person(tasks, resource_plan_people, today, sprint_end, sprint_name)
+    by_person = compute_capacity_backlog_by_person(tasks, resource_plan_people, today, sprint_end, sprint_name, ot_by_person)
     total_capacity = sum(cb["capacity"] for cb in by_person.values())
     total_backlog = sum(cb["backlog"] for cb in by_person.values())
     if total_backlog > total_capacity:
-        deficit = total_backlog - total_capacity
         return [
             make_item(
                 layer="Sprint",
                 rule="S2",
-                description=f"{sprint_name} có nguy cơ không kịp: tổng tồn đọng {total_backlog:.1f}h > tổng capacity còn lại cả team {total_capacity:.1f}h (thiếu {deficit:.1f}h).",
+                description=f"{sprint_name} có nguy cơ không kịp tiến độ: dự kiến cần {total_backlog:.1f}h, thời gian còn lại {total_capacity:.1f}h.",
                 detected_from=sprint_name,
                 probability=3,
                 impact=3,
@@ -315,7 +333,7 @@ def rule_M2_category_behind_own_deadline(tasks: list[dict], today: str, th: dict
                 make_item(
                     layer="Module",
                     rule="M2",
-                    description=f'Category "{category}" tụt hậu so với chính deadline của nó: đã trôi qua {pct_elapsed:.0f}% thời gian nhưng chỉ {pct_done:.0f}% sub-task Done.',
+                    description=f'Category "{category}" đang tụt hậu tiến độ so với deadline riêng: đã trôi qua {pct_elapsed:.0f}% thời gian nhưng chỉ {pct_done:.0f}% sub-task hoàn thành.',
                     detected_from=category,
                     probability=2,
                     impact=3,
@@ -380,7 +398,12 @@ def rule_P1_leave_cascade(tasks: list[dict], resource_plan_people: list[dict], t
                 make_item(
                     layer="Person",
                     rule="P1",
-                    description=f"{code} nghỉ {when}, ảnh hưởng {len(affected)} sub-task: {task_refs} (category: {module_label}).",
+                    # Description PHẢI bắt đầu đúng nguyên văn detected_from (kể
+                    # cả dấu phẩy) để dedupe (scan.py) so khớp được với dòng đã
+                    # ghi thật trên sheet — trước đây thiếu dấu phẩy nên không
+                    # bao giờ khớp, risk cứ báo lặp lại dù đã ghi rồi. Nói rõ
+                    # "sub-task" ngay trước ID để không ai hiểu nhầm ID là module.
+                    description=f"{code}, nghỉ {when} — ảnh hưởng {len(affected)} sub-task {task_refs} thuộc category {module_label}.",
                     detected_from=f"{code}, nghỉ {when}",
                     probability=3,
                     impact=3 if len(affected) >= 3 else 2 if len(affected) >= 2 else 1,
@@ -464,13 +487,21 @@ def rule_P3_unassigned_near_deadline(tasks: list[dict], today: str, th: dict) ->
 
 
 # --- Helper dùng chung cho P4 và S2 (Sprint layer) ----------------------------
-def compute_person_capacity(daily_hours: dict, today: str, sprint_end: str) -> float:
-    """Cộng dồn giờ khai thật trong Resource plan, từ hôm nay tới hết sprint.
+def compute_person_capacity(daily_hours: dict, ot_daily_hours: dict, today: str, sprint_end: str) -> float:
+    """Capacity = giờ làm bình thường TỪ NGÀY MAI tới hết sprint + giờ OT TỪ
+    HÔM NAY tới hết sprint, cộng lại.
 
-    Ngày không có trong `daily_hours` (ngoài phạm vi bảng — xem hạn chế đã ghi
-    trong design.md) hoặc giá trị None (cuối tuần/chưa điền) đều tính là 0.
+    Phân tích chạy vào cuối ngày nên giờ làm bình thường của hôm nay coi như
+    đã dùng hết (không còn tính là capacity "còn trống" nữa) — chỉ OT mới
+    tính từ hôm nay vì OT có thể làm thêm ngay trong ngày để bù backlog.
+
+    Ngày không có trong `daily_hours`/`ot_daily_hours` (ngoài phạm vi bảng)
+    hoặc giá trị None/rỗng (cuối tuần/chưa điền/chưa đăng ký OT) đều tính 0.
     """
-    return sum(h for d, h in daily_hours.items() if today <= d <= sprint_end and h)
+    tomorrow = (date.fromisoformat(today) + timedelta(days=1)).isoformat()
+    regular = sum(h for d, h in daily_hours.items() if tomorrow <= d <= sprint_end and h)
+    overtime = sum(h for d, h in (ot_daily_hours or {}).items() if today <= d <= sprint_end and h)
+    return regular + overtime
 
 
 def compute_person_backlog(assignee_code: str, tasks: list[dict], sprint_name: str) -> float:
@@ -482,13 +513,19 @@ def compute_person_backlog(assignee_code: str, tasks: list[dict], sprint_name: s
 
 
 def compute_capacity_backlog_by_person(
-    tasks: list[dict], resource_plan_people: list[dict], today: str, sprint_end: str, sprint_name: str
+    tasks: list[dict],
+    resource_plan_people: list[dict],
+    today: str,
+    sprint_end: str,
+    sprint_name: str,
+    ot_by_person: dict[str, dict] | None = None,
 ) -> dict[str, dict]:
+    ot_by_person = ot_by_person or {}
     result = {}
     for person in resource_plan_people:
         code = person["assigneeCode"]
         result[code] = {
-            "capacity": compute_person_capacity(person["dailyHours"], today, sprint_end),
+            "capacity": compute_person_capacity(person["dailyHours"], ot_by_person.get(code), today, sprint_end),
             "backlog": compute_person_backlog(code, tasks, sprint_name),
         }
     return result
@@ -496,10 +533,16 @@ def compute_capacity_backlog_by_person(
 
 # --- P4: Quá tải theo tồn đọng CẢ SPRINT (không chỉ 1 ngày) -> Risk -----------
 def rule_P4_sprint_backlog_overload(
-    tasks: list[dict], resource_plan_people: list[dict], today: str, sprint_end: str, sprint_name: str, th: dict
+    tasks: list[dict],
+    resource_plan_people: list[dict],
+    today: str,
+    sprint_end: str,
+    sprint_name: str,
+    th: dict,
+    ot_by_person: dict[str, dict] | None = None,
 ) -> list[dict]:
     out = []
-    by_person = compute_capacity_backlog_by_person(tasks, resource_plan_people, today, sprint_end, sprint_name)
+    by_person = compute_capacity_backlog_by_person(tasks, resource_plan_people, today, sprint_end, sprint_name, ot_by_person)
     for code, cb in by_person.items():
         if cb["backlog"] > cb["capacity"]:
             deficit = cb["backlog"] - cb["capacity"]
@@ -507,7 +550,11 @@ def rule_P4_sprint_backlog_overload(
                 make_item(
                     layer="Person",
                     rule="P4",
-                    description=f'{code} tồn đọng {cb["backlog"]:.1f}h trong khi capacity còn lại tới hết sprint chỉ {cb["capacity"]:.1f}h (thiếu {deficit:.1f}h).',
+                    # Description PHẢI bắt đầu bằng đúng nguyên văn detected_from
+                    # để dedupe so khớp được (trước đây detected_from có thêm
+                    # ", sprint {sprint_name}" không xuất hiện ở đâu cả trên
+                    # sheet thật -> risk cứ báo lặp lại dù đã ghi rồi).
+                    description=f'{code}, sprint {sprint_name}: tồn đọng {cb["backlog"]:.1f}h trong khi capacity còn lại tới hết sprint chỉ {cb["capacity"]:.1f}h (thiếu {deficit:.1f}h).',
                     detected_from=f"{code}, sprint {sprint_name}",
                     probability=3,
                     impact=3 if deficit >= 16 else 2,
@@ -594,11 +641,14 @@ def run_rules(
     snapshot: dict | None = None,
     thresholds: dict | None = None,
     today: str | None = None,
+    ot_by_person: dict[str, dict] | None = None,
 ) -> dict:
     """Entrypoint DUY NHẤT scan.py cần gọi — chạy đủ 12 rule theo đúng thứ tự
     layer rồi áp Trend. `resource_plan_people`/`sprint_end`/`sprint_name` là
     optional: thiếu 1 trong 3 thì bỏ qua P1/P4/S2 (cần dữ liệu Resource plan +
     biết sprint đang phân tích), các rule còn lại vẫn chạy bình thường.
+    `ot_by_person` (assigneeCode -> dailyHours OT, optional) cộng thêm vào
+    capacity của P4/S2 — xem `compute_person_capacity()`.
     """
     th = {**DEFAULT_THRESHOLDS, **(thresholds or {})}
     today = today or date.today().isoformat()
@@ -621,8 +671,8 @@ def run_rules(
 
     if resource_plan_people and sprint_end and sprint_name:
         risks_raw += rule_P1_leave_cascade(tasks, resource_plan_people, today, th)
-        risks_raw += rule_P4_sprint_backlog_overload(tasks, resource_plan_people, today, sprint_end, sprint_name, th)
-        risks_raw += rule_S2_sprint_at_risk(tasks, resource_plan_people, today, sprint_end, sprint_name, th)
+        risks_raw += rule_P4_sprint_backlog_overload(tasks, resource_plan_people, today, sprint_end, sprint_name, th, ot_by_person)
+        risks_raw += rule_S2_sprint_at_risk(tasks, resource_plan_people, today, sprint_end, sprint_name, th, ot_by_person)
 
     risks, resolved_risks = apply_trend(risks_raw, snapshot)
 

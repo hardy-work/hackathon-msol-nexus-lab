@@ -56,6 +56,23 @@ class ParseResourcePlanTest(unittest.TestCase):
         codes = {p["assigneeCode"] for p in result}
         self.assertIn("MH_SonBH", codes)
 
+    def test_no_id_slack_column_defaults_to_none(self):
+        # Fixture REAL_SAMPLE_ROWS không có cột "Id Slack" (bản sheet cũ hơn)
+        # -- KHÔNG được raise lỗi, chỉ để slackId=None.
+        result = parse_resource_plan(REAL_SAMPLE_ROWS, PERSON_CODE_MAP, year=2026)
+        son = next(p for p in result if p["assigneeCode"] == "SơnBH")
+        self.assertIsNone(son["slackId"])
+
+    def test_id_slack_column_read_when_present(self):
+        rows_with_slack_id = [
+            ["#", "Member", "Role", "August", "Name ", "Id Slack"],
+            ["", "", "", "1", "", ""],
+            ["1", "Bùi Hồng Sơn", "BE", "8", "MH_SonBH", "U09QRTUHX24"],
+        ]
+        result = parse_resource_plan(rows_with_slack_id, PERSON_CODE_MAP, year=2026)
+        son = next(p for p in result if p["assigneeCode"] == "SơnBH")
+        self.assertEqual(son["slackId"], "U09QRTUHX24")
+
 
 if __name__ == "__main__":
     unittest.main()

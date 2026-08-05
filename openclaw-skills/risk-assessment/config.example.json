@@ -5,6 +5,8 @@
   "currentSprint": null,
   "sprintTabs": [],
   "statusDoneValues": ["Done"],
+  "summaryProjectTab": { "tabName": "Summary project" },
+  "overtimeTab": { "tabName": "Overtime" },
   "resourcePlan": {
     "tabName": "Resource plan",
     "year": null,
@@ -22,7 +24,8 @@
     "highScoreThreshold": 6,
     "unassignedNearDeadlineDays": 2,
     "velocityDropMarginPct": 15,
-    "notStartedGraceDays": 0
+    "notStartedGraceDays": 0,
+    "inProgressReminderDays": 1
   },
   "notify": {
     "channel": null,

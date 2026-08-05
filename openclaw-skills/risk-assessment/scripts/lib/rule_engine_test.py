@@ -15,6 +15,7 @@ from rule_engine import (
     rule_M2_category_behind_own_deadline,
     apply_trend,
     run_rules,
+    compute_person_capacity,
 )
 
 THRESHOLDS = {
@@ -95,6 +96,35 @@ class RuleT3StalledTest(unittest.TestCase):
 
     def test_updated_yesterday_does_not_fire(self):
         t = base_task(isDone=False, lastUpdated="2026-08-03")
+        self.assertEqual(rule_T3_stalled([t], TODAY, THRESHOLDS), [])
+
+    def test_long_task_not_flagged_before_its_own_duration(self):
+        # Task dự kiến làm 6 ngày (Plan Start -> Plan End), status đứng yên
+        # mới 4 ngày -- vẫn trong thời lượng dự kiến, KHÔNG phải bị đứng yên.
+        t = base_task(
+            isDone=False, lastUpdated="2026-07-31",
+            planStart="2026-07-28", planEnd="2026-08-03",
+        )
+        self.assertEqual(rule_T3_stalled([t], TODAY, THRESHOLDS), [])
+
+    def test_long_task_flagged_after_its_own_duration_exceeded(self):
+        # Cùng task 6 ngày ở trên, nhưng đứng yên đã 7 ngày -- vượt quá thời
+        # lượng dự kiến của chính nó -> đáng báo.
+        t = base_task(
+            isDone=False, lastUpdated="2026-07-28",
+            planStart="2026-07-28", planEnd="2026-08-03",
+        )
+        out = rule_T3_stalled([t], "2026-08-04", THRESHOLDS)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["rule"], "T3")
+
+    def test_short_task_still_uses_stalled_days_floor(self):
+        # Task chỉ dự kiến làm 1 ngày nhưng đứng yên 2 ngày -- vẫn dùng
+        # stalledDays (3) làm sàn, chưa đủ ngưỡng để báo.
+        t = base_task(
+            isDone=False, lastUpdated="2026-08-02",
+            planStart="2026-08-01", planEnd="2026-08-01",
+        )
         self.assertEqual(rule_T3_stalled([t], TODAY, THRESHOLDS), [])
 
 
@@ -225,6 +255,54 @@ class RuleP4SprintBacklogOverloadTest(unittest.TestCase):
         out = rule_P4_sprint_backlog_overload(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS)
         self.assertEqual(out, [])
 
+    def test_ot_today_covers_deficit_prevents_fire(self):
+        # Backlog 12h, capacity thường (chỉ ngày mai 08-05) = 8h -> thiếu 4h
+        # nếu không có OT. Có 4h OT đăng ký đúng HÔM NAY (08-04) -> đủ bù,
+        # không còn fire nữa.
+        tasks = [
+            base_task(id="T1", detectedFrom="T1", assignee="SơnBH", sprint="Sprint 1", isDone=False, remainingHours=12),
+        ]
+        resource_plan = [
+            {"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {"2026-08-05": 8.0}},
+        ]
+        ot_by_person = {"SơnBH": {"2026-08-04": 4.0}}
+        out = rule_P4_sprint_backlog_overload(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS, ot_by_person)
+        self.assertEqual(out, [])
+
+    def test_without_ot_same_scenario_still_fires(self):
+        tasks = [
+            base_task(id="T1", detectedFrom="T1", assignee="SơnBH", sprint="Sprint 1", isDone=False, remainingHours=12),
+        ]
+        resource_plan = [
+            {"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {"2026-08-05": 8.0}},
+        ]
+        out = rule_P4_sprint_backlog_overload(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS)
+        self.assertEqual(len(out), 1)
+
+
+class ComputePersonCapacityTest(unittest.TestCase):
+    def test_today_regular_hours_excluded_end_of_day_convention(self):
+        daily_hours = {"2026-08-04": 8.0, "2026-08-05": 8.0}
+        capacity = compute_person_capacity(daily_hours, {}, "2026-08-04", "2026-08-05")
+        self.assertEqual(capacity, 8.0)  # chỉ 08-05 (ngày mai), KHÔNG cộng 08-04 (hôm nay)
+
+    def test_ot_today_is_included(self):
+        daily_hours = {"2026-08-05": 8.0}
+        ot_daily_hours = {"2026-08-04": 4.0}
+        capacity = compute_person_capacity(daily_hours, ot_daily_hours, "2026-08-04", "2026-08-05")
+        self.assertEqual(capacity, 12.0)  # 8 (ngày mai) + 4 (OT hôm nay)
+
+    def test_ot_before_today_is_excluded(self):
+        daily_hours = {"2026-08-05": 8.0}
+        ot_daily_hours = {"2026-08-03": 4.0}  # OT ngày đã qua, ngoài phạm vi
+        capacity = compute_person_capacity(daily_hours, ot_daily_hours, "2026-08-04", "2026-08-05")
+        self.assertEqual(capacity, 8.0)
+
+    def test_none_ot_daily_hours_treated_as_no_overtime(self):
+        daily_hours = {"2026-08-05": 8.0}
+        capacity = compute_person_capacity(daily_hours, None, "2026-08-04", "2026-08-05")
+        self.assertEqual(capacity, 8.0)
+
 
 class RuleS1VelocityDropTest(unittest.TestCase):
     def test_drop_between_two_sprints_fires(self):
@@ -267,13 +345,15 @@ class RuleS2SprintAtRiskTest(unittest.TestCase):
         self.assertEqual(out[0]["rule"], "S2")
 
     def test_team_capacity_sufficient_does_not_fire(self):
+        # Capacity giờ tính từ NGÀY MAI (không phải hôm nay) -- sprint_end
+        # phải là ngày mai để còn capacity thật sự tính được.
         tasks = [
             base_task(id="T1", detectedFrom="T1", assignee="SơnBH", sprint="Sprint 1", isDone=False, remainingHours=4),
         ]
         resource_plan = [
-            {"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {"2026-08-04": 8.0}},
+            {"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {"2026-08-05": 8.0}},
         ]
-        out = rule_S2_sprint_at_risk(tasks, resource_plan, TODAY, "2026-08-04", "Sprint 1", THRESHOLDS)
+        out = rule_S2_sprint_at_risk(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS)
         self.assertEqual(out, [])
 
 

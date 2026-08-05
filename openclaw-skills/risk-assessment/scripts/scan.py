@@ -10,6 +10,7 @@ chính nó, không phụ thuộc cwd lúc gọi).
 from __future__ import annotations
 
 import json
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -20,10 +21,17 @@ sys.path.insert(0, str(SKILL_DIR / "scripts" / "lib"))
 from draft import build_draft  # noqa: E402
 from google_auth import mint_access_token  # noqa: E402
 from load_env import load_env  # noqa: E402
-from normalize import normalize_sprint_rows  # noqa: E402
+from normalize import normalize_sprint_rows, parse_date  # noqa: E402
+from overtime import build_ot_by_assignee_code, parse_overtime  # noqa: E402
 from resource_plan import parse_resource_plan  # noqa: E402
-from rule_engine import run_rules  # noqa: E402
+from rule_engine import days_between, run_rules  # noqa: E402
 from sheets_client import SheetsApiError, get_values  # noqa: E402
+from summary_project import find_sprint_end  # noqa: E402
+
+# Status thật trên dropdown Config tab: Open, In progress, Done, Pending,
+# Cancel — KHÔNG có "Closed"/"Resolved". Dòng "Cancel" coi như đã đóng, phải
+# loại khỏi tập "đang mở" để không bị dedupe chặn tái phát hiện mãi mãi.
+CLOSED_STATUSES = ("Done", "Cancel")
 
 
 def load_config() -> dict | None:
@@ -108,22 +116,60 @@ def read_output_tab(file_id: str, tab_name: str, token: str) -> list[dict]:
     return items
 
 
+def _detected_from_matches(detected: str, text: str) -> bool:
+    """So khớp `detected` như 1 token trọn vẹn trong `text`, không phải
+    substring thô — tránh việc TaskID ngắn (vd "AU-1") bị coi là trùng với
+    TaskID dài hơn cùng tiền tố (vd "AU-10", "AU-11") chỉ vì "AU-1" là chuỗi
+    con của "AU-10".
+    """
+    if not text:
+        return False
+    pattern = r"(?<![\w-])" + re.escape(detected) + r"(?![\w-])"
+    return re.search(pattern, text) is not None
+
+
 def dedupe_against_existing(candidates: list[dict], existing_items: list[dict]) -> list[dict]:
     """Loại risk/issue bị động trùng với dòng đã có sẵn trên sheet (đang mở,
-    KHÔNG phải đã Closed/Resolved/Done) — match theo `detectedFrom` xuất hiện
-    trong "Related Assignee/Task" hoặc "Description" của dòng đã có.
+    KHÔNG phải Done/Cancel) — match theo `detectedFrom` xuất hiện (dạng token
+    trọn vẹn) trong "Related Assignee/Task" hoặc "Description" của dòng đã có.
 
-    Đây là heuristic (substring match) — sheet schema mới không có cột
-    detectedFrom/rule riêng để match chính xác tuyệt đối (đã đơn giản hoá
-    theo template thật, xem design.md).
+    Đây là heuristic — sheet schema mới không có cột detectedFrom/rule riêng
+    để match chính xác tuyệt đối (đã đơn giản hoá theo template thật, xem
+    design.md).
     """
-    open_existing = [i for i in existing_items if i["status"] not in ("Closed", "Resolved", "Done")]
+    open_existing = [i for i in existing_items if i["status"] not in CLOSED_STATUSES]
     out = []
     for c in candidates:
         detected = c["detectedFrom"]
-        if any(detected in i["relatedAssigneeTask"] or detected in i["description"] for i in open_existing):
+        if any(
+            _detected_from_matches(detected, i["relatedAssigneeTask"]) or _detected_from_matches(detected, i["description"])
+            for i in open_existing
+        ):
             continue
         out.append(c)
+    return out
+
+
+def find_stale_in_progress(existing_items: list[dict], today: str, reminder_days: int) -> list[dict]:
+    """Risk/Issue đã ghi thật nhưng Status vẫn "In progress" quá `reminder_days`
+    ngày kể từ Date Detected — nhắc PM tiếp tục xử lý, tránh bị bỏ quên.
+
+    Dùng thẳng Date Detected làm mốc "từ khi nào 'In progress'" — không cần
+    thêm state riêng để track lịch sử đổi status, vì mọi dòng mới ghi đều
+    khởi tạo Status="In progress" ngay từ đầu (xem make_item() trong
+    rule_engine.py) nên Date Detected == ngày bắt đầu "In progress" trong đa
+    số trường hợp thực tế (trừ khi PM tự đổi qua lại status nhiều lần).
+    """
+    out = []
+    for i in existing_items:
+        if i["status"] != "In progress":
+            continue
+        detected_iso = parse_date(i["dateDetected"])
+        if not detected_iso:
+            continue
+        idle_days = days_between(detected_iso, today)
+        if idle_days >= reminder_days:
+            out.append({**i, "idleDays": idle_days})
     return out
 
 
@@ -166,8 +212,17 @@ def run_scan() -> dict:
         rp_rows = get_values(file_id, f"'{rp_config['tabName']}'!A1:AZ40", token)
         people = parse_resource_plan(rp_rows, rp_config["personCodeMap"], year=rp_config["year"])
 
-        plan_ends = [t["planEnd"] for t in tasks if t.get("planEnd")]
-        sprint_end = max(plan_ends) if plan_ends else today
+        ot_tab_name = config.get("overtimeTab", {}).get("tabName", "Overtime")
+        ot_rows = get_values(file_id, f"'{ot_tab_name}'!A1:AZ40", token)
+        overtime_people = parse_overtime(ot_rows, year=rp_config["year"])
+        ot_by_person = build_ot_by_assignee_code(overtime_people, people)
+
+        summary_tab_name = config.get("summaryProjectTab", {}).get("tabName", "Summary project")
+        summary_rows = get_values(file_id, f"'{summary_tab_name}'!A1:N30", token)
+        sprint_end = find_sprint_end(summary_rows, current_sprint_name)
+        if not sprint_end:
+            plan_ends = [t["planEnd"] for t in tasks if t.get("planEnd")]
+            sprint_end = max(plan_ends) if plan_ends else today
 
         snapshot, previous_snapshot_date = load_latest_snapshot(today)
 
@@ -179,6 +234,7 @@ def run_scan() -> dict:
             snapshot=snapshot,
             thresholds=config["thresholds"],
             today=today,
+            ot_by_person=ot_by_person,
         )
 
         risk_existing = read_output_tab(file_id, config["output"]["riskTab"]["name"], token)
@@ -187,6 +243,8 @@ def run_scan() -> dict:
         active_risks = [i for i in risk_existing + issue_existing if i["status"] == "Pending"]
         passive_risks = dedupe_against_existing(result["risks"], risk_existing)
         passive_issues = dedupe_against_existing(result["issues"], issue_existing)
+        reminder_days = config["thresholds"].get("inProgressReminderDays", 1)
+        stale_in_progress = find_stale_in_progress(risk_existing + issue_existing, today, reminder_days)
 
         draft_text = build_draft(
             today=today,
@@ -194,6 +252,7 @@ def run_scan() -> dict:
             active_risks=active_risks,
             passive_risks=passive_risks,
             passive_issues=passive_issues,
+            stale_in_progress=stale_in_progress,
             resolved_risks=result["resolvedRisks"],
             previous_snapshot_date=previous_snapshot_date,
             thresholds=config["thresholds"],
@@ -219,6 +278,7 @@ def run_scan() -> dict:
                 "activeRisks": len(active_risks),
                 "passiveRisks": len(passive_risks),
                 "passiveIssues": len(passive_issues),
+                "staleInProgress": len(stale_in_progress),
                 "resolvedRisks": len(result["resolvedRisks"]),
             },
         }
