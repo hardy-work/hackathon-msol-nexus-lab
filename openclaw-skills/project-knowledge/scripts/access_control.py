@@ -2,7 +2,7 @@
 """Fail-closed read authorization for Project Knowledge.
 
 The repository declares policy, but the caller identity and roles must come
-from the trusted host process.  Query text and Slack payload fields cannot
+from the trusted host process.  Query text and gateway payload fields cannot
 grant themselves access.
 """
 from __future__ import annotations

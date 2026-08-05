@@ -79,11 +79,6 @@ echo; echo "══ AUTOMATIC FILE INTAKE (offline) ══"; "$PY" scripts/intake
 echo; echo "══ MARKDOWN INTAKE → WIKI (offline) ══"; "$PY" scripts/markdown_ingest_selftest.py
 echo; echo "══ GATE 3a HISTORY METADATA (offline) ══"; "$PY" scripts/lint_history_selftest.py
 echo; echo "══ GATE 3b CONSENSUS CONTRACT (offline) ══"; "$PY" scripts/review_selftest.py
-if [ "${PROJECT_KNOWLEDGE_RUN_SLACK_TESTS:-1}" = "1" ]; then
-  echo; echo "══ SLACK HTTP BOUNDARY (offline) ══"; "$PY" adapters/slack/slack_http_selftest.py
-  echo; echo "══ SLACK DURABLE QUEUE (offline) ══"; "$PY" adapters/slack/slack_queue_selftest.py
-fi
-
 # Gate 3b (LLM soát nội dung) — full rebuild vẫn OPT-IN vì tốn 1 lệnh `claude -p`
 # mỗi trang (~1-2 phút) và không tất định. Luồng ingest worktree (`ingest_flow.py
 # --run`) thì mặc định bắt buộc Gate 3b; chỉ fixture/offline mới dùng --no-review.

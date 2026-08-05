@@ -1,7 +1,7 @@
 project: nexus
 default_visibility: internal
 
-# Identity/role are supplied by the trusted runtime (Slack user mapping, SSO,
+# Identity/role are supplied by the trusted gateway (SSO, bot identity mapping,
 # or service environment), never copied from free-form user input.
 visibility_roles:
   public: []

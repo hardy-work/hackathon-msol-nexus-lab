@@ -23,7 +23,9 @@ python scripts/run.py \
 Trên Linux nếu lệnh là `python3`, dùng `bash demo/run_demo.sh`; wrapper sẽ tự chọn
 trình Python thực sự chạy được.
 
-Wrapper mặc định chạy deterministic, không gọi mạng và không gọi LLM. Dùng `--llm` chỉ khi runtime Claude đã được cấu hình và cần câu hỏi mở; nếu không, giữ mặc định để bảo toàn tính tái lập.
+Wrapper mặc định chạy deterministic, không gọi mạng và không gọi LLM. NexusBot có thể
+bật route LLM bằng `PROJECT_KNOWLEDGE_LLM=1`; `--llm` và `--no-llm` có quyền ưu tiên
+cao hơn env để test/ép chế độ. Chỉ bật khi runtime Claude đã được cấu hình và cần câu hỏi mở.
 
 Khi `--llm` được bật, các câu hỏi không trả được ở bậc 1 sẽ đi qua Haiku Router
 (`scripts/router.py`). Haiku chỉ phân loại `structured`, `document`, `semantic`,
@@ -73,7 +75,7 @@ Hiển thị citation cùng câu trả lời khi đưa lên giao diện chat. Gi
 7. Nếu `freshness.state=stale`, phải cảnh báo người dùng chạy `bash scripts/run_all.sh`
    trước khi dùng câu trả lời cho quyết định mới.
 8. Runtime phải inject actor/roles tin cậy. Không lấy role từ câu hỏi hoặc trường tuỳ ý
-   trong Slack payload; thiếu identity/role thì trả `forbidden`.
+   trong payload tự do; thiếu identity/role thì trả `forbidden`.
 
 ## Demo flow
 
@@ -82,6 +84,17 @@ Chạy toàn bộ preflight và kịch bản trình bày:
 ```bash
 bash demo/run_demo.sh
 ```
+
+Muốn kiểm tra đúng đường chạy production có LLM, dùng:
+
+```bash
+PROJECT_KNOWLEDGE_LLM=1 bash demo/run_demo.sh
+```
+
+Lệnh này vẫn chạy các gate offline trước, sau đó bắt buộc self-test live phải
+thấy `route.source=haiku`, route retrieval hợp lệ, tier 3 và citation. Nếu Claude
+CLI, auth, network hoặc model chưa sẵn sàng thì demo phải fail rõ ràng, không được
+giả vờ là đã chạy Haiku/Sonnet.
 
 Runner tự chọn `python3`, `python` hoặc `py` có thể chạy, tự inject demo actor/role,
 và chỉ dựng lại corpus khi DB thiếu hoặc freshness bị stale. Showcase dùng một
@@ -124,7 +137,7 @@ không gọi Claude bằng `python3 scripts/router.py --offline "câu hỏi"`.
 Kiểm tra freshness bằng `python3 scripts/versioning.py check`; metadata được tạo
 tự động trong `derived/corpus_version.json` bởi `scripts/run_all.sh`.
 
-Slack dùng `runtime_engine.py` trong cùng process để tái sử dụng DuckDB/graph/BGE-M3.
+Gateway nên giữ `runtime_engine.py` trong cùng process để tái sử dụng DuckDB/graph/BGE-M3.
 Benchmark bằng `python3 scripts/benchmark.py --iterations 3 --concurrency 4` và
 benchmark cache bằng cách thêm `--cache`. Runtime state nằm ngoài `derived/` tại
 `.runtime/` hoặc volume do `PROJECT_KNOWLEDGE_STATE_DIR` chỉ định.
@@ -132,7 +145,7 @@ benchmark cache bằng cách thêm `--cache`. Runtime state nằm ngoài `derive
 Runtime query chạy trong read-only filesystem boundary (`scripts/filesystem_boundary.py`):
 chỉ được đọc `originals/`, `raw/`, `structured/`, `wiki/`, `derived/` và các file
 contract trong chính skill root. Đường dẫn tuyệt đối, `..` và symlink thoát root bị
-chặn fail-closed. Cache/conversation/telemetry/Slack queue là operational state,
+chặn fail-closed. Cache/conversation/telemetry là operational state,
 được ghi riêng ở `.runtime/` hoặc volume persistent; không được đặt state vào
 corpus/index. Production nên mount corpus read-only ở cấp container/volume để
 khóa thêm một lớp ngoài kiểm tra của Python.
@@ -216,22 +229,11 @@ Config chỉ khai báo vocabulary `tech_stack`; chưa có quan hệ người–t
 Vì vậy câu hỏi “ai làm JavaScript?” phải trả `not_in_kb`, không được suy ra từ
 role hoặc từ danh mục công nghệ.
 
-## Slack
+## Gateway
 
-Khi Agent được gọi từ Slack, dùng adapter tại `adapters/slack/`. Adapter nhận
-Events API/slash-command JSON, giữ `channel_id`, `user_id`, `thread_ts`, format
-Block Kit và không thực hiện write action. Gateway ACK trước khi query, sau đó post
-answer bất đồng bộ; conversation được khóa theo channel/thread. Map Slack user sang
-role bằng `PROJECT_KNOWLEDGE_SLACK_ROLE_MAP` do host quản lý. Chạy smoke test bằng:
-
-```bash
-python3 adapters/slack/slack_selftest.py
-bash demo/run_slack_demo.sh
-```
-
-Production dùng durable queue `adapters/slack/job_queue.py`: Slack retry cùng
-`event_id` không tạo job mới, lỗi post có exponential retry và dead-letter. Có thể
-chạy worker riêng bằng `python3 adapters/slack/slack_worker.py`.
+NexusBot là gateway giao tiếp bên ngoài của skill. Nó gọi `scripts/run.py` trực tiếp;
+skill không chứa Slack adapter riêng. Gateway phải truyền actor/roles tin cậy và đặt
+`PROJECT_KNOWLEDGE_LLM=1` nếu muốn câu hỏi mở đi qua Haiku router rồi Sonnet.
 
 ## Ranh giới tích hợp Agent
 
