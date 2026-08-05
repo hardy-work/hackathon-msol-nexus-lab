@@ -124,9 +124,9 @@ function uploadFile(name, parentId, filePath, mimetype) {
   });
 }
 
-const esc = (s) => String(s).replace(/"/g, '""');
-
-const fileLabel = (f, i) => f.name || `ảnh ${i + 1}`;
+// Tên hiển thị của ảnh trong sheet: tên file gốc từ Slack thường dài
+// ("Screenshot 2026-07-29 at 15.18.55.png") nên rút gọn thành "ảnh N".
+const fileLabel = (f, i) => `ảnh ${i + 1}`;
 
 // Chế độ "image": 1 ô chỉ chứa được 1 =IMAGE nên cột nở ra nhiều ô.
 // Chế độ "link": gom mọi ảnh vào ĐÚNG 1 ô, mỗi ảnh 1 dòng. Không dùng
@@ -180,7 +180,6 @@ function linkRuns(files) {
     console.log(`• Chế độ chia sẻ ảnh   : ${sharingMode}`);
     console.log(`• Người được share     : ${viewers}`);
     console.log('─────────────────────────────────────────');
-    console.log('\nChế độ chia sẻ: Nếu "anyone", bất kỳ ai có link đều xem được ảnh, kể cả người ngoài công ty.\n');
     return;
   }
 
@@ -207,8 +206,9 @@ function linkRuns(files) {
 
   let uploaded = 0;
   for (const p of people) {
-    for (const f of p.files) {
-      const up = await uploadFile(`${p.name} — ${f.name}`, imgFolder.id, f.path, f.mimetype);
+    for (let i = 0; i < p.files.length; i++) {
+      const f = p.files[i];
+      const up = await uploadFile(`${p.name} — ảnh ${i + 1}`, imgFolder.id, f.path, f.mimetype);
       f.driveId = up.id;
       f.webViewLink = up.webViewLink;
       uploaded++;
@@ -384,8 +384,8 @@ function linkRuns(files) {
 
   const sheetTitle = fill(config.sheetTitle) || `Evidence log ${today}`;
   console.log(`\n✓ Đã tạo sheet "${sheetTitle}" với ${people.length} dòng.`);
-  console.log(`Sheet : https://docs.google.com/spreadsheets/d/${sheet.id}/edit`);
-  console.log(`Folder: ${folder.webViewLink}`);
+  console.log(`📋 Sheet: <https://docs.google.com/spreadsheets/d/${sheet.id}/edit>`);
+  console.log(`📁 Folder: <${folder.webViewLink}>`);
 })().catch((e) => {
   console.error('LỖI:\n' + e.message);
   process.exit(1);

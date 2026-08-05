@@ -110,7 +110,7 @@ const safe = (s) => String(s).replace(/[^\p{L}\p{N}._-]+/gu, '_').slice(0, 60);
       const p = r.user.profile || {};
       info = {
         id,
-        name: p.real_name || r.user.real_name || r.user.name || id,
+        name: p.display_name || p.real_name || r.user.real_name || r.user.name || id,
         email: p.email || '',
       };
     } catch (e) {
