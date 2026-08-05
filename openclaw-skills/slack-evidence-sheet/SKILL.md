@@ -177,8 +177,8 @@ Trả lời theo format cố định này:
 ```
 ✓ Xong rồi anh {PM_name}. Em đã tổng hợp {totalFiles} ảnh của {totalPeople} người trong thread thành sheet:
 
-📋 Sheet: {sheetLink}
-📁 Folder: {folderLink}
+• 📋 Sheet: <{sheetLink}|Mở sheet>
+• 📁 Folder: <{folderLink}|Mở folder ảnh>
 
 Mỗi người 1 dòng, ảnh gom vào ô Evidence dạng link bấm ra Drive xem được. Anh check thử nhé, cần thêm cột gì hay bổ sung ai chưa nộp thì báo em.
 ```
@@ -190,11 +190,17 @@ Các biến cần điền:
 - `{sheetLink}` — Link đến Google Sheet vừa tạo
 - `{folderLink}` — Link đến Google Drive folder
 
-**Bắt buộc về link — đã hỏng một lần, đừng lặp lại:**
+**Bắt buộc về link — đã hỏng 2 lần, đừng lặp lại:**
 
-- Sheet và Folder nằm trên **2 dòng riêng**, KHÔNG gộp chung một dòng
-- Emoji đặt ở **đầu dòng**, tuyệt đối không đặt sau link. Slack nuốt ký tự đứng sát sau URL vào chính URL đó → link hỏng
-- Mỗi dòng kết thúc ngay sau link, không thêm dấu câu hay chữ nào phía sau
+Link PHẢI viết theo cú pháp Slack `<url|chữ hiển thị>`, KHÔNG dán URL trần.
+
+Lý do: nếu một dòng kết thúc bằng URL trần và dòng kế tiếp bắt đầu bằng emoji, Slack nuốt cả ký tự xuống dòng lẫn emoji vào trong URL. Kết quả là link hỏng **và** Folder bị kéo lên chung dòng với Sheet. Dấu `>` trong `<url|text>` đóng URL lại nên chặn được cả hai.
+
+- Sheet và Folder nằm trên **2 dòng riêng**, mỗi dòng mở đầu bằng `• `
+- Emoji đứng sau `• `, KHÔNG bao giờ đặt sau link
+- Sau `>` đóng link thì hết dòng, không thêm dấu câu hay chữ nào
+
+Dấu `• ` là lớp chặn thứ hai: nó đẩy emoji ra khỏi vị trí đầu dòng, mà "emoji ngay đầu dòng, ngay sau một dòng kết thúc bằng URL" chính là tình huống Slack nuốt ký tự xuống dòng.
 
 ---
 

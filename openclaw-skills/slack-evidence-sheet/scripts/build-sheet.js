@@ -384,8 +384,10 @@ function linkRuns(files) {
 
   const sheetTitle = fill(config.sheetTitle) || `Evidence log ${today}`;
   console.log(`\n✓ Đã tạo sheet "${sheetTitle}" với ${people.length} dòng.`);
-  console.log(`📋 Sheet: <https://docs.google.com/spreadsheets/d/${sheet.id}/edit>`);
-  console.log(`📁 Folder: <${folder.webViewLink}>`);
+  // URL trần, không bọc <> — đây là log cho model đọc, không phải mrkdwn gửi
+  // thẳng lên Slack. Cách gửi lên Slack quy định ở Response Format trong SKILL.md.
+  console.log(`Sheet: https://docs.google.com/spreadsheets/d/${sheet.id}/edit`);
+  console.log(`Folder: ${folder.webViewLink}`);
 })().catch((e) => {
   console.error('LỖI:\n' + e.message);
   process.exit(1);
