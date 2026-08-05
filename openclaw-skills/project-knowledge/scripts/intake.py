@@ -131,6 +131,8 @@ def extractor_for(doc_id: str, kind: str) -> str:
     """Select only an actually implemented downstream lane."""
     if doc_id == "nexus-plan":
         return "nexus"
+    if kind in {"markdown", "text/markdown"}:
+        return "markdown"
     if kind in {"docx", "pdf"}:
         return "van"
     return "unsupported"
@@ -324,6 +326,7 @@ def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, An
         if any(str(document.get("doc_id")) == doc_id for document in documents):
             raise ValueError(f"doc_id `{doc_id}` đã tồn tại; không được khởi tạo lại từ đầu")
         original = f"originals/{doc_id}{source.suffix.lower()}"
+        extractor = extractor_for(doc_id, file_kind(source))
         new_document = {
             "doc_id": doc_id,
             "version": 1,
@@ -335,8 +338,8 @@ def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, An
             "current": True,
             "supersedes": None,
             "visibility": "internal",
-            "extractor": extractor_for(doc_id, file_kind(source)),
-            "raw_paths": [],
+            "extractor": extractor,
+            "raw_paths": [f"raw/{doc_id}.md"] if extractor == "markdown" else [],
         }
 
     destination = root / original

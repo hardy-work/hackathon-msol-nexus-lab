@@ -40,6 +40,7 @@ echo; echo "══ Stage 0/1 · INVENTORY & CANONICAL REVIEW ══"; "$PY" scri
 
 echo; echo "══ Stage 2 · EXTRACT (NEXUS PLAN · .xlsx) ══";  "$PY" scripts/extract_nexus.py
 echo; echo "══ Stage 2 · EXTRACT (VĂN / OCR · opt-in) ══"; "$PY" scripts/extract_van.py
+echo; echo "══ Stage 2 · EXTRACT (MARKDOWN · deterministic) ══"; "$PY" scripts/extract_markdown.py
 echo; echo "══ Stage 3 · STRUCTURE CONTRACT ══"; "$PY" scripts/structure_selftest.py
 echo; echo "══ Stage 4 · WIKI PAGES (NEXUS) ══"; "$PY" scripts/build_nexus_wiki.py
 echo; echo "══ Gate 3a · LINT ══";     "$PY" scripts/lint.py
@@ -75,6 +76,7 @@ echo; echo "══ READ-ONLY FILESYSTEM BOUNDARY (offline) ══"; "$PY" script
 echo; echo "══ GRAPH RETRIEVAL (offline) ══"; "$PY" scripts/graph_selftest.py
 echo; echo "══ INVENTORY (offline) ══"; "$PY" scripts/inventory_selftest.py
 echo; echo "══ AUTOMATIC FILE INTAKE (offline) ══"; "$PY" scripts/intake_selftest.py
+echo; echo "══ MARKDOWN INTAKE → WIKI (offline) ══"; "$PY" scripts/markdown_ingest_selftest.py
 echo; echo "══ GATE 3a HISTORY METADATA (offline) ══"; "$PY" scripts/lint_history_selftest.py
 echo; echo "══ GATE 3b CONSENSUS CONTRACT (offline) ══"; "$PY" scripts/review_selftest.py
 if [ "${PROJECT_KNOWLEDGE_RUN_SLACK_TESTS:-1}" = "1" ]; then

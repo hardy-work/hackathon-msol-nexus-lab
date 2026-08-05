@@ -29,8 +29,8 @@ dimensions:
     values: [nexus]
 
   domain:
-    source: "CLAUDE.md §2 (chọn tay)"
-    values: [nexus]
+    source: "CLAUDE.md §2 / curated Markdown source frontmatter"
+    values: [nexus, mor-software]
 
 aliases: {}
 

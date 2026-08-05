@@ -100,10 +100,26 @@ def execute(worktree: Path, doc_id: str, version: int, review: bool) -> None:
         if plan_path:
             command += ["--plan", str(plan_path.relative_to(skill))]
         run(command, skill, env)
+    elif extractor == "markdown":
+        run([sys.executable, str(scripts / "extract_markdown.py"), "--doc", doc_id], skill, env)
+        if doc.get("supersedes") is not None:
+            reingest.reconcile_artifacts(
+                skill, doc_id, int(doc["supersedes"]), int(version)
+            )
+            plan = reingest.build_plan(
+                skill, doc_id, int(doc["supersedes"]), int(version)
+            )
+            reingest.archive_retired_pages(skill, plan)
+            reingest.archive_one_to_one_pages(skill, plan)
+            plan_path = reingest.write_plan(skill, plan)
+        command = [sys.executable, str(scripts / "ingest_markdown.py"), "--doc", doc_id]
+        if plan_path:
+            command += ["--plan", str(plan_path.relative_to(skill))]
+        run(command, skill, env)
     else:
         raise RuntimeError(
             f"document `{doc_id}@v{version}` có extractor `{extractor or 'missing'}` "
-            "chưa được triển khai; chỉ Nexus XLSX và luồng văn DOCX/PDF được phép chạy"
+            "chưa được triển khai; hiện hỗ trợ Nexus XLSX, DOCX/PDF và Markdown"
         )
     run([sys.executable, str(scripts / "lint.py")], skill, env)
     if review:

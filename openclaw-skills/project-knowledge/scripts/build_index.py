@@ -30,6 +30,7 @@ ORIG = ROOT / "originals"
 # Mô tả corpus cho người đọc (biên tập). Domain lạ vẫn được liệt kê, mô tả để trống.
 DOMAIN_DESC = {
     "nexus": "corpus kế hoạch dự án Nexus (`nexus-plan.xlsx`).",
+    "mor-software": "hồ sơ nguồn MOR Software được nạp từ Markdown.",
 }
 
 

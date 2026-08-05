@@ -54,7 +54,7 @@ nexus
 
 ### `domain` — corpus
 ```
-nexus
+nexus · mor-software
 ```
 
 ## 3. Loại trang trong `wiki/`
@@ -128,4 +128,7 @@ của người ký. Sửa YAML trong repo không tự cấp authority. Thiếu �
 - Không tự thêm DIMENSION.
 - Không commit `derived/`.
 - Không thay canonical document tại chỗ; version mới phải khai `supersedes` và qua
-  ingest worktree được người review.
+  ingest worktree được người review. Lane Markdown đã hỗ trợ tài liệu `.md` có
+  frontmatter: Stage 2 giữ nguyên body vào `raw/`, Stage 4 tạo trang `source`
+  deterministic trong `wiki/sources/`; domain phải là giá trị đã curate trong
+  `schema.yml` (hoặc được chuẩn hóa từ `org` đã curate).
