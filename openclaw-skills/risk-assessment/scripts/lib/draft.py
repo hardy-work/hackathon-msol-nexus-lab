@@ -1,20 +1,22 @@
-"""Dựng nội dung draft (report tường thuật + JSON block) từ kết quả run_rules()
-và các dòng "rủi ro chủ động" (Status=Pending) đọc từ Risk/Issue management
-thật. Thuần string building — không gọi API, không LLM (mọi câu chữ đều dựng
-từ template + số liệu thật, không tự "viết văn" tự do — để deterministic,
-test được).
+"""Dựng nội dung draft (report tường thuật + JSON block) cho PM. Thuần string
+building — không gọi API, không LLM (mọi câu chữ đều dựng từ template + số
+liệu thật, không tự "viết văn" tự do — để deterministic, test được).
+
+Cấu trúc report KHÔNG chia theo layer (Người/Task/Sprint/Category) nữa — đó
+chỉ là cách nội bộ rule_engine.py phân tích (vẫn giữ nguyên field `layer`
+trong JSON block để debug), còn phần đọc được ưu tiên theo thứ tự PM cần:
+  1. Sức khỏe Sprint (kịp hay không, đề xuất ngay)
+  2. Rủi ro đã có trên Sheet, theo Status (Open = chưa xử lý, In progress =
+     đang xử lý) — không phải rủi ro mới, PM cần biết cái nào đang bị treo
+  3. Rủi ro mới phát hiện, chia theo mức khẩn cấp (cần chú ý ngay / còn lại)
+     — không theo layer, vì layer không phải thứ PM quan tâm khi đọc nhanh
+  4. Đã hết rủi ro (so với hôm qua, nếu có)
 """
 
 from __future__ import annotations
 
 import json
 import re
-
-LAYER_ORDER = ["Person", "Task", "Sprint", "Module"]
-# Nhãn hiển thị cho PM — "Module" (tên nội bộ, khớp rule M1/M2) hiện ra thành
-# "Category" vì đó là tên cột thật trên sheet (Category Milestone), PM không
-# gọi là "module".
-LAYER_LABEL_VN = {"Person": "Người", "Task": "Task", "Sprint": "Sprint", "Module": "Category"}
 
 # Rule nào hay có NHIỀU item cùng lúc trong 1 lần scan thì gộp lại 1 dòng cho
 # gọn (thay vì mỗi item 1 dòng riêng) — chỉ áp dụng khi thật sự có >=2 item
@@ -26,6 +28,11 @@ _GROUP_OPENERS = {
     "P4": "người đều đang vượt capacity còn lại tới hết sprint",
 }
 _DEFICIT_RE = re.compile(r"thiếu ([\d.,]+)h")
+
+# Thứ tự cố định khi liệt kê rủi ro mới phát hiện — không phụ thuộc thứ tự
+# rule_engine.py sinh ra (chi tiết implementation), để PM đọc nhất quán mỗi
+# lần chạy.
+_RULE_ORDER = ["P1", "P2", "P3", "P4", "T1", "T2", "T3", "T4", "S1", "S2", "M1", "M2"]
 
 
 def _is_urgent(item: dict, high_score_threshold: float) -> bool:
@@ -41,7 +48,7 @@ def _next_action_suffix(item: dict) -> str:
 
 def _format_single_line(item: dict) -> str:
     urgent_mark = "⚠️ " if item.get("_urgent") else ""
-    return f"{urgent_mark}{item['description']}{_next_action_suffix(item)}"
+    return f"- {urgent_mark}{item['description']}{_next_action_suffix(item)}"
 
 
 def _short_task_ref(item: dict) -> str:
@@ -89,98 +96,120 @@ def _format_group_line(rule: str, items: list[dict]) -> str:
         refs = ", ".join(_short_person_deficit(i) for i in items)
     else:
         refs = ", ".join(_short_task_ref(i) for i in items)
-    return f"{urgent_mark}{len(items)} {opener}: {refs}.{suffix}"
+    return f"- {urgent_mark}{len(items)} {opener}: {refs}.{suffix}"
 
 
-def _format_layer_items(layer_items: list[dict]) -> list[str]:
+def _format_rule_grouped(items: list[dict]) -> list[str]:
+    """Gom item theo `rule` (KHÔNG theo layer) — nếu >=2 item cùng 1 rule
+    groupable thì gộp 1 dòng, còn lại hiện riêng từng dòng. Duyệt theo
+    `_RULE_ORDER` cố định, không theo thứ tự xuất hiện trong list đầu vào.
+    """
     by_rule: dict[str, list[dict]] = {}
-    order: list[str] = []
-    for item in layer_items:
-        if item["rule"] not in by_rule:
-            order.append(item["rule"])
+    for item in items:
         by_rule.setdefault(item["rule"], []).append(item)
 
     lines = []
-    for rule in order:
+    for rule in _RULE_ORDER:
+        if rule not in by_rule:
+            continue
         group = by_rule[rule]
         if rule in _GROUPABLE_RULES and len(group) >= 2:
-            lines.append(f"  {_format_group_line(rule, group)}")
+            lines.append(_format_group_line(rule, group))
         else:
             for item in group:
-                lines.append(f"  {_format_single_line(item)}")
+                lines.append(_format_single_line(item))
     return lines
 
 
-def _opening_summary(all_passive: list[dict], high_score_threshold: float) -> str:
-    if not all_passive:
-        return "Không phát hiện rủi ro/issue bị động nào hôm nay."
-    urgent_count = sum(1 for i in all_passive if _is_urgent(i, high_score_threshold))
-    layer_counts: dict[str, int] = {}
-    for item in all_passive:
-        layer_counts[item["layer"]] = layer_counts.get(item["layer"], 0) + 1
-    top_layers = sorted(layer_counts.items(), key=lambda kv: -kv[1])[:2]
-    top_desc = ", ".join(f"{LAYER_LABEL_VN[layer]} ({count})" for layer, count in top_layers)
-    urgent_clause = f", {urgent_count} mục cần chú ý ngay (⚠️)" if urgent_count else ""
-    return f"Phát hiện {len(all_passive)} rủi ro/issue hôm nay{urgent_clause} — tập trung nhiều nhất ở {top_desc}."
+def _format_existing_item(item: dict) -> str:
+    missing_next_action = " ⚠️ chưa có Next Action, cần PM bổ sung" if not item.get("nextAction") else ""
+    idle_suffix = f" (đã xử lý được {item['idleDays']} ngày, chưa xong)" if item.get("idleDays") is not None else ""
+    return f'- [{item.get("id", "?")}] {item["description"]}{idle_suffix}{missing_next_action}'
+
+
+def _format_sprint_health(health: dict) -> list[str]:
+    name = health["sprintName"]
+    backlog = health["totalBacklog"]
+    capacity = health["totalCapacity"]
+    lines = [f"📊 *Sức khỏe {name}*"]
+    if health["onTrack"]:
+        surplus = capacity - backlog
+        lines.append(
+            f"Tiến độ: **Đang bám sát kế hoạch** — công việc còn lại cần khoảng {backlog:.1f}h, "
+            f"cả team còn {capacity:.1f}h có thể làm tới hết sprint (dư {surplus:.1f}h)."
+        )
+        lines.append("Đề xuất: Duy trì nhịp độ hiện tại, không cần can thiệp gấp — vẫn nên theo dõi tiếp các ngày tới.")
+    else:
+        deficit = backlog - capacity
+        lines.append(
+            f"Tiến độ: **KHÔNG kịp tiến độ** — công việc còn lại cần khoảng {backlog:.1f}h, "
+            f"nhưng cả team chỉ còn {capacity:.1f}h có thể làm tới hết sprint (thiếu {deficit:.1f}h)."
+        )
+        lines.append(
+            "Đề xuất: Rà soát scope sprint, cắt bớt task ưu tiên thấp / Bổ sung người/OT cả team / "
+            "Xin dời deadline sprint với stakeholder."
+        )
+    return lines
 
 
 def build_draft(
     *,
     today: str,
     project_title: str,
-    active_risks: list[dict],
+    existing_open: list[dict],
+    existing_in_progress: list[dict],
     passive_risks: list[dict],
     passive_issues: list[dict],
-    stale_in_progress: list[dict],
     resolved_risks: list[str],
     previous_snapshot_date: str | None,
+    sprint_health: dict | None,
     thresholds: dict,
 ) -> str:
     lines = [f"📋 **{project_title}** — {today}", ""]
 
+    # --- Sức khỏe Sprint — LUÔN đặt đầu tiên (PM cần "so what" trước tiên) ---
+    # Chỉ vắng mặt khi thiếu dữ liệu Resource plan/sprint_end (xem scan.py).
+    if sprint_health:
+        lines.extend(_format_sprint_health(sprint_health))
+        lines.append("")
+
+    # --- Rủi ro đã có trên Sheet — chia theo Status, KHÔNG phải rủi ro mới
+    # phát hiện hôm nay. "Chưa xử lý" gồm cả Open lẫn Pending (dev tự báo,
+    # PM chưa chốt phương án) — với PM cả 2 đều là "chưa ai làm gì". ---
+    lines.append("🔴 *Chưa xử lý* (trên Sheet):")
+    if existing_open:
+        for item in existing_open:
+            lines.append(_format_existing_item(item))
+    else:
+        lines.append("Hiện không có.")
+    lines.append("")
+
+    lines.append("🟡 *Đang xử lý* (trên Sheet):")
+    if existing_in_progress:
+        for item in existing_in_progress:
+            lines.append(_format_existing_item(item))
+    else:
+        lines.append("Hiện không có.")
+    lines.append("")
+
+    # --- Rủi ro mới phát hiện — chia theo mức khẩn cấp, KHÔNG theo layer. ---
     all_passive = passive_risks + passive_issues
     for item in all_passive:
         item["_urgent"] = _is_urgent(item, thresholds["highScoreThreshold"])
 
-    lines.append(_opening_summary(all_passive, thresholds["highScoreThreshold"]))
-    lines.append("")
+    urgent_items = [i for i in all_passive if i["_urgent"]]
+    other_items = [i for i in all_passive if not i["_urgent"]]
 
-    # --- Rủi ro chủ động — LUÔN hiện mục này, kể cả rỗng ---
-    # (kỹ thuật: đây là dòng Status=Pending, nhưng không cần lộ chi tiết kỹ
-    # thuật đó ra ngoài — PM chỉ cần biết đây là rủi ro do dev tự báo.)
-    lines.append("🟡 *Rủi ro chủ động*:")
-    if active_risks:
-        for item in active_risks:
-            missing_next_action = " ⚠️ chưa có Next Action, cần PM bổ sung" if not item.get("nextAction") else ""
-            lines.append(f'- [{item.get("id", "?")}] {item["description"]}{missing_next_action}')
-    else:
-        lines.append("Hiện không có.")
-    lines.append("")
-
-    # --- Risk/Issue đã ghi nhưng chưa xử lý xong (Status vẫn "In progress"
-    # quá lâu, xem find_stale_in_progress() trong scan.py) — nhắc PM follow-up,
-    # tránh bị bỏ quên. LUÔN hiện mục này. ---
-    lines.append("🔁 *Rủi ro chưa được xử lý*:")
-    if stale_in_progress:
-        for item in stale_in_progress:
-            lines.append(f'- [{item.get("id", "?")}] {item["description"]} (đã {item["idleDays"]} ngày)')
-    else:
-        lines.append("Hiện không có.")
-    lines.append("")
-
-    # --- Rủi ro bị động — LUÔN hiện mục này, chia thẳng theo layer
-    # Người → Task → Sprint → Category. Trong mỗi layer, item cùng rule (nếu
-    # >=2) được gộp lại 1 dòng cho gọn — xem _format_layer_items(). ---
-    lines.append("🔍 *Rủi ro bị động*:")
+    lines.append(f"🔍 *Rủi ro mới phát hiện* ({len(passive_risks)} risk + {len(passive_issues)} issue):")
     if all_passive:
-        for layer in LAYER_ORDER:
-            layer_items = [i for i in all_passive if i["layer"] == layer]
-            if not layer_items:
-                continue
-            lines.append(f"**[{LAYER_LABEL_VN[layer]}]**")
-            lines.extend(_format_layer_items(layer_items))
+        if urgent_items:
+            lines.append("*Cần chú ý ngay:*")
+            lines.extend(_format_rule_grouped(urgent_items))
+        if other_items:
+            lines.append("*Còn lại:*")
+            lines.extend(_format_rule_grouped(other_items))
     else:
-        lines.append("Hiện không có rủi ro bị động nào.")
+        lines.append("Hiện không có rủi ro/issue mới nào.")
     lines.append("")
 
     for item in all_passive:
@@ -197,24 +226,16 @@ def build_draft(
             lines.append(f"Không có rủi ro nào vừa hết so với báo cáo ngày {previous_snapshot_date}.")
         lines.append("")
 
-    if previous_snapshot_date:
-        lines.append(
-            f"Tổng: **{len(passive_risks)} risk + {len(passive_issues)} issue** phát hiện hôm nay, "
-            f"**{len(resolved_risks)}** đã hết so với báo cáo ngày {previous_snapshot_date}."
-        )
-    else:
-        lines.append(f"Tổng: **{len(passive_risks)} risk + {len(passive_issues)} issue** phát hiện hôm nay.")
-    lines.append("")
-
     lines.append("```json")
     lines.append(
         json.dumps(
             {
-                "activeRisks": active_risks,
+                "existingOpen": existing_open,
+                "existingInProgress": existing_in_progress,
                 "passiveRisks": passive_risks,
                 "passiveIssues": passive_issues,
-                "staleInProgress": stale_in_progress,
                 "resolvedRisks": resolved_risks,
+                "sprintHealth": sprint_health,
             },
             ensure_ascii=False,
             indent=2,

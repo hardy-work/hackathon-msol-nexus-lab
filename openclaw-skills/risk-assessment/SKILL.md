@@ -147,11 +147,11 @@ trực tiếp theo tên module, không dùng package structure).
 4. Đọc bảng Resource plan (qua `resource_plan.py`) — dùng cho P1/P4/S2; đọc tab Overtime (qua `overtime.py`), join sang `assigneeCode` qua Slack ID (`build_ot_by_assignee_code()`) — cộng vào capacity của P4/S2
 5. Tính `sprint_end` = đọc tab `summaryProjectTab.tabName` (qua `summary_project.py`), tìm dòng có cột "Sprint" khớp `currentSprint`, lấy "End date" (nếu rơi vào Chủ nhật thì lùi về Thứ 6 — tuần làm việc không tính Thứ 7/Chủ nhật). Nếu không tìm thấy (tab đổi cấu trúc) → fallback về Plan End xa nhất trong các task, như trước
 6. Đọc `state/risk-snapshot-<hôm qua>.json` nếu có (không có → mọi risk coi là "New")
-7. Chạy `run_rules()` (12 rule + Trend) → `{risks, issues, resolvedRisks}`
+7. Chạy `run_rules()` (12 rule + Trend) → `{risks, issues, resolvedRisks}` + `compute_sprint_health()` (tổng backlog/capacity cả team — LUÔN tính, không chỉ khi vượt ngưỡng)
 8. Đọc lại Risk/Isssue management THẬT — tách 2 việc:
-   - Dòng `Status=Pending` → **rủi ro chủ động**, gợi ý Next Action nếu cột đó còn trống
+   - `split_existing_by_status()`: dòng `Status=Open`/`Pending` → **existingOpen** ("chưa xử lý"), dòng `Status=In progress` → **existingInProgress** ("đang xử lý", kèm `idleDays` tính từ Date Detected) — Done/Cancel loại hẳn
    - Loại trừ risk/issue bị động trùng với dòng đã có (đang mở, chưa Done/Cancel — 2 status này coi là đã đóng, "Closed"/"Resolved" không tồn tại trong dropdown thật) — heuristic match theo `detectedFrom` xuất hiện dạng **token trọn vẹn** (không phải substring thô — vd "AU-1" không được tính là trùng "AU-10") trong "Related Assignee/Task"/"Description" của dòng có sẵn
-9. Ghi `drafts/draft-YYYY-MM-DD.md` (tường thuật theo 4 nhóm layer + JSON block) qua `draft.py`
+9. Ghi `drafts/draft-YYYY-MM-DD.md` qua `draft.py` — xem "Format report" bên dưới cho đúng cấu trúc (KHÔNG còn chia theo layer)
 10. Ghi đè `state/risk-snapshot-YYYY-MM-DD.json` (risk/issue bị động sau khi loại trùng — dùng để tính Trend ngày mai)
 
 **Bước 2** — Đọc JSON in ra ở stdout:
@@ -182,15 +182,15 @@ PM phản hồi sau khi đọc report từ Action 1, ví dụ: "tôi ghi nhận,
 - Session mới không có context → lấy `drafts/draft-YYYY-MM-DD.md` mới nhất CHƯA applied (đuôi `.md`, không phải `.applied.md`)
 - Có >1 draft chưa applied → hỏi PM đang nói về draft ngày nào
 
-**Bước 2 — Diễn giải câu trả lời tự nhiên của PM** (LUÔN là việc của agent, `apply.py` không tự làm NLU), map vào từng item trong JSON block của draft (4 nhóm: `activeRisks`, `passiveRisks`, `passiveIssues`), phân theo 2 nhánh:
+**Bước 2 — Diễn giải câu trả lời tự nhiên của PM** (LUÔN là việc của agent, `apply.py` không tự làm NLU), map vào từng item trong JSON block của draft (4 nhóm: `existingOpen`, `existingInProgress`, `passiveRisks`, `passiveIssues`), phân theo 2 nhánh:
 
 **Nhánh A — Ý PM đã RÕ RÀNG** (ghi thẳng, KHÔNG hỏi lại):
 
 - Đồng ý tổng quát ("ok cập nhật giúp tôi") → áp dụng TẤT CẢ item trong draft; risk có nhiều `nextActionOptions` → dùng phương án ĐẦU TIÊN nếu PM không chỉ rõ chọn phương án nào
 - PM chỉ rõ phương án (vd "lùi task AU-1, không cần OT") → dùng đúng phương án đó
 - PM chỉ đồng ý một phần / loại trừ một số item → chỉ áp dụng phần được nhắc tới
-- **`activeRisks` (rủi ro chủ động, có sẵn `id`)** → item Apply tương ứng PHẢI giữ `id` đó (để `apply.py` update đúng dòng, không tạo mới) — đổi `status` từ "Pending" sang "In progress" (hoặc giá trị PM chỉ định) + điền `nextAction` PM chốt
-- **`passiveRisks`/`passiveIssues` (rủi ro/issue bị động, KHÔNG có `id`)** → item Apply KHÔNG có field `id` (để `apply.py` tự sinh ID mới)
+- **`existingOpen`/`existingInProgress` (đã có sẵn `id` trên Sheet — mục "Chưa xử lý"/"Đang xử lý" trong report)** → item Apply tương ứng PHẢI giữ `id` đó (để `apply.py` update đúng dòng, không tạo mới) — đổi `status` sang "In progress" (hoặc giá trị PM chỉ định) + điền `nextAction` PM chốt
+- **`passiveRisks`/`passiveIssues` (rủi ro/issue mới phát hiện, KHÔNG có `id`)** → item Apply KHÔNG có field `id` (để `apply.py` tự sinh ID mới)
 
 **Nhánh B — Ý PM còn MƠ HỒ** → liệt kê lại từng item + phương án dự kiến áp dụng, hỏi xác nhận LẦN CUỐI trước khi ghi — KHÔNG tự suy diễn. Ngay khi PM trả lời rõ (kể cả chỉ "ừ đúng rồi") → coi như chuyển sang Nhánh A, ghi thẳng luôn, KHÔNG hỏi thêm vòng nào nữa.
 
@@ -235,32 +235,34 @@ python3 scripts/apply.py
 
 ## Format report (Action 1, khi hiển thị `narrative` cho PM)
 
-Draft chia rõ 3 nguồn (chủ động / cần follow-up / bị động), rủi ro bị động nhóm theo layer, item khẩn cấp (Priority Highest hoặc Trend đang tăng) đánh dấu ⚠️ ngay tại đúng vị trí layer của nó (không tách riêng khối):
+Draft **KHÔNG chia theo layer** (Người/Task/Sprint/Category) nữa — layer chỉ là cách nội bộ `rule_engine.py` phân tích (vẫn còn trong field `layer` của JSON block để debug/trace), phần đọc được ưu tiên theo thứ tự PM cần đọc nhanh:
 
 ```
-📋 Báo cáo rủi ro <project> — <ngày>
+📋 <project> — <ngày>
 
-🟡 Rủi ro chủ động (đã ghi tay lúc log task, Status=Pending):
-- [R-003] SơnBH báo task AU-9 bị chặn bởi API bên thứ 3 chưa phản hồi ⚠️ chưa có Next Action, cần PM bổ sung
+📊 Sức khỏe Sprint 1
+Tiến độ: KHÔNG kịp tiến độ — công việc còn lại cần khoảng 198.0h, nhưng cả team chỉ còn 88.0h có thể làm tới hết sprint (thiếu 110.0h).
+Đề xuất: Rà soát scope sprint, cắt bớt task ưu tiên thấp / Bổ sung người/OT cả team / Xin dời deadline sprint với stakeholder.
 
-🔁 Risk/Issue cần follow-up (Status vẫn "In progress" ≥ 1 ngày):
+🔴 Chưa xử lý (trên Sheet):
+- [R-000] SơnBH xin nghỉ 2 ngày → đẩy lịch 3 task
+
+🟡 Đang xử lý (trên Sheet):
 - [R-002] SơnBH, sprint Sprint 1: tồn đọng 32.0h ... (đã 2 ngày)
 
-🔍 Rủi ro bị động, theo layer Người → Task → Sprint → Category:
-  [Người]
-  - ⚠️ SơnBH nghỉ 05-8 → 06-8, ảnh hưởng 2 sub-task: AU-5, AU-6 (category: Authentication) ...
-  - VinhNV bị xếp 12h task ngày 03/8, vượt quá 8h/ngày ...
-  [Task]
-  - ...
-  [Sprint]
-  - ...
-  [Category]
-  - ...
+🔍 Rủi ro mới phát hiện (16 risk + 7 issue):
+Cần chú ý ngay:
+- ⚠️ SơnBH nghỉ 05-8 → 06-8, ảnh hưởng 2 sub-task AU-5, AU-6 thuộc category Authentication ...
+- ⚠️ 6 người đều đang vượt capacity còn lại tới hết sprint: SơnBH thiếu 16h, ... — OT bù giờ / San bớt task sang người khác / Xin dời deadline sprint.
+Còn lại:
+- VinhNV bị xếp 12h task ngày 03/8, vượt quá 8h/ngày ...
 
 ✅ Đã hết rủi ro (so với báo cáo trước): ...
 ```
 
-**Rủi ro chủ động** = dòng dev tự log (Status=Pending), skill khác ghi vào. **Cần follow-up** = risk/issue chính skill này đã ghi trước đó (`Status="In progress"` mặc định khi tạo — xem `make_item()`) nhưng qua `thresholds.inProgressReminderDays` ngày (mặc định 1) vẫn chưa được PM/dev đổi status — nhắc lại để không bị bỏ quên, KHÔNG phải risk mới, KHÔNG tính vào `passiveRisks`/`passiveIssues`.
+- **Sức khỏe Sprint** — LUÔN đặt đầu tiên (`compute_sprint_health()`, xem `rule_engine.py`), trả lời thẳng "kịp hay không, cần bao nhiêu giờ, còn bao nhiêu giờ" — không cần đọc hết report mới biết tình hình chung.
+- **Chưa xử lý / Đang xử lý** = dòng ĐÃ CÓ SẴN trên Sheet thật (`Status=Open`/`Pending` → chưa xử lý; `Status=In progress` → đang xử lý, có số ngày đã treo nếu quá `thresholds.inProgressReminderDays` ngày) — KHÔNG phải rủi ro mới phát hiện hôm nay, KHÔNG tính vào `passiveRisks`/`passiveIssues`.
+- **Rủi ro mới phát hiện** — chia "Cần chú ý ngay" (Priority Highest hoặc Trend đang tăng, đánh dấu ⚠️) và "Còn lại" — trong mỗi nhóm, item cùng rule (T1/T4/P4, nếu ≥2 item) gộp lại 1 dòng cho gọn.
 
 ---
 

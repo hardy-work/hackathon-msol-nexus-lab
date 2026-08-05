@@ -24,7 +24,7 @@ from load_env import load_env  # noqa: E402
 from normalize import normalize_sprint_rows, parse_date  # noqa: E402
 from overtime import build_ot_by_assignee_code, parse_overtime  # noqa: E402
 from resource_plan import parse_resource_plan  # noqa: E402
-from rule_engine import days_between, run_rules  # noqa: E402
+from rule_engine import compute_sprint_health, days_between, run_rules  # noqa: E402
 from sheets_client import SheetsApiError, get_values  # noqa: E402
 from summary_project import find_sprint_end  # noqa: E402
 
@@ -150,27 +150,27 @@ def dedupe_against_existing(candidates: list[dict], existing_items: list[dict]) 
     return out
 
 
-def find_stale_in_progress(existing_items: list[dict], today: str, reminder_days: int) -> list[dict]:
-    """Risk/Issue đã ghi thật nhưng Status vẫn "In progress" quá `reminder_days`
-    ngày kể từ Date Detected — nhắc PM tiếp tục xử lý, tránh bị bỏ quên.
+def split_existing_by_status(existing_items: list[dict], today: str) -> tuple[list[dict], list[dict]]:
+    """Chia dòng đã có sẵn trên Risk/Issue management theo Status — PM cần
+    thấy "cái gì đang treo" tách biệt hẳn khỏi "cái gì mới phát hiện hôm nay".
 
-    Dùng thẳng Date Detected làm mốc "từ khi nào 'In progress'" — không cần
-    thêm state riêng để track lịch sử đổi status, vì mọi dòng mới ghi đều
-    khởi tạo Status="In progress" ngay từ đầu (xem make_item() trong
-    rule_engine.py) nên Date Detected == ngày bắt đầu "In progress" trong đa
-    số trường hợp thực tế (trừ khi PM tự đổi qua lại status nhiều lần).
+    - "Chưa xử lý": Status="Open" HOẶC "Pending" (dev tự báo qua daily report,
+      PM chưa chốt phương án) — với PM cả 2 đều là "chưa ai làm gì cả".
+    - "Đang xử lý": Status="In progress", đính kèm `idleDays` (số ngày kể từ
+      Date Detected — dùng thẳng cột này làm mốc "từ khi nào bắt đầu 'In
+      progress'", vì mọi dòng mới ghi đều khởi tạo Status="In progress" ngay
+      từ đầu, xem make_item() trong rule_engine.py).
+    - Done/Cancel: loại hẳn (đã đóng, không còn liên quan).
     """
-    out = []
+    open_items = [i for i in existing_items if i["status"] in ("Open", "Pending")]
+    in_progress_items = []
     for i in existing_items:
         if i["status"] != "In progress":
             continue
         detected_iso = parse_date(i["dateDetected"])
-        if not detected_iso:
-            continue
-        idle_days = days_between(detected_iso, today)
-        if idle_days >= reminder_days:
-            out.append({**i, "idleDays": idle_days})
-    return out
+        idle_days = days_between(detected_iso, today) if detected_iso else None
+        in_progress_items.append({**i, "idleDays": idle_days})
+    return open_items, in_progress_items
 
 
 def run_scan() -> dict:
@@ -240,21 +240,21 @@ def run_scan() -> dict:
         risk_existing = read_output_tab(file_id, config["output"]["riskTab"]["name"], token)
         issue_existing = read_output_tab(file_id, config["output"]["issueTab"]["name"], token)
 
-        active_risks = [i for i in risk_existing + issue_existing if i["status"] == "Pending"]
+        existing_open, existing_in_progress = split_existing_by_status(risk_existing + issue_existing, today)
         passive_risks = dedupe_against_existing(result["risks"], risk_existing)
         passive_issues = dedupe_against_existing(result["issues"], issue_existing)
-        reminder_days = config["thresholds"].get("inProgressReminderDays", 1)
-        stale_in_progress = find_stale_in_progress(risk_existing + issue_existing, today, reminder_days)
+        sprint_health = compute_sprint_health(tasks, people, today, sprint_end, current_sprint_name, ot_by_person)
 
         draft_text = build_draft(
             today=today,
             project_title=config.get("projectTitle", "dự án"),
-            active_risks=active_risks,
+            existing_open=existing_open,
+            existing_in_progress=existing_in_progress,
             passive_risks=passive_risks,
             passive_issues=passive_issues,
-            stale_in_progress=stale_in_progress,
             resolved_risks=result["resolvedRisks"],
             previous_snapshot_date=previous_snapshot_date,
+            sprint_health=sprint_health,
             thresholds=config["thresholds"],
         )
 
@@ -275,11 +275,12 @@ def run_scan() -> dict:
             "draftPath": str(draft_path),
             "narrative": draft_text,
             "summary": {
-                "activeRisks": len(active_risks),
+                "existingOpen": len(existing_open),
+                "existingInProgress": len(existing_in_progress),
                 "passiveRisks": len(passive_risks),
                 "passiveIssues": len(passive_issues),
-                "staleInProgress": len(stale_in_progress),
                 "resolvedRisks": len(result["resolvedRisks"]),
+                "sprintOnTrack": sprint_health["onTrack"] if sprint_health else None,
             },
         }
     except SheetsApiError as e:

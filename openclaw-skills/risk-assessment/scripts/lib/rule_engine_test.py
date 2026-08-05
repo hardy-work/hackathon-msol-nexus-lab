@@ -16,6 +16,7 @@ from rule_engine import (
     apply_trend,
     run_rules,
     compute_person_capacity,
+    compute_sprint_health,
 )
 
 THRESHOLDS = {
@@ -355,6 +356,30 @@ class RuleS2SprintAtRiskTest(unittest.TestCase):
         ]
         out = rule_S2_sprint_at_risk(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS)
         self.assertEqual(out, [])
+
+
+class ComputeSprintHealthTest(unittest.TestCase):
+    def test_off_track_reports_on_track_false(self):
+        tasks = [base_task(id="T1", detectedFrom="T1", assignee="SơnBH", sprint="Sprint 1", isDone=False, remainingHours=40)]
+        resource_plan = [{"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {"2026-08-05": 8.0}}]
+        health = compute_sprint_health(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1")
+        self.assertFalse(health["onTrack"])
+        self.assertEqual(health["totalBacklog"], 40.0)
+        self.assertEqual(health["totalCapacity"], 8.0)
+        self.assertEqual(health["sprintName"], "Sprint 1")
+
+    def test_on_track_reports_on_track_true(self):
+        tasks = [base_task(id="T1", detectedFrom="T1", assignee="SơnBH", sprint="Sprint 1", isDone=False, remainingHours=4)]
+        resource_plan = [{"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {"2026-08-05": 8.0}}]
+        health = compute_sprint_health(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1")
+        self.assertTrue(health["onTrack"])
+
+    def test_returns_data_even_when_exactly_on_track_boundary(self):
+        # backlog == capacity -> vẫn coi là onTrack (không thiếu, dùng <=)
+        tasks = [base_task(id="T1", detectedFrom="T1", assignee="SơnBH", sprint="Sprint 1", isDone=False, remainingHours=8)]
+        resource_plan = [{"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {"2026-08-05": 8.0}}]
+        health = compute_sprint_health(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1")
+        self.assertTrue(health["onTrack"])
 
 
 class RuleM1BugTrendByModuleTest(unittest.TestCase):

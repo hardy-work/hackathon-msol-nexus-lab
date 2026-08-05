@@ -531,6 +531,29 @@ def compute_capacity_backlog_by_person(
     return result
 
 
+def compute_sprint_health(
+    tasks: list[dict],
+    resource_plan_people: list[dict],
+    today: str,
+    sprint_end: str,
+    sprint_name: str,
+    ot_by_person: dict[str, dict] | None = None,
+) -> dict:
+    """Tổng backlog/capacity CẢ TEAM — LUÔN trả về số liệu (khác S2, chỉ sinh
+    risk khi vượt ngưỡng) — dùng cho mục "Sức khỏe Sprint" trong draft, PM cần
+    thấy con số này mỗi lần chạy, kể cả khi sprint đang ổn.
+    """
+    by_person = compute_capacity_backlog_by_person(tasks, resource_plan_people, today, sprint_end, sprint_name, ot_by_person)
+    total_capacity = sum(cb["capacity"] for cb in by_person.values())
+    total_backlog = sum(cb["backlog"] for cb in by_person.values())
+    return {
+        "sprintName": sprint_name,
+        "totalBacklog": total_backlog,
+        "totalCapacity": total_capacity,
+        "onTrack": total_backlog <= total_capacity,
+    }
+
+
 # --- P4: Quá tải theo tồn đọng CẢ SPRINT (không chỉ 1 ngày) -> Risk -----------
 def rule_P4_sprint_backlog_overload(
     tasks: list[dict],
