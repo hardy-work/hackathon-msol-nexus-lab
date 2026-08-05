@@ -187,6 +187,18 @@ Hai thứ không lấy nguyên bản từ Slack:
 
 OpenClaw **không** đọc template từ frontmatter (`metadata.openclaw` chỉ dùng để gating `requires.bins` / `requires.env`), nên template phải nằm trong phần body của `SKILL.md` thì model mới thấy. Muốn đổi cách bot phát biểu thì sửa hai section đó.
 
+### Sửa SKILL.md giữa phiên thì phải bảo bot đọc lại
+
+Bot giữ nội dung `SKILL.md` trong ngữ cảnh của phiên, **không tự đọc lại khi file đổi**. Sửa xong mà nhờ bot chạy luôn thì nó vẫn dùng bản cũ, ra kết quả y như chưa sửa gì — rất dễ kết luận nhầm là bản sửa không có tác dụng rồi đi sửa tiếp thứ vốn đã đúng.
+
+Muốn bản mới có hiệu lực thì nói thẳng, ví dụ:
+
+```
+@NexusBot đọc lại SKILL.md rồi chạy lại giúp anh
+```
+
+Không cần commit hay push — bot đọc thẳng file trong thư mục làm việc, kể cả khi đang sửa dở chưa commit.
+
 ## Chạy tay (không qua agent)
 
 ```bash
@@ -205,5 +217,6 @@ node scripts/build-sheet.js ./downloads/manifest.json ./config.json             
 - Sheet tạo qua API mặc định `locale: vi_VN` + `timeZone: Etc/GMT`; script tự sửa về `en_US` + `Asia/Ho_Chi_Minh`. Không sửa thì mọi công thức nhiều tham số (`=HYPERLINK("a","b")`) đều `#ERROR!` vì vi_VN ngăn tham số bằng `;`.
 - Ở chế độ `imageDisplay: "link"`, mọi ảnh của một người nằm gọn trong **1 ô**, mỗi ảnh một dòng. Không dùng `=HYPERLINK` được (một ô chỉ chứa 1 link) nên script gắn link bằng `textFormatRuns` — link được gắn theo **offset ký tự**, nên sửa tay nội dung ô đó trong Sheets sẽ làm lệch hoặc mất link, phải chạy lại script.
 - Ở chế độ `imageDisplay: "image"` thì ngược lại: một ô chỉ chứa được 1 `=IMAGE()`, nên cột `images` nở ra thành `Evidence 1`, `Evidence 2`, … đúng bằng số ảnh nhiều nhất của một người. Số cột vì vậy thay đổi theo dữ liệu.
+- `build-sheet.js` lỗi giữa chừng **trước** khi ghi được dữ liệu vào sheet thì tự xoá folder vừa tạo trên Drive — đừng đi tìm, nó biến mất có chủ đích để Drive không tích tụ folder dở dang. Lỗi **sau** khi dữ liệu đã ghi xong thì giữ lại và in link, vì sheet lúc đó đã dùng được, chỉ thiếu định dạng. Không có cơ chế chạy tiếp từ chỗ dở: chạy lại là làm lại từ đầu.
 - Chỉ tổng hợp người **có gửi file**. Muốn liệt kê cả người chưa nộp thì yêu cầu riêng (Action 2 trong `SKILL.md`).
 - Bot phải được `/invite` vào kênh trước khi chạy. Theo tài liệu Slack, `channels:history` cho đọc cả lịch sử **trước** lúc bot tham gia nên ảnh cũ vẫn tải được — nhưng điều này **chưa được kiểm chứng thực tế**, cần thử ngay lần chạy đầu với một thread cũ.

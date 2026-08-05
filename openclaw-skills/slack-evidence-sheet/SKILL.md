@@ -28,6 +28,7 @@ Bạn là Evidence Collector cho PM của team MOR. Khi PM đưa 1 thread Slack 
 - Mọi bước Slack chạy **inline trong phiên đang xử lý**, KHÔNG delegate cho subagent — tool Slack không cấp cho subagent (xem `daily-report/SKILL.md`)
 - KHÔNG tự suy đoán email từ tên người. Email lấy từ `users.info` của Slack; ai không lấy được thì để trống và báo PM, KHÔNG đoán theo mẫu `ten@mor.com.vn`
 - Ai trong thread **không gửi file nào** thì KHÔNG tự tạo dòng cho họ — trừ khi PM yêu cầu rõ là muốn liệt kê cả người chưa nộp (xem Action 2)
+- KHÔNG BAO GIỜ dựng sheet từ `downloads/manifest.json` có sẵn. Luôn chạy lại `slack-fetch.js` trước, vì thread có thể đã có thêm ảnh mới — dữ liệu cũ cho ra sheet trông vẫn hợp lý nên không ai phát hiện được
 - Chế độ chia sẻ ảnh lấy đúng theo `imageSharing` trong `config.json`. Nếu là `anyone`, **nói rõ cho PM biết** trước khi tạo: bất kỳ ai có link đều xem được ảnh, kể cả người ngoài công ty
 - Nếu có lỗi API → báo rõ ràng, KHÔNG tự retry hoặc bịa dữ liệu thay thế
 
@@ -144,6 +145,12 @@ node scripts/slack-fetch.js "<link thread>" ./downloads
 
 Script tải toàn bộ file về `./downloads/` và sinh `downloads/manifest.json`. Đọc log để biết ai lấy được email, file nào tải lỗi.
 
+> ⚠️ **LUÔN chạy lại bước này, kể cả khi `downloads/manifest.json` đã có sẵn.** Bước 6 giữ `downloads/` lại nên manifest cũ nằm đó vĩnh viễn, trong khi thread vẫn có người gửi thêm ảnh. Dựng sheet từ manifest cũ ra kết quả **trông vẫn hợp lý** (vẫn có số người, số ảnh) nên không ai phát hiện được là dữ liệu đã lỗi thời.
+>
+> Chỉ được dùng lại manifest cũ khi PM nói thẳng là muốn thế. Khi đó phải báo PM `fetchedAt` trong manifest là lúc nào.
+>
+> Yêu cầu kiểu "tạo lại file tổng hợp" / "chạy lại đi" = làm lại **từ Bước 2**, KHÔNG phải chỉ chạy lại Bước 4.
+
 **Bước 3 — Preview (BẮT BUỘC, trước khi tạo bất cứ gì trên Drive)**
 
 ```bash
@@ -166,7 +173,12 @@ Script in ra link sheet + link folder. Diễn đạt lại cho PM đúng theo **
 
 **Bước 6 — Dọn dẹp**
 
-Hỏi PM có muốn xoá thư mục `downloads/` không (ảnh đã nằm trên Drive). Mặc định **giữ lại**, KHÔNG tự xoá.
+Câu hỏi dọn `downloads/` nằm sẵn ở cuối **Response Format** nên đã hỏi rồi. Chờ PM trả lời, KHÔNG tự xoá trước.
+
+- PM đồng ý → `rm -rf ./downloads`
+- PM muốn giữ → để nguyên, không nài thêm. Quy tắc bất biến đã cấm dựng sheet từ manifest cũ nên dữ liệu thừa nằm đó không gây hại
+
+Khuyến nghị mặc định là **xoá**: `downloads/` tồn tại lâu chính là thứ đã khiến một lần chạy dựng sheet từ dữ liệu cũ mà không ai phát hiện.
 
 ---
 
@@ -181,6 +193,8 @@ Trả lời theo format cố định này:
 • 📁 Folder: <{folderLink}|Mở folder ảnh>
 
 Mỗi người 1 dòng, ảnh gom vào ô Evidence dạng link bấm ra Drive xem được. Anh check thử nhé, cần thêm cột gì hay bổ sung ai chưa nộp thì báo em.
+
+Ảnh đã nằm hết trên Drive rồi nên em khuyên xoá thư mục `downloads/` ({totalFiles} ảnh) — để lại dễ bị dùng nhầm cho lần sau. Em dọn nhé?
 ```
 
 Các biến cần điền:
@@ -232,4 +246,5 @@ KHÔNG tự động làm bước này trong Action 1 — chỉ làm khi PM yêu 
 | Ô công thức hiện `#ERROR!` | Sheet đang ở locale `vi_VN` (ngăn tham số bằng `;`) → script đã tự set `en_US`; nếu vẫn lỗi thì kiểm tra bước `updateSpreadsheetProperties` có chạy không |
 | Ảnh không hiện dù `imageDisplay: image` | Ảnh chưa ở chế độ `anyone` — máy chủ Sheets tải ẩn danh nên ảnh riêng tư luôn ra ô trống |
 | Share cho email lỗi | Email đó có thể chưa phải tài khoản Google → báo PM, các bước khác vẫn hoàn tất |
+| `build-sheet.js` lỗi giữa chừng | Script tự dọn: chưa ghi được dữ liệu → xoá folder dở dang, báo "chạy lại được ngay"; đã ghi xong dữ liệu → GIỮ sheet và đưa link cho PM (chỉ thiếu định dạng). Nếu script báo không xoá được folder → đưa link đó cho PM xoá tay, KHÔNG bỏ qua |
 | PM trả lời "không" ở bước xác nhận | "Đã huỷ, chưa tạo gì trên Drive." |

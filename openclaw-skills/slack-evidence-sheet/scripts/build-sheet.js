@@ -64,6 +64,14 @@ async function accessToken() {
 }
 
 let TOKEN;
+
+// Trạng thái cho việc dọn dẹp khi lỗi giữa chừng (xem catch ở cuối file).
+// Mốc phân chia là lệnh ghi dữ liệu: trước đó folder chỉ là rác nên xoá được,
+// sau đó sheet đã dùng được nên xoá đi là mất công vô ích.
+let rootFolder = null;
+let sheetId = null;
+let sheetUsable = false;
+
 async function api(url, method = 'GET', payload = null) {
   const res = await request(url, {
     method,
@@ -190,8 +198,9 @@ function linkRuns(files) {
     'POST',
     { name: fill(config.folderName) || `Evidence ${today}`, mimeType: 'application/vnd.google-apps.folder' }
   );
+  rootFolder = folder;
   console.log(`Folder: ${folder.name}`);
-  if (!DRY) console.log(`  Link: ${folder.webViewLink}`);
+  console.log(`  Link: ${folder.webViewLink}`);
 
   // Ảnh nằm trong folder con riêng để file sheet không lẫn giữa hàng chục ảnh.
   const imgFolder = await api(
@@ -231,6 +240,7 @@ function linkRuns(files) {
     mimeType: 'application/vnd.google-apps.spreadsheet',
     parents: [folder.id],
   });
+  sheetId = sheet.id;
 
   // Sheet tạo qua API mặc định locale vi_VN + Etc/GMT: công thức nhiều tham số
   // sẽ lỗi #ERROR! (vi_VN dùng ';' ngăn tham số) và hàm ngày giờ lệch 7 tiếng.
@@ -305,6 +315,8 @@ function linkRuns(files) {
     'PUT',
     { values: rows }
   );
+  // Từ đây sheet đã có dữ liệu -> có giá trị kể cả khi các bước sau lỗi.
+  sheetUsable = true;
 
   const reqs = [
     {
@@ -388,7 +400,28 @@ function linkRuns(files) {
   // thẳng lên Slack. Cách gửi lên Slack quy định ở Response Format trong SKILL.md.
   console.log(`Sheet: https://docs.google.com/spreadsheets/d/${sheet.id}/edit`);
   console.log(`Folder: ${folder.webViewLink}`);
-})().catch((e) => {
+})().catch(async (e) => {
   console.error('LỖI:\n' + e.message);
+
+  // Chưa kịp tạo folder thì Drive vẫn sạch, không có gì để dọn.
+  if (!rootFolder) process.exit(1);
+
+  if (sheetUsable) {
+    console.error('\nSheet đã có đủ dữ liệu, chỉ thiếu phần định dạng — KHÔNG xoá.');
+    console.error(`Sheet: https://docs.google.com/spreadsheets/d/${sheetId}/edit`);
+    console.error(`Folder: ${rootFolder.webViewLink}`);
+    process.exit(1);
+  }
+
+  // Sheet chưa dùng được -> folder chỉ là rác. Xoá luôn, nếu không Drive sẽ
+  // tích tụ folder dở dang mà không ai biết để dọn.
+  try {
+    await api(`https://www.googleapis.com/drive/v3/files/${rootFolder.id}`, 'DELETE');
+    console.error('\nĐã xoá folder dở dang trên Drive, chạy lại được ngay.');
+  } catch (delErr) {
+    console.error('\n! Không xoá được folder dở dang, nhờ xoá tay giúp:');
+    console.error(`  ${rootFolder.webViewLink}`);
+    console.error(`  (lý do: ${delErr.message.slice(0, 200)})`);
+  }
   process.exit(1);
 });
