@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Build deterministic Nexus wiki pages from extracted facts."""
+"""Build deterministic Nexus wiki pages from extracted facts.
+
+With ``--plan`` this is a selective page writer: only pages listed by the
+re-ingest plan are rendered, while the index is always regenerated from the
+resulting corpus.
+"""
+import argparse
 import json
 from pathlib import Path
 import sys
@@ -18,9 +24,28 @@ SOURCE_NAME = str(DOC.get("source_name") or Path(str(DOC["original"])).name)
 SOURCE_KIND = str(DOC.get("kind") or Path(str(DOC["original"])).suffix.lstrip(".") or "unknown")
 
 
-def main():
+def _load_plan(path: str | None) -> dict | None:
+    if not path:
+        return None
+    plan_path = Path(path)
+    if not plan_path.is_absolute():
+        plan_path = ROOT / plan_path
+    return json.loads(plan_path.read_text(encoding="utf-8"))
+
+
+def main(plan_path: str | None = None):
+    plan = _load_plan(plan_path)
+    write_pages = set(plan.get("page_actions", {}).get("write", [])) if plan else None
     people_facts = artifact_rel(DOC, "nexus-people", "facts").as_posix()
     people = json.loads((ROOT / people_facts).read_text(encoding="utf-8"))["facts"]
+    if write_pages is not None:
+        known_pages = {"wiki/sources/nexus-plan.md"}
+        known_pages.update(f"wiki/entities/{slug}.md" for slug in people)
+        unknown = sorted(write_pages - known_pages)
+        if unknown:
+            raise ValueError(
+                "re-ingest plan có page Nexus chưa có renderer: " + ", ".join(unknown)
+            )
     source_paths = [str(p) for p in DOC.get("raw_paths", [])
                     if str(p).endswith(".md")]
     if not source_paths:
@@ -66,9 +91,16 @@ lịch tổng, backlog, sprint, rủi ro, issue và Config. Các bảng được
 - `kind`: {SOURCE_KIND}
 - `raw_paths`: các bảng Nexus được trích từ `{DOC['original']}`.
 """
-    (WIKI / "sources/nexus-plan.md").write_text(source, encoding="utf-8")
+    written = []
+    source_rel = "wiki/sources/nexus-plan.md"
+    if write_pages is None or source_rel in write_pages:
+        (WIKI / "sources/nexus-plan.md").write_text(source, encoding="utf-8")
+        written.append(source_rel)
 
     for slug, info in people.items():
+        page_rel = f"wiki/entities/{slug}.md"
+        if write_pages is not None and page_rel not in write_pages:
+            continue
         role = (info.get("roles") or [None])[0]
         role_line = f"role: {role}\n" if role else ""
         if info["task_count"]["value"] == 0:
@@ -106,9 +138,17 @@ Trang này chỉ phủ dữ liệu đã nạp từ workbook Nexus Plan. Các b�
 không được suy diễn thành “không có”.
 """
         (WIKI / f"entities/{slug}.md").write_text(body, encoding="utf-8")
+        written.append(page_rel)
+    if write_pages is not None and set(written) != write_pages:
+        missing = sorted(write_pages - set(written))
+        raise ValueError("renderer không thực thi đủ page_actions.write: " + ", ".join(missing))
     count = build_index.build()
-    print(f"✓ Nexus wiki: 1 source + {len(people)} entity pages · index {count} pages")
+    mode = f"selective {len(written)} page" if plan else f"full {len(written)} pages"
+    print(f"✓ Nexus wiki: {mode} · index {count} pages")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--plan", help="re-ingest plan; only its page_actions.write pages are rendered")
+    args = parser.parse_args()
+    main(args.plan)

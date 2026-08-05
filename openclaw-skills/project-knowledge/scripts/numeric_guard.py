@@ -204,7 +204,7 @@ class AnswerGuard:
         versions = current_versions(self.root)
         for f in self.boundary.files("raw", "*.facts.json"):
             data = json.loads(self.boundary.read_text(f.relative_to(self.root)))
-            if not payload_is_current(data, self.root, versions):
+            if not payload_is_current(data, self.root, versions, path=f):
                 continue
             bucket: set = set()
             ubucket: dict = {}
@@ -284,8 +284,9 @@ class AnswerGuard:
     def _wiki_resolve(self, ref):
         try:
             fpath, dotted = ref.split("#", 1)
-            node = json.loads(self.boundary.read_text(fpath))
-            if not payload_is_current(node, self.root):
+            path = self.boundary.resolve(fpath, must_exist=True)
+            node = json.loads(path.read_text(encoding="utf-8"))
+            if not payload_is_current(node, self.root, path=path):
                 return None
             node = node.get("facts", node)
             for part in dotted.split("."):

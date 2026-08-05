@@ -78,10 +78,11 @@ Gate 1 SHA256 · Gate 2 numeric ingest · Gate 3a lint · Gate 3b review · Gate
 
 `raw/` là provenance; truy vấn bảng dùng DuckDB, không đọc raw trực tiếp.
 
-Gate 3a lint current pages và đồng thời quét page lịch sử đã supersede. Mọi page
+Gate 3a lint current pages và đồng thời quét page lịch sử đã supersede/retire. Mọi page
 version cũ phải có `superseded_by` trỏ tới đúng page current cùng `doc_id`, version;
-target, raw_paths lịch sử và link trong page lịch sử đều phải tồn tại. Page lịch sử
-được miễn kiểm backlink current để không làm thay đổi ngữ nghĩa của snapshot cũ.
+page generated bị loại khỏi nguồn có thể dùng `retired_by` trỏ tới page current của
+document. Target, raw_paths lịch sử và link trong page lịch sử đều phải tồn tại. Page
+lịch sử được miễn kiểm backlink current để không làm thay đổi ngữ nghĩa của snapshot cũ.
 
 File upload phải đi qua `scripts/intake.py` trên staging/worktree. Intake lưu
 `source_name` và `kind`, dùng SHA-256, identity tên/loại file và semantic digest

@@ -256,11 +256,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--page")
     ap.add_argument("--all", action="store_true")
+    ap.add_argument("--plan", help="re-ingest plan; review only its page_actions.write set")
     ap.add_argument("--log", action="store_true", help="FINDING thì ghi vào wiki/log.md")
     ap.add_argument("--k", type=int, default=DEFAULT_K, help="số lượt soát độc lập")
     a = ap.parse_args()
 
-    if a.all:
+    if a.plan:
+        plan_path = Path(a.plan)
+        if not plan_path.is_absolute():
+            plan_path = ROOT / plan_path
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        pages = [ROOT / rel for rel in plan.get("page_actions", {}).get("write", [])
+                 if (ROOT / rel).is_file()]
+    elif a.all:
         pages = [p for p in sorted(WIKI.rglob("*.md")) if p.name not in ("index.md", "log.md")]
     elif a.page:
         pages = [ROOT / a.page]

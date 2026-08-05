@@ -7,7 +7,7 @@
 | Stage 2 · Extract | `extract_nexus.py`, `extract_van.py` | Nexus `.xlsx` is live; DOCX/PDF/OCR is opt-in |
 | Stage 3 · Structure | `structure.py` → `structured/` | Independent prose pass; exact date/number/unit transform gate |
 | Stage 4 · Wiki ingest | `build_nexus_wiki.py`, `ingest_van.py` | Reads Stage 3 output; model has no filesystem tools; script validates then writes |
-| Re-ingest | `reingest.py`, `ingest_flow.py` | Raw diff + impacted claims in isolated `ingest/<doc>@vN` worktree; never auto-merges |
+| Re-ingest | `reingest.py`, `ingest_flow.py` | Raw diff + authoritative selective page write-set; unchanged raw/page bytes are retained; new/retired pages handled in isolated `ingest/<doc>@vN` worktree |
 | Gate 2/4 | `numeric_guard.py` | Citation-scoped exact number/date/unit checks; no rounded-value allowance |
 | Gate 3a | `lint.py` | Contract, current version, visibility, references and numeric provenance |
 | Gate 3b | `review.py` | Sonnet review is opt-in; previous Nexus run passed 8/8 |

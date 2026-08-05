@@ -27,8 +27,9 @@ def acl_values(metadata):
 
 def resolve(ref):
     fpath, dotted = ref.split("#", 1)
-    payload = json.loads((ROOT / fpath).read_text(encoding="utf-8"))
-    if not payload_is_current(payload, ROOT):
+    path = ROOT / fpath
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not payload_is_current(payload, ROOT, path=path):
         raise ValueError(f"facts_ref trỏ tới raw superseded hoặc chưa đăng ký: {fpath}")
     node = payload
     node = node.get("facts", node)
@@ -86,7 +87,7 @@ def main():
     versions = document_registry.current_versions(ROOT)
     for p in sorted((ROOT / "raw").glob("*-sprint*.facts.json")):
         payload = json.loads(p.read_text(encoding="utf-8"))
-        if not payload_is_current(payload, ROOT, versions):
+        if not payload_is_current(payload, ROOT, versions, path=p):
             continue
         match = re.search(r"sprint(\d+)", p.name, re.IGNORECASE)
         if not match:
@@ -109,7 +110,7 @@ def main():
         visibility VARCHAR, allowed_roles VARCHAR, allowed_users VARCHAR)""")
     for p in sorted((ROOT / "raw").glob("*.facts.json")):
         d = json.loads(p.read_text(encoding="utf-8"))
-        if not payload_is_current(d, ROOT, versions):
+        if not payload_is_current(d, ROOT, versions, path=p):
             continue
         # Mọi nguồn có row-record đều vào đây: `kind: rows` (bảng bán cấu trúc) VÀ
         # `kind: table` (sheet sprint — ngoài phần gộp MEASURE còn giữ nguyên từng dòng

@@ -63,28 +63,43 @@ def execute(worktree: Path, doc_id: str, version: int, review: bool) -> None:
     scripts = skill / "scripts"
     env = os.environ.copy()
     env["PYTHONUTF8"] = "1"
+    plan_path = None
     run([sys.executable, str(scripts / "gate1_integrity.py")], skill, env)
     run([sys.executable, str(scripts / "inventory.py")], skill, env)
     extractor = doc.get("extractor")
     if extractor == "nexus":
         run([sys.executable, str(scripts / "extract_nexus.py")], skill, env)
         if doc.get("supersedes") is not None:
+            reingest.reconcile_artifacts(
+                skill, doc_id, int(doc["supersedes"]), int(version)
+            )
             plan = reingest.build_plan(
                 skill, doc_id, int(doc["supersedes"]), int(version)
             )
+            reingest.archive_retired_pages(skill, plan)
             reingest.archive_one_to_one_pages(skill, plan)
-            reingest.write_plan(skill, plan)
-        run([sys.executable, str(scripts / "build_nexus_wiki.py")], skill, env)
+            plan_path = reingest.write_plan(skill, plan)
+        command = [sys.executable, str(scripts / "build_nexus_wiki.py")]
+        if plan_path:
+            command += ["--plan", str(plan_path.relative_to(skill))]
+        run(command, skill, env)
     elif extractor == "van":
         run([sys.executable, str(scripts / "extract_van.py"), "--doc", doc_id], skill, env)
         run([sys.executable, str(scripts / "structure.py"), "--doc", doc_id], skill, env)
         if doc.get("supersedes") is not None:
+            reingest.reconcile_artifacts(
+                skill, doc_id, int(doc["supersedes"]), int(version)
+            )
             plan = reingest.build_plan(
                 skill, doc_id, int(doc["supersedes"]), int(version)
             )
+            reingest.archive_retired_pages(skill, plan)
             reingest.archive_one_to_one_pages(skill, plan)
-            reingest.write_plan(skill, plan)
-        run([sys.executable, str(scripts / "ingest_van.py"), "--doc", doc_id], skill, env)
+            plan_path = reingest.write_plan(skill, plan)
+        command = [sys.executable, str(scripts / "ingest_van.py"), "--doc", doc_id]
+        if plan_path:
+            command += ["--plan", str(plan_path.relative_to(skill))]
+        run(command, skill, env)
     else:
         raise RuntimeError(
             f"document `{doc_id}@v{version}` có extractor `{extractor or 'missing'}` "
@@ -92,7 +107,9 @@ def execute(worktree: Path, doc_id: str, version: int, review: bool) -> None:
         )
     run([sys.executable, str(scripts / "lint.py")], skill, env)
     if review:
-        run([sys.executable, str(scripts / "review.py"), "--all"], skill, env)
+        command = [sys.executable, str(scripts / "review.py")]
+        command += ["--plan", str(plan_path.relative_to(skill))] if plan_path else ["--all"]
+        run(command, skill, env)
     run([sys.executable, str(scripts / "build_db.py")], skill, env)
     run([sys.executable, str(scripts / "build_graph.py")], skill, env)
     run([sys.executable, str(scripts / "build_rag_indexes.py")], skill, env)

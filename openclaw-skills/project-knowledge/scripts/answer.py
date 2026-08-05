@@ -1272,7 +1272,7 @@ def _current_fact_locators(kb) -> set[str]:
             payload = json.loads(kb.boundary.read_text(path.relative_to(kb.root)))
         except (OSError, ValueError, json.JSONDecodeError):
             continue
-        if payload_is_current(payload, kb.root, versions):
+        if payload_is_current(payload, kb.root, versions, path=path):
             visit(payload)
     return locators
 

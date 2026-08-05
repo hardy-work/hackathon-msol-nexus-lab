@@ -18,8 +18,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 import document_registry
 from inventory import kind as detect_kind
 from inventory import normalized_name
@@ -268,17 +266,7 @@ def decide(root: Path, source: Path, confirmed_doc_id: str | None = None) -> dic
 
 
 def _write_registry(root: Path, documents: list[dict[str, Any]]) -> None:
-    path = root / "documents.yml"
-    original = path.read_text(encoding="utf-8")
-    prefix_lines = []
-    for line in original.splitlines(keepends=True):
-        if line.strip() == "documents:":
-            break
-        prefix_lines.append(line)
-    rendered = yaml.safe_dump(
-        {"documents": documents}, allow_unicode=True, sort_keys=False
-    )
-    path.write_text("".join(prefix_lines) + rendered, encoding="utf-8")
+    document_registry.write(root, documents)
 
 
 def _write_manifest(root: Path) -> bool:

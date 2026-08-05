@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import shutil
 import os
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -34,6 +35,10 @@ def main() -> int:
             return {name for name in names if name in {"derived", ".runtime", "__pycache__"}}
 
         shutil.copytree(ROOT, staging, ignore=ignore)
+        entity_before = {
+            path.relative_to(staging).as_posix(): path.read_bytes()
+            for path in sorted((staging / "wiki/entities").glob("*.md"))
+        }
         incoming = temp_root / "Nexus Plan.xlsx"
         shutil.copy2(staging / "originals/nexus-plan.xlsx", incoming)
         workbook = openpyxl.load_workbook(incoming)
@@ -51,6 +56,12 @@ def main() -> int:
 
         current = document_registry.current("nexus-plan", staging)
         assert int(current["version"]) == 2
+        assert "raw/nexus-summary@v2.md" in current["raw_paths"]
+        assert "raw/nexus-people.md" in current["raw_paths"]
+        assert not (staging / "raw/nexus-people@v2.md").exists()
+        assert not (staging / "raw/nexus-people@v2.facts.json").exists()
+        for rel, before in entity_before.items():
+            assert (staging / rel).read_bytes() == before, rel
         current_page = staging / "wiki/sources/nexus-plan.md"
         assert current_page.is_file()
         current_text = current_page.read_text(encoding="utf-8")
@@ -61,6 +72,13 @@ def main() -> int:
         assert "superseded_by: wiki/sources/nexus-plan.md" in archived.read_text(encoding="utf-8")
         plan = staging / "derived/reingest-plan.json"
         assert plan.is_file()
+        plan_data = json.loads(plan.read_text(encoding="utf-8"))
+        assert plan_data["page_actions"]["write"] == ["wiki/sources/nexus-plan.md"]
+        assert plan_data["new_pages"] == []
+        assert plan_data["removed_pages"] == []
+        changed_raw_ids = {row["artifact"].split("::", 1)[0] for row in plan_data["raw_diff"]}
+        assert "nexus-summary" in changed_raw_ids
+        assert not changed_raw_ids & {"nexus-config", "nexus-sprint1", "nexus-people"}
         assert '"archived_page": "wiki/sources/nexus-plan@v1.md"' in plan.read_text(encoding="utf-8")
         assert (staging / "derived/facts.duckdb").is_file()
         assert (staging / "derived/graph.json").is_file()

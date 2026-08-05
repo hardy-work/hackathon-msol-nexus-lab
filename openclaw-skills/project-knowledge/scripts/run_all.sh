@@ -68,6 +68,7 @@ echo; echo "══ LONG-LIVED RUNTIME BENCHMARK ══"; "$PY" scripts/benchmark
 echo; echo "══ ROUTER CONTRACT (offline) ══"; "$PY" scripts/router_selftest.py
 echo; echo "══ VERSION/FRESHNESS (offline) ══"; "$PY" scripts/version_selftest.py
 echo; echo "══ DOCUMENT LIFECYCLE (offline) ══"; "$PY" scripts/lifecycle_selftest.py
+echo; echo "══ SELECTIVE RE-INGEST PAGE SET (offline) ══"; "$PY" scripts/reingest_selftest.py
 echo; echo "══ VERSIONED ARTIFACTS (offline) ══"; "$PY" scripts/versioned_artifact_selftest.py
 echo; echo "══ RUNTIME ACCESS/CACHE/CONTEXT (offline) ══"; "$PY" scripts/runtime_selftest.py
 echo; echo "══ READ-ONLY FILESYSTEM BOUNDARY (offline) ══"; "$PY" scripts/filesystem_boundary_selftest.py

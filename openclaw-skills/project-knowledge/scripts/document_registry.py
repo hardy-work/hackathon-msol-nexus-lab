@@ -52,6 +52,21 @@ def load(root: Path = ROOT) -> list[dict[str, Any]]:
     return docs
 
 
+def write(root: Path, documents: list[dict[str, Any]]) -> None:
+    """Persist the human-owned registry while retaining its introductory comments."""
+    path = root / "documents.yml"
+    original = path.read_text(encoding="utf-8")
+    prefix_lines = []
+    for line in original.splitlines(keepends=True):
+        if line.strip() == "documents:":
+            break
+        prefix_lines.append(line)
+    rendered = yaml.safe_dump(
+        {"documents": documents}, allow_unicode=True, sort_keys=False
+    )
+    path.write_text("".join(prefix_lines) + rendered, encoding="utf-8")
+
+
 def current(doc_id: str, root: Path = ROOT) -> dict[str, Any]:
     matches = [doc for doc in load(root) if doc.get("doc_id") == doc_id and doc.get("current")]
     if len(matches) != 1:

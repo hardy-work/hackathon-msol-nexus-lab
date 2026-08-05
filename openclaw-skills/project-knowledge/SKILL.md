@@ -165,8 +165,10 @@ của từng thời điểm.
 
 Identity/version canonical nằm trong `documents.yml`. Re-ingest phải tạo version mới,
 khai `supersedes`, chạy trong worktree `ingest/<doc>@vN`, xem `reingest-plan.json`,
-review diff rồi mới merge. Stage 3 văn xuôi (`structure.py`) là artifact riêng và
-Stage 4 không được đọc thẳng prose raw.
+review diff rồi mới merge. Artifact raw và page không đổi được giữ nguyên path/bytes;
+chỉ raw artifact thực sự đổi mới tạo `@vN`, và chỉ page trong `page_actions.write` mới
+được Stage 4 render. Page mới được tạo, page biến mất được archive/retire. Stage 3
+văn xuôi (`structure.py`) là artifact riêng và Stage 4 không được đọc thẳng prose raw.
 
 Để nhận diện file upload mà không sửa canonical root, chạy intake trên staging/worktree:
 `--apply` bắt buộc phải có `--root` trỏ tới staging/worktree; gọi trực tiếp
@@ -196,12 +198,15 @@ python3 scripts/ingest_flow.py \
 Intake trả `duplicate`, `no_op`, `identity_review`, `initial_ingest` hoặc
 `reingest`. Khi semantic content thay đổi, nó giữ version cũ, copy original sang
 `@vN`, thêm `supersedes`, chuyển `current` sang version mới và chạy downstream trong
-staging worktree. Với trang 1:1, re-ingest archive trang cũ thành `@vN` và ghi
-`superseded_by` trước khi sinh trang current. Lệnh này không merge, publish hoặc
-reload runtime.
+staging worktree. Sau Stage 2, hệ thống đối chiếu từng raw artifact: artifact không
+đổi được dùng lại từ version cũ, artifact đổi mới nhận `@vN`. Với trang 1:1,
+re-ingest archive trang cũ thành `@vN` và ghi `superseded_by` trước khi sinh trang
+current; page generated bị loại bỏ được retire và giữ snapshot lịch sử. Lệnh này
+không merge, publish hoặc reload runtime.
 
 CI chạy `scripts/ingest_flow_selftest.py` để kiểm tra chuỗi intake → re-ingest →
-Gate 3a → derive, thêm `scripts/lint_history_selftest.py` cho metadata lịch sử và
+selective page write-set → Gate 3a → derive, thêm `scripts/reingest_selftest.py`
+cho page mới/retire và `scripts/lint_history_selftest.py` cho metadata lịch sử và
 `scripts/review_selftest.py` cho consensus Gate 3b. Review nội dung bằng Claude
 chạy mặc định khi `ingest_flow.py --run`; `--no-review` chỉ dành cho fixture/offline
 và không được dùng để merge. Selftest offline không giả vờ thay thế việc đọc ngữ
