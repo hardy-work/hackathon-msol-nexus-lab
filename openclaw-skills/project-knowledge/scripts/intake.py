@@ -28,6 +28,31 @@ ROOT = Path(__file__).resolve().parent.parent
 VERSION_SUFFIX = re.compile(r"(?:[@._-](?:v|version)\d+)$", re.IGNORECASE)
 
 
+def ensure_staging_root(root: Path) -> Path:
+    """Return a writable intake root, never the canonical skill root.
+
+    ``decide()`` is intentionally allowed to read the canonical registry, but
+    applying an intake decision must happen in a staging copy or git worktree.
+    Keeping this check here protects callers that invoke ``register()``
+    directly, not only the command-line interface.
+    """
+    resolved = Path(root).expanduser().resolve()
+    if resolved == ROOT.resolve():
+        raise ValueError(
+            "intake --apply không được ghi vào canonical skill root; "
+            "hãy dùng một staging/worktree skill root riêng với --root"
+        )
+    if not (resolved / "documents.yml").is_file():
+        raise ValueError(
+            f"staging/worktree root không hợp lệ, thiếu documents.yml: {resolved}"
+        )
+    if not (resolved / "originals").is_dir():
+        raise ValueError(
+            f"staging/worktree root không hợp lệ, thiếu thư mục originals/: {resolved}"
+        )
+    return resolved
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -276,6 +301,7 @@ def _write_manifest(root: Path) -> bool:
 
 def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, Any]:
     """Apply an initial/re-ingest decision to a staging root/worktree."""
+    root = ensure_staging_root(root)
     if decision.get("flow") not in {"initial_ingest", "reingest"}:
         raise ValueError(f"flow `{decision.get('flow')}` không tạo version mới")
 
@@ -345,12 +371,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Automatic Project Knowledge file intake")
     parser.add_argument("--file", required=True, type=Path)
     parser.add_argument("--doc-id", help="xác nhận document identity hiện có trước khi re-ingest")
-    parser.add_argument("--root", type=Path, default=ROOT,
-                        help="staging/worktree skill root; mặc định là skill root hiện tại")
+    parser.add_argument("--root", type=Path,
+                        help="staging/worktree skill root; bắt buộc khi dùng --apply")
     parser.add_argument("--apply", action="store_true",
                         help="copy source và đăng ký version vào root; không merge/publish")
     args = parser.parse_args()
-    root = args.root.resolve()
+    if args.apply and args.root is None:
+        parser.error("--apply bắt buộc --root tới một staging/worktree skill root")
+    root = (args.root or ROOT).resolve()
+    if args.apply:
+        try:
+            root = ensure_staging_root(root)
+        except ValueError as exc:
+            parser.error(str(exc))
     decision = decide(root, args.file, confirmed_doc_id=args.doc_id)
     if args.apply and decision["flow"] not in {"initial_ingest", "reingest"}:
         result = decision

@@ -31,6 +31,18 @@ def main() -> int:
         review.run_once = lambda _prompt: next(responses)
         verdict, _detail, _runs = review.review(page, k=3)
         assert verdict == "FINDING"
+
+        responses = iter([
+            {"verdict": "PASS", "findings": [], "checked": ["raw_paths"], "err": ""},
+            {"verdict": "UNVERIFIABLE", "findings": [{
+                "claim": "chưa thể kiểm", "problem": "bằng chứng bị cắt", "source_says": ""
+            }], "checked": [], "err": ""},
+            {"verdict": "UNVERIFIABLE", "findings": [], "checked": [], "err": ""},
+        ])
+        review.run_once = lambda _prompt: next(responses)
+        verdict, detail, _runs = review.review(page, k=3)
+        assert verdict == "KHÔNG CHẮC"
+        assert "không đủ bằng chứng" in detail
     finally:
         review.run_once = original
 

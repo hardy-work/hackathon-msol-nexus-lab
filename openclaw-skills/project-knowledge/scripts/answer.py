@@ -36,7 +36,7 @@ import access_control
 import document_registry
 import bm25_index
 import filesystem_boundary
-from artifact_paths import artifact_rel
+from artifact_paths import artifact_rel, payload_is_current
 
 # Bậc 2 uses the two mandatory derived indexes.  Both are lazy-loaded in the
 # long-lived runtime, but a missing/corrupt store is an infrastructure error,
@@ -1241,6 +1241,65 @@ def tier3(kb, q, pages, graph_context="", timeout=120):
 
 
 # ------------------------------------------------------------ GATE 4
+def _citation_base(citation: str) -> str:
+    """Extract the file-like part of a human-readable citation."""
+    value = str(citation or "").strip()
+    for separator in (" :: ", " → ", " ("):
+        if separator in value:
+            value = value.split(separator, 1)[0]
+            break
+    return value.split("#", 1)[0].strip()
+
+
+def _current_fact_locators(kb) -> set[str]:
+    """Return source locators present in the current facts corpus only."""
+    locators: set[str] = set()
+    versions = document_registry.current_versions(kb.root)
+
+    def visit(value) -> None:
+        if isinstance(value, dict):
+            source = value.get("src")
+            if isinstance(source, str) and source.strip():
+                locators.add(source.strip())
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    for path in kb.boundary.files("raw", "*.facts.json"):
+        try:
+            payload = json.loads(kb.boundary.read_text(path.relative_to(kb.root)))
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        if payload_is_current(payload, kb.root, versions):
+            visit(payload)
+    return locators
+
+
+def invalid_citations(kb, citations) -> list[str]:
+    """Find citations that cannot be resolved to current evidence."""
+    locators: set[str] | None = None
+    invalid: list[str] = []
+    for citation in citations or []:
+        raw = str(citation or "").strip()
+        base = _citation_base(raw)
+        if not base:
+            invalid.append(raw or "<empty citation>")
+            continue
+        try:
+            resolved = kb.boundary.resolve(base, must_exist=True)
+        except (filesystem_boundary.BoundaryError, FileNotFoundError):
+            if locators is None:
+                locators = _current_fact_locators(kb)
+            if base not in locators:
+                invalid.append(raw)
+            continue
+        if not resolved.is_file():
+            invalid.append(raw)
+    return invalid
+
+
 def gate4(res, kb):
     """numeric_guard(policy=answer). Chạy trên MỌI bậc, kể cả bậc 1 — cổng phải là
     cổng, không phải bộ lọc riêng cho bậc bị nghi ngờ.
@@ -1251,6 +1310,14 @@ def gate4(res, kb):
     THEO NGỮ CẢNH: chỉ chấp nhận số thuộc facts của ĐÚNG nguồn câu trả lời đã trích
     (`res.cites`) — không phải cả vũ trụ số. Nhờ vậy '50 Điều' trích từ tài liệu OCR
     (0 facts đăng ký) không mở khoá được nhờ trùng một số ở nguồn khác."""
+    missing = invalid_citations(kb, res.cites)
+    if missing:
+        return Result(res.tier, NF,
+            "Đã CHẶN ở GATE 4 — câu trả lời có citation không tồn tại.",
+            cites=[],
+            reason="citation không resolve được trong current corpus: "
+                   + ", ".join(missing[:8]))
+
     bad = numeric_guard.check(policy="answer", text=res.answer, cites=res.cites,
                               root=kb.root)
     if not bad:

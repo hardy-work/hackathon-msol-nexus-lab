@@ -184,12 +184,13 @@ def review(path, k=DEFAULT_K):
                                     else "(không có coverage.yml)")
     runs = [run_once(prompt) for _ in range(k)]
     parsed = [r for r in runs if r["verdict"] != "ERR"]
-    n_pass = sum(1 for r in runs if r["verdict"] == "PASS" and not r["findings"])
+    verified = [r for r in parsed if r["verdict"] != "UNVERIFIABLE"]
+    n_pass = sum(1 for r in verified if r["verdict"] == "PASS" and not r["findings"])
 
     # gộp phát hiện qua các lượt, đếm phiếu
     votes = Counter()
     sample = {}
-    for r in parsed:
+    for r in verified:
         seen = set()
         for f in r["findings"]:
             kf = _fkey(f)
@@ -209,10 +210,15 @@ def review(path, k=DEFAULT_K):
     maj = (k // 2) + 1
     chac = [(kf, v) for kf, v in votes.items() if v >= maj]
     nghi = [(kf, v) for kf, v in votes.items() if v < maj]
+    unverifiable = [r for r in parsed if r["verdict"] == "UNVERIFIABLE"]
     if not parsed:
         verdict = "KHÔNG CHẮC"
     elif chac:
         verdict = "FINDING"
+    elif unverifiable:
+        # A page is not verified when any usable review session says that its
+        # evidence was truncated/insufficient. Do not let a clean PASS hide it.
+        verdict = "KHÔNG CHẮC"
     elif nghi:
         verdict = "PASS·lưu ý"
     else:
@@ -221,6 +227,8 @@ def review(path, k=DEFAULT_K):
     lines = [f"{n_pass}/{k} lượt PASS-sạch · {len(parsed)}/{k} lượt đọc được"]
     if any(r["verdict"] == "ERR" for r in runs):
         lines.append(f"  (lượt lỗi: {[r['err'] for r in runs if r['verdict'] == 'ERR']})")
+    if unverifiable:
+        lines.append(f"  (lượt không đủ bằng chứng: {len(unverifiable)}/{k})")
     for kf, v in votes.most_common():
         f = sample[kf]
         tag = "CHẮC" if v >= maj else "nghi"

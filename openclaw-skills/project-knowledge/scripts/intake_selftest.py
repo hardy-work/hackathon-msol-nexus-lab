@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -86,6 +88,23 @@ def main() -> int:
         ]
         assert intake.decide(root, updated)["flow"] == "duplicate"
 
+        try:
+            intake.register(intake.ROOT, updated, decision)
+        except ValueError as exc:
+            assert "canonical skill root" in str(exc)
+            assert "staging/worktree" in str(exc)
+        else:
+            raise AssertionError("register() không được ghi vào canonical root")
+
+        cli = subprocess.run(
+            [sys.executable, str(Path(intake.__file__)), "--file", str(updated),
+             "--doc-id", "plan", "--apply"],
+            capture_output=True, text=True, check=False,
+        )
+        assert cli.returncode == 2
+        assert "--root" in cli.stderr
+        assert "staging/worktree" in cli.stderr
+
     with tempfile.TemporaryDirectory(prefix="pk-intake-new-") as temp:
         root = Path(temp)
         (root / "originals").mkdir()
@@ -105,7 +124,7 @@ def main() -> int:
         assert registered_new["version"] == 1
         assert registered_new["extractor"] == "unsupported"
 
-    print("✓ intake self-test: 8/8 qua")
+    print("✓ intake self-test: 10/10 qua")
     return 0
 
 

@@ -169,6 +169,9 @@ review diff rồi mới merge. Stage 3 văn xuôi (`structure.py`) là artifact 
 Stage 4 không được đọc thẳng prose raw.
 
 Để nhận diện file upload mà không sửa canonical root, chạy intake trên staging/worktree:
+`--apply` bắt buộc phải có `--root` trỏ tới staging/worktree; gọi trực tiếp
+`register()` vào canonical skill root cũng bị chặn. Chạy không có `--apply` vẫn
+được phép đọc registry canonical để preview quyết định.
 
 ```bash
 python3 scripts/intake.py \

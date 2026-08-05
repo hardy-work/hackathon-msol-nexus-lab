@@ -47,6 +47,7 @@ echo; echo "══ Gate 2+4 · numeric_guard ══"; "$PY" scripts/numeric_guar
 echo; echo "══ ACCESS CONTROL ══"; "$PY" scripts/access_control.py
 echo; echo "══ Response style contract ══"; "$PY" scripts/response_style.py
 echo; echo "══ Stage 6 · PUBLISH ══";  "$PY" scripts/build_db.py
+echo; echo "══ Gate 4 · citation existence ══"; "$PY" scripts/gate4_selftest.py
 echo; echo "══ Stage 5 · DERIVE · bậc 3 graph (typed links + DIMENSION) ══"; "$PY" scripts/build_graph.py
 echo; echo "══ Stage 5 · DERIVE · BM25 + Chroma vector (Bậc 2, bắt buộc) ══"
 if [ "${PROJECT_KNOWLEDGE_SKIP_VECTOR:-0}" = "1" ]; then
