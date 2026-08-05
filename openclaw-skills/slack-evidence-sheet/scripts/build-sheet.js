@@ -162,11 +162,25 @@ function linkRuns(files) {
   const cols = config.columns || [];
 
   if (DRY) {
-    console.log(`DRY RUN — ${people.length} người, không ghi gì lên Drive.\n`);
-    console.log(cols.map((c) => c.header).join(' | '));
-    people.forEach((p, i) =>
-      console.log([i + 1, p.name, p.email, p.sentAt, `${p.files.length} ảnh`].join(' | '))
-    );
+    const totalFiles = people.reduce((sum, p) => sum + p.files.length, 0);
+    const missingEmails = people.filter((p) => !p.email).map((p) => p.name);
+    const sheetTitle = fill(config.sheetTitle) || `Evidence log ${today}`;
+    const viewers = (config.viewers || []).length > 0 ? config.viewers.join(', ') : 'chỉ mình bạn';
+    const sharingMode = config.imageSharing === 'anyone'
+      ? 'anyone (ai có link cũng xem được)'
+      : 'restricted (chỉ viewers xem được)';
+
+    console.log(`Sắp tạo sheet "${sheetTitle}" từ thread #${manifest.channel}:`);
+    console.log('─────────────────────────────────────────');
+    console.log(`• Số người có evidence : ${people.length}`);
+    console.log(`• Tổng số ảnh          : ${totalFiles}`);
+    if (missingEmails.length > 0) {
+      console.log(`• Thiếu email          : ${missingEmails.join(', ')}`);
+    }
+    console.log(`• Chế độ chia sẻ ảnh   : ${sharingMode}`);
+    console.log(`• Người được share     : ${viewers}`);
+    console.log('─────────────────────────────────────────');
+    console.log('\nChế độ chia sẻ: Nếu "anyone", bất kỳ ai có link đều xem được ảnh, kể cả người ngoài công ty.\n');
     return;
   }
 
@@ -286,7 +300,6 @@ function linkRuns(files) {
     rows.push(row);
   });
 
-  const lastCol = flatCols.length;
   await api(
     `https://sheets.googleapis.com/v4/spreadsheets/${sheet.id}/values/A1?valueInputOption=USER_ENTERED`,
     'PUT',
@@ -369,10 +382,10 @@ function linkRuns(files) {
     }
   }
 
-  console.log('\n=== KẾT QUẢ ===');
+  const sheetTitle = fill(config.sheetTitle) || `Evidence log ${today}`;
+  console.log(`\n✓ Đã tạo sheet "${sheetTitle}" với ${people.length} dòng.`);
   console.log(`Sheet : https://docs.google.com/spreadsheets/d/${sheet.id}/edit`);
   console.log(`Folder: ${folder.webViewLink}`);
-  console.log(`Số dòng: ${people.length}  (cột cuối: ${lastCol})`);
 })().catch((e) => {
   console.error('LỖI:\n' + e.message);
   process.exit(1);
