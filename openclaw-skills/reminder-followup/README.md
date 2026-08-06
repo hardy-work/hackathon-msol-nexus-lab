@@ -107,8 +107,27 @@ Kiểm tra nhanh xem bot đang thấy những ai:
 bash scripts/resource-plan-members.sh
 ```
 
-Trả về `people` (phải report hôm nay), `off` (nghỉ), `no_id` (thiếu Slack ID).
+Trả về `people` (phải report hôm nay), `off` (nghỉ), `no_id` (thiếu Slack ID),
+`bad_id` (có id nhưng id không có thật — xem dưới).
 Giả lập ngày khác để soi: `LOGTIME_TODAY=2026-08-01 bash scripts/resource-plan-members.sh`.
+
+### Id sai thì bị loại, không tag
+
+Mỗi id còn được đối chiếu với workspace qua `users.info` trước khi tag. **Đúng
+cú pháp không có nghĩa là có thật**: Slack render `<@U…>` lạ thành một pill
+trống — tin vẫn đăng, vẫn xanh, mà không ai nhận notification và không lỗi nào
+nổ ra. Ngày 06-08-2026 cả 6 id trong sheet hoá ra là của workspace khác, tin
+9:00 tag vào hư không, mất nguyên buổi sáng mới phát hiện.
+
+Id không tồn tại (hoặc chủ nhân đã nghỉ việc) bị **loại thẳng** khỏi chuỗi
+mention, những người còn lại vẫn được nhắc bình thường; tên người bị loại chỉ ra
+`stderr` và trường `bad_id`, **không** chen vào tin Slack. Sai hết → exit `5`,
+bot đăng bản cảnh báo thay vì đăng một tin toàn pill trống.
+
+Token lấy từ `SLACK_BOT_TOKEN`, không có thì đọc `channels.slack.botToken` trong
+`openclaw.json` — không cần khai thêm env. Không lấy được token, hoặc Slack lỗi
+mạng/thiếu scope, thì bước đối chiếu **bị bỏ qua** và danh sách giữ nguyên: thà
+tag một id đáng ngờ còn hơn im lặng bỏ sót người phải report vì bot đang hỏng.
 
 Script tự dò cột theo tên header nên không sợ sheet chèn thêm dòng/cột. Exit
 `6` = hôm nay cả đội nghỉ (bot im hẳn, đúng ý). Exit `2/3/4/5` = không đọc được

@@ -5,10 +5,19 @@
 # "Thời gian làm việc mỗi ngày" (mỗi ngày 1 cột). Ô công của hôm nay trống / 0 /
 # "P" / "nghỉ" => người đó NGHỈ hôm nay, KHÔNG nhắc.
 #
+# Mỗi Slack ID còn được ĐỐI CHIẾU với workspace qua users.info trước khi in ra:
+# id không tồn tại thì bị loại thẳng, không tag. Lý do: Slack render <@Uxxx> lạ
+# thành một pill TRỐNG — tin vẫn đăng, vẫn xanh, mà không ai nhận notification và
+# không lỗi nào nổ ra. Đã dính thật ngày 06-08-2026: cả 6 id trong sheet là của
+# workspace khác, tin 9:00 tag vào hư không.
+#
 # Vào  (env): LOGTIME_SHEET_LINK (hoặc GOOGLE_SHEETS_LINK), GOOGLE_SHEETS_API_KEY,
 #             LOGTIME_SHEET_TAB (mặc định "Resource plan"),
-#             REMINDER_TIMEZONE (mặc định Asia/Ho_Chi_Minh — dùng để biết "hôm nay")
-# Tham số   : không có   -> JSON {date, found_day_column, people[], off[], no_id[]}
+#             REMINDER_TIMEZONE (mặc định Asia/Ho_Chi_Minh — dùng để biết "hôm nay"),
+#             SLACK_BOT_TOKEN (tuỳ chọn — không có thì tự đọc channels.slack.botToken
+#             trong openclaw.json; không lấy được nữa thì BỎ QUA bước đối chiếu,
+#             giữ nguyên hành vi cũ chứ không loại oan ai)
+# Tham số   : không có   -> JSON {date, found_day_column, people[], off[], no_id[], bad_id[]}
 #             --mentions -> một dòng "<@U...> <@U...>" của riêng people[], dán thẳng vào Slack
 #
 # Exit code:
@@ -16,7 +25,8 @@
 #   2  thiếu env / tham số sai
 #   3  gọi Sheets API lỗi
 #   4  không thấy header "Slack ID"
-#   5  có header nhưng không có dòng người nào (sheet rỗng/sai tab)
+#   5  có header nhưng không có dòng người nào (sheet rỗng/sai tab), hoặc mọi
+#      Slack ID đều không tồn tại trong workspace
 #   6  có danh sách nhưng HÔM NAY cả đội nghỉ -> job phải SKIP im lặng, KHÔNG báo lỗi
 set -uo pipefail
 
@@ -59,7 +69,7 @@ RESP=$(curl -sS --max-time 30 \
 }
 
 printf '%s' "$RESP" | TAB="$TAB" MODE="$MODE" python3 -c '
-import json, os, re, sys
+import json, os, re, sys, urllib.error, urllib.parse, urllib.request
 from datetime import datetime
 
 try:
@@ -221,6 +231,71 @@ for row in rows[head_i + 1 :]:
     else:
         people.append(person)
 
+# --- Đối chiếu từng id với workspace. Đúng cú pháp <@U...> KHÔNG có nghĩa là
+# --- người đó có thật: Slack im lặng render id lạ thành pill trống.
+def slack_token():
+    t = (os.environ.get("SLACK_BOT_TOKEN") or "").strip()
+    if t:
+        return t
+    state = os.environ.get("OPENCLAW_STATE_DIR") or os.path.expanduser("~/.openclaw")
+    try:
+        with open(os.path.join(state, "openclaw.json"), encoding="utf-8") as fh:
+            cfg = json.load(fh)
+        return str(((cfg.get("channels") or {}).get("slack") or {}).get("botToken") or "").strip()
+    except Exception:
+        return ""
+
+
+def user_exists(token, uid):
+    """True/False, hoặc None = CHƯA KẾT LUẬN ĐƯỢC (mạng lỗi, thiếu scope, rate limit).
+    None thì giữ lại người đó — thà tag một id đáng ngờ còn hơn im lặng bỏ sót
+    người phải report chỉ vì bot đang hỏng mạng."""
+    req = urllib.request.Request(
+        "https://slack.com/api/users.info?" + urllib.parse.urlencode({"user": uid}),
+        headers={"Authorization": "Bearer " + token},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            d = json.loads(r.read().decode("utf-8"))
+    except Exception:
+        return None
+    if d.get("ok"):
+        # Đã nghỉ việc (deleted) thì cũng không tag nữa.
+        return not (d.get("user") or {}).get("deleted")
+    # Chỉ đúng lỗi này mới dám kết luận là id sai. invalid_auth / missing_scope /
+    # ratelimited là bot hỏng, không phải sheet sai -> None.
+    return False if d.get("error") == "user_not_found" else None
+
+
+bad_id, id_checked = [], False
+token = slack_token()
+if token and people:
+    id_checked = True
+    kept = []
+    for p in people:
+        if user_exists(token, p["id"]) is False:
+            bad_id.append(p)
+        else:
+            kept.append(p)
+    people = kept
+
+if bad_id:
+    # Ra stderr, KHÔNG ra stdout: stdout của --mentions được dán thẳng vào tin
+    # Slack, thêm dòng vào đó là đăng rác cho cả kênh đọc.
+    print(
+        "bỏ qua %d Slack ID không tồn tại trong workspace: %s"
+        % (len(bad_id), ", ".join("%s (%s)" % (p["name"], p["id"]) for p in bad_id)),
+        file=sys.stderr,
+    )
+
+if bad_id and not people:
+    print(
+        "tab %r: KHÔNG id nào tồn tại trong workspace này — cột Slack ID nhiều khả "
+        "năng là của workspace khác, nhờ PM sửa lại" % os.environ.get("TAB"),
+        file=sys.stderr,
+    )
+    sys.exit(5)
+
 if not people and not off:
     print(
         "tab %r có cột Slack ID nhưng không có dòng nào chứa user id hợp lệ"
@@ -253,6 +328,8 @@ else:
             "people": people,
             "off": off,
             "no_id": no_id,
+            "bad_id": bad_id,
+            "id_checked": id_checked,
             "notices": notices,
         },
         sys.stdout,

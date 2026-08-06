@@ -152,12 +152,17 @@ bash {baseDir}/scripts/resource-plan-members.sh --mentions
   "found_day_column": true,
   "people": [{ "id": "U09QRTUHX24", "name": "Bùi Hồng Sơn", "slack_name": "MH_SonBH", "role": "BE" }],
   "off": [],
-  "no_id": []
+  "no_id": [],
+  "bad_id": []
 }
 ```
 
 - `people` — **phải report hôm nay**. Chỉ tag đúng nhóm này.
 - `off` — nghỉ hôm nay. **Tuyệt đối không tag, không nhắc, không nhắn gì.**
+- `bad_id` — có `Slack ID` nhưng id đó **không tồn tại trong workspace** (hoặc đã
+  nghỉ việc). Script đã tự loại khỏi chuỗi mention. **Không** thêm dòng nào vào
+  tin Slack vì chuyện này, **không** đoán id khác, **không** tag bằng tên —
+  người đó coi như không có trong danh sách hôm nay.
 - `no_id` — có tên trong sheet nhưng thiếu ô `Slack ID` nên không tag được.
   Khác rỗng → vẫn nhắc bình thường những người còn lại, và thêm vào **cuối** tin
   đúng 1 dòng: `(Chưa có Id Slack nên mình không tag được: <tên 1>, <tên 2>)`.
@@ -175,6 +180,15 @@ sheet chèn thêm dòng tiêu đề hay dịch bảng sang phải vẫn chạy �
 có user id dạng `U…`/`W…` bị bỏ qua (dòng SUM, dòng trống), id trùng chỉ lấy 1
 lần. "Hôm nay" tính theo `REMINDER_TIMEZONE`, không theo giờ máy chạy Gateway.
 
+Script còn **đối chiếu từng id với workspace** (`users.info`) trước khi in. Đúng
+cú pháp `<@U…>` không có nghĩa là người đó có thật: Slack render id lạ thành một
+**pill trống**, tin vẫn đăng, vẫn xanh, mà không ai nhận notification và không
+lỗi nào nổ ra. Đã dính thật ngày 06-08-2026 — cả 6 id trong sheet là của
+workspace khác, tin 9:00 tag vào hư không. Id sai bị **loại thẳng**; loại hết thì
+script trả exit 5 chứ không đăng tin rỗng. Không lấy được token Slack thì script
+bỏ qua bước này và giữ nguyên danh sách — thà tag một id đáng ngờ còn hơn im
+lặng bỏ sót người phải report.
+
 **Không tự gọi thẳng Sheets API rồi tự đoán cột.** Bảng trong `Resource plan`
 nằm lẫn với bảng kế hoạch nguồn lực khác ở cùng vùng dòng — đọc bằng mắt rất dễ
 bắt nhầm cột tên và tag sai người.
@@ -187,7 +201,7 @@ Exit code của script — **không được nuốt lỗi**:
 | 2 | Thiếu env / tham số sai | Dừng, báo lỗi — PM khai thiếu env |
 | 3 | Gọi Sheets API lỗi (sai link, chưa share, hết quota) | Dừng, báo lỗi |
 | 4 | Tab không có cột `Slack ID` | Dừng, báo lỗi — sai tab hoặc header bị đổi |
-| 5 | Có cột nhưng không có dòng người nào | Dừng, báo lỗi |
+| 5 | Có cột nhưng không có dòng người nào, **hoặc mọi id đều không tồn tại trong workspace** | Dừng, báo lỗi |
 | 6 | Đọc được sheet nhưng **hôm nay cả đội nghỉ** (T7/CN…) | **SKIP im lặng** — không đăng gì cả, đây KHÔNG phải lỗi |
 
 Exit 2/3/4/5 → **không nhắc ai**, không fallback sang thành viên kênh, không tự
@@ -735,6 +749,7 @@ mới nói** — mục này không phải cửa sau để nhảy vào thread khi
 | `resource-plan-members.sh` exit 2/3/4/5 (thiếu env / API lỗi / sai tab / sheet rỗng) | Không nhắc ai, không fallback sang thành viên kênh, không dùng `<!channel>` — báo ra ngoài theo mục "Không đọc được sheet" |
 | `resource-plan-members.sh` exit 6 (cả đội nghỉ hôm nay) | Im hẳn: không đăng tin, không cảnh báo, `SKIP \| ca doi nghi hom nay` |
 | Sheet có người thiếu ô `Slack ID` (`no_id`) | Vẫn nhắc những người còn lại, thêm 1 dòng cuối tin liệt kê tên không tag được. **Không** tự đoán id từ tên |
+| Sheet có id nhưng id không tồn tại trong workspace (`bad_id`) | Script đã loại sẵn. Nhắc những người còn lại như thường, **không** thêm dòng nào vào tin, **không** thay bằng tên. Sai hết → exit 5 |
 | Ô công hôm nay ghi chữ lạ (không phải số, không phải chữ nghỉ) | Coi như đi làm → vẫn nhắc. Thà nhắc thừa còn hơn bỏ sót |
 | Không đọc được lịch sử kênh/thread | Dừng job, log lỗi, không reply mù, không crash job |
 | Job B không tìm thấy thread tin nhắc hôm nay | Dừng, không tự đăng tin nhắc mới ra kênh |
