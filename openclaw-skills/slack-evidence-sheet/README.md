@@ -133,8 +133,8 @@ Trong GCP Console (project vừa tạo hoặc project có sẵn):
 13. Sửa `config.json` theo nhu cầu của đợt:
    ```json
    {
-     "sheetTitle": "Evidence log {date}",      // Tên file sheet (hỗ trợ {date})
-     "folderName": "Evidence {date}",          // Tên folder Drive
+     "sheetTitle": "Evidence log {channel} — thread {thread}",
+     "folderName": "Evidence {channel} — thread {thread}",
      "imageFolderName": "Ảnh evidence",        // Tên folder con chứa ảnh
      "imageSharing": "anyone",                 // "anyone" = ai có link xem được, "restricted" = chỉ viewers
      "viewers": [],                            // Email được share (để trống = chỉ mình bạn)
@@ -157,7 +157,7 @@ Trong GCP Console (project vừa tạo hoặc project có sẵn):
 
 ### 2. Slack — bot token
 
-Bot cần các scope: `channels:history` (kênh public) hoặc `groups:history` (private), `files:read`, `users:read`, `users:read.email`. Cấp trong Slack App config → OAuth & Permissions → reinstall app → copy `xoxb-...` vào `.env`.
+Bot cần các scope: `channels:history` (kênh public) hoặc `groups:history` (private), `files:read`, `users:read`, `users:read.email`. Thêm `channels:read` / `groups:read` để lấy được **tên** kênh (`cydas-people-dev`) thay vì mã (`C0606MMATEV`) — dùng cho `{channel}` trong tên folder; thiếu thì script tự lùi về mã kênh. Cấp trong Slack App config → OAuth & Permissions → reinstall app → copy `xoxb-...` vào `.env`.
 
 Bot cũng phải **là thành viên của kênh** chứa thread, nếu không sẽ lỗi `not_in_channel`.
 
@@ -167,12 +167,42 @@ Bot cũng phải **là thành viên của kênh** chứa thread, nếu không s�
 cp config.example.json config.json
 ```
 
-Sửa `columns`, `sheetTitle`, `viewers` theo đợt. Hai field cần cân nhắc:
+Sửa `columns`, `sheetTitle`, `viewers` theo đợt.
+
+`sheetTitle` và `folderName` thay được 4 chỗ: `{channel}` (tên kênh), `{thread}` (giờ thread bắt đầu), `{date}` và `{time}` (ngày giờ **chạy script**).
+
+**Giữ `{thread}` trong cả hai.** `{channel}` không đủ, vì các đợt evidence thường nằm chung một kênh nên hai thread vẫn ra tên trùng nhau — chỉ mốc thời gian của thread mới luôn khác. Bỏ nó ra thì Drive đầy folder cùng tên, phải mở từng cái mới biết của đợt nào.
+
+Đặt `{channel}` trước `{thread}` thì Drive nhóm theo kênh rồi mới theo thời gian:
+
+```
+Evidence cydas-people-dev — thread 2026-07-29 15h21
+Evidence cydas-people-dev — thread 2026-08-04 11h30
+Evidence qa-team          — thread 2026-08-06 09h15
+```
+
+Chữ **"thread"** trước mốc thời gian là cố ý: để trần thì người nhìn dễ tưởng đó là lúc sheet được tạo, trong khi nó là lúc thread bắt đầu. Đổi tên thì giữ lại một nhãn tương tự.
+
+Cũng vì thế mà không cần nhét ngày tạo file vào tên: Drive vốn đã có sẵn cột "Ngày sửa đổi". Thứ Drive **không** biết là thread bắt đầu lúc nào — đó mới là phần đáng đặt vào tên.
+
+Chạy lại cùng một thread sẽ ra folder trùng tên. Nếu cần tách các lượt thì thêm `{time}` (giờ chạy script) vào cuối.
+
+Hai field cần cân nhắc:
 
 - `imageSharing` — `anyone` nghĩa là **bất kỳ ai có link đều xem được ảnh**, kể cả người ngoài công ty. Đây là điều kiện bắt buộc nếu muốn ảnh hiện trực tiếp trong ô. Cần thì đổi sang `restricted` và liệt kê email vào `viewers`.
 - `imageDisplay` — `link` cho ô chứa hyperlink (bấm ra Drive, **zoom được**, hợp với screenshot chữ nhỏ); `image` để nhúng ảnh vào ô (xem nhanh nhưng không zoom).
 
 Đợt sau đổi nghiệp vụ thì sửa `config.json`, không sửa `SKILL.md` — `SKILL.md` được commit và đồng bộ cho cả team, `config.json` thì gitignored, riêng từng máy.
+
+## Mỗi thread một thư mục
+
+`slack-fetch.js` không đổ thẳng vào `downloads/` mà tạo thư mục con `downloads/<kênh>-<ts>/`.
+
+Lý do: PM có thể tag bot ở hai thread khác nhau cùng lúc, và đó là **hai lượt gọi bot độc lập** — không lượt nào biết lượt nào đang chạy. Dùng chung một thư mục thì lượt sau đè mất `manifest.json` của lượt trước, rồi cả hai dựng sheet từ cùng một dữ liệu. Không có lỗi nào báo ra, vì sheet vẫn đủ người đủ ảnh, chỉ là của nhầm thread.
+
+Khoảng chờ PM bấm xác nhận càng làm chuyện này dễ xảy ra: chỉ cần trong lúc đó có người tag bot ở thread khác.
+
+Tên thư mục lấy từ chính danh tính thread nên hai thread không thể trùng, còn chạy lại cùng một thread thì ghi đè lên chính nó — đúng như mong muốn.
 
 ## Tên hiển thị
 
@@ -206,8 +236,9 @@ export SLACK_BOT_TOKEN=xoxb-...
 export GOOGLE_OAUTH_TOKEN_FILE=./oauth-token.json
 
 node scripts/slack-fetch.js "<link thread>" ./downloads
-node scripts/build-sheet.js ./downloads/manifest.json ./config.json --dry-run   # xem trước
-node scripts/build-sheet.js ./downloads/manifest.json ./config.json             # tạo thật
+# -> in ra downloads/<kênh>-<ts>/manifest.json, dùng đúng đường dẫn đó ở 2 lệnh sau
+node scripts/build-sheet.js downloads/<kênh>-<ts>/manifest.json ./config.json --dry-run   # xem trước
+node scripts/build-sheet.js downloads/<kênh>-<ts>/manifest.json ./config.json             # tạo thật
 ```
 
 ## Known limitations

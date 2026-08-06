@@ -85,7 +85,23 @@ const safe = (s) => String(s).replace(/[^\p{L}\p{N}._-]+/gu, '_').slice(0, 60);
 
 (async () => {
   const { channel, ts } = parseTarget(target);
-  fs.mkdirSync(outDir, { recursive: true });
+
+  // Thư mục riêng cho từng thread. PM có thể tag bot ở 2 thread khác nhau cùng
+  // lúc — đó là 2 lượt gọi độc lập, không lượt nào biết lượt nào, nên nếu dùng
+  // chung 1 thư mục thì manifest bị đè và sheet ra dữ liệu của thread kia.
+  // Tên lấy từ chính danh tính thread nên không thể trùng nhau.
+  const dir = path.join(outDir, `${channel}-${ts}`);
+  fs.mkdirSync(dir, { recursive: true });
+
+  // Tên kênh dễ đọc hơn mã kênh, dùng cho preview và tên folder trên Drive.
+  // Cần scope channels:read/groups:read — không có thì lùi về mã kênh.
+  let channelName = channel;
+  try {
+    const info = await slack('conversations.info', { channel });
+    if (info.channel && info.channel.name) channelName = info.channel.name;
+  } catch (e) {
+    console.error(`  ! conversations.info: ${e.message} — dùng mã kênh thay tên`);
+  }
 
   // Gom toàn bộ reply (có phân trang khi thread dài)
   let messages = [];
@@ -122,6 +138,9 @@ const safe = (s) => String(s).replace(/[^\p{L}\p{N}._-]+/gu, '_').slice(0, 60);
 
   // Một người có thể gửi nhiều message trong thread -> gộp về 1 dòng
   const byUser = new Map();
+  // File tải hỏng phải đi vào manifest, không chỉ in ra màn hình: nếu chỉ in thì
+  // build-sheet.js không biết mà cảnh báo, PM thấy "17 ảnh" và tưởng là đủ.
+  const failedFiles = [];
   for (const m of messages) {
     if (!m.user || !m.files || !m.files.length) continue;
     const u = await userInfo(m.user);
@@ -133,13 +152,14 @@ const safe = (s) => String(s).replace(/[^\p{L}\p{N}._-]+/gu, '_').slice(0, 60);
       const src = f.url_private_download || f.url_private;
       if (!src) continue;
       const ext = path.extname(f.name || '') || '.png';
-      const dest = path.join(outDir, `${safe(u.name)}__${f.id}${ext}`);
+      const dest = path.join(dir, `${safe(u.name)}__${f.id}${ext}`);
       try {
         await download(src, dest);
         row.files.push({ id: f.id, name: f.name, path: dest, mimetype: f.mimetype });
         console.log(`  ✓ ${u.name} — ${f.name}`);
       } catch (e) {
         console.error(`  ! ${u.name} — ${f.name}: ${e.message}`);
+        failedFiles.push({ person: u.name, name: f.name, id: f.id, reason: e.message });
       }
     }
   }
@@ -147,15 +167,26 @@ const safe = (s) => String(s).replace(/[^\p{L}\p{N}._-]+/gu, '_').slice(0, 60);
   const people = [...byUser.values()].sort((a, b) => a.firstTs - b.firstTs);
   const manifest = {
     channel,
+    channelName,
     threadTs: ts,
     fetchedAt: new Date().toISOString(),
+    failedFiles,
     people: people.map(({ firstTs, ...p }) => p),
   };
-  const manifestPath = path.join(outDir, 'manifest.json');
+  const manifestPath = path.join(dir, 'manifest.json');
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 
   const totalFiles = people.reduce((n, p) => n + p.files.length, 0);
-  console.log(`\n${people.length} người, ${totalFiles} file -> ${manifestPath}`);
+  // Dòng tổng kết phải nói cả phần hỏng: "5 người, 17 file" đọc như mọi thứ trọn vẹn.
+  const failNote = failedFiles.length ? `, ! ${failedFiles.length} file TẢI LỖI` : '';
+  console.log(`\n${people.length} người, ${totalFiles} file${failNote} -> ${manifestPath}`);
+
+  // Ai gửi ảnh mà hỏng sạch thì lọt vào manifest với files rỗng — nêu tên ra,
+  // nếu không build-sheet dựng cho họ một dòng trống và PM đọc thành "chưa nộp".
+  const allFailed = people.filter((p) => p.files.length === 0).map((p) => p.name);
+  if (allFailed.length) {
+    console.log(`! Hỏng TOÀN BỘ ảnh (đã gửi nhưng không lấy được): ${allFailed.join(', ')}`);
+  }
 })().catch((e) => {
   console.error('LỖI: ' + e.message);
   process.exit(1);

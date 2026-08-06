@@ -22,7 +22,31 @@ function oauthConf() {
 }
 
 const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
-const fill = (s) => String(s || '').replace('{date}', today);
+
+// Manifest cũ chưa có channelName -> lùi về mã kênh, vẫn chạy được.
+const channelLabel = manifest.channelName || manifest.channel || '';
+
+const vn = (d, opt) => d.toLocaleString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh', ...opt });
+
+// Giờ thread bắt đầu. {channel} KHÔNG đủ để phân biệt: nhiều đợt evidence
+// thường nằm chung một kênh, nên hai thread khác nhau vẫn ra folder trùng tên.
+// Mốc thời gian của thread thì luôn khác nhau. Dùng 'h' thay ':' cho an toàn
+// nếu ai đó đồng bộ Drive xuống Windows.
+const threadLabel = manifest.threadTs
+  ? vn(new Date(Number(manifest.threadTs) * 1000)).slice(0, 16).replace(':', 'h')
+  : '';
+
+// Giờ chạy script — dùng khi muốn phân biệt các lượt chạy lại cùng một thread.
+const runTime = vn(new Date()).slice(11, 16).replace(':', 'h');
+
+// Thay chỗ trong sheetTitle / folderName. Dùng regex có cờ g để đặt được
+// nhiều lần trong cùng một chuỗi.
+const fill = (s) =>
+  String(s || '')
+    .replace(/\{date\}/g, today)
+    .replace(/\{channel\}/g, channelLabel)
+    .replace(/\{thread\}/g, threadLabel)
+    .replace(/\{time\}/g, runTime);
 
 function request(url, opt = {}) {
   return new Promise((resolve, reject) => {
@@ -140,8 +164,14 @@ const fileLabel = (f, i) => `ảnh ${i + 1}`;
 // Chế độ "link": gom mọi ảnh vào ĐÚNG 1 ô, mỗi ảnh 1 dòng. Không dùng
 // =HYPERLINK được (chỉ 1 link/ô) -> ghi text nhiều dòng rồi gắn link vào
 // từng dòng bằng textFormatRuns ở bước updateCells phía dưới.
+// Người có mặt trong manifest mà không còn ảnh nào = đã gửi nhưng tải hỏng sạch
+// (ai không gửi gì đã bị slack-fetch loại từ đầu). Ô trống sẽ bị đọc thành
+// "chưa nộp" nên phải ghi rõ lý do ra.
+const NO_FILE_NOTE = '(tải lỗi — chưa lấy được ảnh)';
+
 function imageCells(files, slots) {
   const mode = config.imageDisplay || 'link';
+  if (files.length === 0) return Array.from({ length: slots }, (_, i) => (i === 0 ? NO_FILE_NOTE : ''));
   if (mode !== 'image') {
     return [files.map(fileLabel).join('\n')];
   }
@@ -165,9 +195,31 @@ function linkRuns(files) {
   return runs;
 }
 
+// Ảnh hỏng/thiếu chỉ lộ ra lúc readFileSync trong uploadFile — tức là sau khi đã
+// tạo folder trên Drive. Kiểm trước để lỗi xảy ra khi Drive còn sạch, khỏi phải
+// rollback. Gom hết rồi báo một lần: thiếu 5 ảnh mà báo lẻ thì phải chạy lại 5 lượt.
+function findBadFiles(people) {
+  const bad = [];
+  for (const p of people) {
+    for (const f of p.files) {
+      if (!fs.existsSync(f.path)) bad.push(`${p.name} — ${f.path} (không tồn tại)`);
+      else if (fs.statSync(f.path).size === 0) bad.push(`${p.name} — ${f.path} (file rỗng)`);
+    }
+  }
+  return bad;
+}
+
 (async () => {
   const people = manifest.people || [];
   const cols = config.columns || [];
+  const badFiles = findBadFiles(people);
+  // Manifest cũ chưa có trường này -> mặc định rỗng để vẫn chạy được.
+  const failedFiles = manifest.failedFiles || [];
+  const allFailed = people.filter((p) => p.files.length === 0).map((p) => p.name);
+
+  // Máy chủ Sheets tải ảnh cho =IMAGE() một cách ẩn danh, nên ảnh riêng tư luôn
+  // ra ô trống. Cấu hình này cho ra sheet trắng trơn chứ không báo lỗi gì.
+  const badConfig = (config.imageDisplay || 'link') === 'image' && config.imageSharing !== 'anyone';
 
   if (DRY) {
     const totalFiles = people.reduce((sum, p) => sum + p.files.length, 0);
@@ -178,17 +230,77 @@ function linkRuns(files) {
       ? 'anyone (ai có link cũng xem được)'
       : 'restricted (chỉ viewers xem được)';
 
-    console.log(`Sắp tạo sheet "${sheetTitle}" từ thread #${manifest.channel}:`);
+    console.log(`Sắp tạo sheet "${sheetTitle}" từ thread #${channelLabel}:`);
     console.log('─────────────────────────────────────────');
     console.log(`• Số người có evidence : ${people.length}`);
     console.log(`• Tổng số ảnh          : ${totalFiles}`);
     if (missingEmails.length > 0) {
       console.log(`• Thiếu email          : ${missingEmails.join(', ')}`);
     }
+    if (badFiles.length > 0) {
+      console.log(`• Ảnh hỏng trên đĩa    : ${badFiles.length}`);
+      badFiles.forEach((b) => console.log(`    ${b}`));
+    }
+    if (failedFiles.length > 0) {
+      console.log(`• Ảnh tải lỗi từ Slack : ${failedFiles.length} (KHÔNG có trong sheet)`);
+      failedFiles.forEach((f) => console.log(`    ${f.person} — ${f.name}: ${f.reason}`));
+    }
+    if (allFailed.length > 0) {
+      console.log(`• Hỏng toàn bộ ảnh     : ${allFailed.join(', ')}`);
+      console.log('    (đã gửi trong thread nhưng không lấy được ảnh nào — KHÔNG phải chưa nộp)');
+    }
     console.log(`• Chế độ chia sẻ ảnh   : ${sharingMode}`);
     console.log(`• Người được share     : ${viewers}`);
     console.log('─────────────────────────────────────────');
+    if (people.length === 0) {
+      console.log('\n! Manifest không có ai — chạy thật sẽ bị chặn. Kiểm tra lại thread.');
+    }
+    if (badConfig) {
+      console.log(
+        '\n! config.json đang là imageDisplay "image" + imageSharing "restricted".' +
+          '\n  Sheets tải ảnh ẩn danh nên mọi ô ảnh sẽ TRẮNG. Chạy thật sẽ bị chặn.'
+      );
+    }
     return;
+  }
+
+  // Chạy thật: chặn ngay, chưa gọi Google lần nào nên Drive vẫn sạch.
+  if (badConfig) {
+    throw new Error(
+      'config.json mâu thuẫn: imageDisplay "image" cần imageSharing "anyone".\n' +
+        'Máy chủ Sheets tải ảnh ẩn danh, ảnh riêng tư sẽ ra ô TRẮNG — sheet dựng xong cũng vô dụng.\n' +
+        'Chọn 1 trong 2:\n' +
+        '  - đổi imageSharing thành "anyone" (ai có link cũng xem được ảnh), hoặc\n' +
+        '  - đổi imageDisplay thành "link" (giữ riêng tư, ô chứa link bấm ra Drive)'
+    );
+  }
+  if (people.length === 0) {
+    throw new Error(
+      `Manifest không có ai (${manifestPath}) — không có gì để dựng sheet.\n` +
+        'Chạy lại slack-fetch.js, hoặc kiểm tra xem bot đã ở trong kênh chưa.'
+    );
+  }
+  if (badFiles.length > 0) {
+    // Đường dẫn trong manifest là tương đối, nên nguyên nhân hay gặp nhất không
+    // phải "mất file" mà là chạy sai thư mục -> in cwd ra cho thấy ngay.
+    throw new Error(
+      `${badFiles.length} ảnh không dùng được, chưa tạo gì trên Drive:\n` +
+        badFiles.map((b) => '  ' + b).join('\n') +
+        `\n\nThư mục đang chạy: ${process.cwd()}` +
+        '\nĐường dẫn trong manifest là tương đối — nếu sai chỗ thì cd vào thư mục skill rồi chạy lại.' +
+        '\nCòn nếu đúng chỗ thì chạy lại slack-fetch.js để tải lại ảnh.'
+    );
+  }
+
+  // Không chặn: chạy lại slack-fetch chưa chắc cứu được (file bị xoá khỏi Slack,
+  // thiếu quyền...). Nhưng phải nói ra, vì con số "N ảnh" ở cuối chỉ đếm ảnh lấy được.
+  if (failedFiles.length > 0) {
+    console.log(`! ${failedFiles.length} ảnh tải lỗi từ Slack, KHÔNG có trong sheet:`);
+    failedFiles.forEach((f) => console.log(`    ${f.person} — ${f.name}: ${f.reason}`));
+  }
+  if (allFailed.length > 0) {
+    console.log(`! Hỏng toàn bộ ảnh (đã gửi, không lấy được): ${allFailed.join(', ')}`);
+    console.log(`    Ô Evidence của họ ghi "${NO_FILE_NOTE}" — KHÔNG phải chưa nộp.`);
   }
 
   TOKEN = await accessToken();
@@ -407,7 +519,15 @@ function linkRuns(files) {
   if (!rootFolder) process.exit(1);
 
   if (sheetUsable) {
-    console.error('\nSheet đã có đủ dữ liệu, chỉ thiếu phần định dạng — KHÔNG xoá.');
+    console.error('\nDữ liệu đã ghi xong nên KHÔNG xoá sheet. Nhưng bước sau đó lỗi:');
+    if ((config.imageDisplay || 'link') === 'link') {
+      // Ở chế độ link, chính batchUpdate vừa lỗi là bước gắn link vào ô Evidence.
+      // Mất nó là mất đường tới ảnh, không phải mất thẩm mỹ.
+      console.error('  Cột Evidence chỉ còn chữ "ảnh 1 / ảnh 2" KHÔNG bấm được — mất link tới ảnh.');
+      console.error('  Ảnh vẫn nằm nguyên trong folder bên dưới. Nên chạy lại script để có sheet đủ link.');
+    } else {
+      console.error('  Thiếu độ rộng cột / chiều cao dòng / bôi đậm tiêu đề. Ảnh và dữ liệu vẫn đủ.');
+    }
     console.error(`Sheet: https://docs.google.com/spreadsheets/d/${sheetId}/edit`);
     console.error(`Folder: ${rootFolder.webViewLink}`);
     process.exit(1);

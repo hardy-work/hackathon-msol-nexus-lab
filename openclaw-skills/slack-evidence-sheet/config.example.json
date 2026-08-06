@@ -1,6 +1,6 @@
 {
-  "sheetTitle": "Evidence log {date}",
-  "folderName": "Evidence {date}",
+  "sheetTitle": "Evidence log {channel} — thread {thread}",
+  "folderName": "Evidence {channel} — thread {thread}",
   "imageFolderName": "Ảnh evidence",
   "imageSharing": "anyone",
   "viewers": [],
