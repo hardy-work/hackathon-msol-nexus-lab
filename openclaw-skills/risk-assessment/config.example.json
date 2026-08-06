@@ -1,0 +1,34 @@
+{
+  "source": null,
+  "fileId": null,
+  "projectTitle": null,
+  "currentSprint": null,
+  "sprintTabs": [],
+  "statusDoneValues": ["Done"],
+  "summaryProjectTab": { "tabName": "Summary project" },
+  "overtimeTab": { "tabName": "Overtime" },
+  "resourcePlan": {
+    "tabName": "Resource plan",
+    "year": null,
+    "personCodeMap": {}
+  },
+  "output": {
+    "riskTab": { "gid": null, "name": null },
+    "issueTab": { "gid": null, "name": null }
+  },
+  "thresholds": {
+    "overdueGraceDays": 0,
+    "stalledDays": 3,
+    "estimateVarianceRatio": 1.5,
+    "workHoursPerDay": 8,
+    "highScoreThreshold": 6,
+    "unassignedNearDeadlineDays": 2,
+    "velocityDropMarginPct": 15,
+    "notStartedGraceDays": 0,
+    "cutoffHour": 18
+  },
+  "notify": {
+    "channel": null,
+    "pmContact": null
+  }
+}

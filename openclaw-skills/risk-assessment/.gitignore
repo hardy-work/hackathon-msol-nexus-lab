@@ -1,0 +1,15 @@
+# Config/credentials theo từng project — không commit
+config.json
+.env
+service-account.json
+
+# Lịch sử snapshot — theo từng máy chạy cron
+state/*.json
+!state/.gitkeep
+
+# Draft chờ PM duyệt — không commit
+drafts/*.md
+!drafts/.gitkeep
+
+# Audit log
+*.audit.log

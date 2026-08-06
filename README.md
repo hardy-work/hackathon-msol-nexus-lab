@@ -30,6 +30,20 @@ servers / backend services it depends on.
   `JIRA_BASE_URL`, `JIRA_PROJECT_KEY`, `JIRA_BOARD_ID` (see
   `.env.example` in the same folder).
 
+- [`openclaw-skills/risk-assessment/`](openclaw-skills/risk-assessment/) —
+  reads project progress data (Google Sheet Sprint tabs or Jira, per-project
+  config) daily or on demand, runs a deterministic rule engine to detect
+  risks/issues, and drafts a narrative report for the PM. Writes only happen
+  after the PM confirms in natural language — never straight from the daily
+  scan. Contains:
+  - `SKILL.md` — instructions the agent follows for the Scan/Apply flow.
+  - `scripts/rule-engine.js` (+ `rule-engine.test.js`) — deterministic risk
+    scoring/trend logic, run via `node --test scripts/`.
+
+  Needs a `config.json` (see `config.example.json`) and a `.env` (see
+  `.env.example`) in this folder — self-contained, independent from
+  `gg-sheet`/`jira-task` even when reading the same project.
+
 - [`openclaw-skills/jira-daily-report/`](openclaw-skills/jira-daily-report/) —
   end-of-day report roll-up for the PM: who logged work today on the active
   sprint, who didn't, who logged but forgot to update status on an
