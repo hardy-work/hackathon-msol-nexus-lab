@@ -71,6 +71,20 @@ raw artifact và wiki generated mới là provenance của corpus.
 python3 scripts/ingest_runner.py run <proposal_id>
 ```
 
+Trong Gateway deploy, NexusBot phải gọi bản runner từ Git repository chính,
+không gọi bản copy trong workspace runtime. Có thể đặt hai biến môi trường sau
+cho host runner:
+
+```bash
+export PROJECT_KNOWLEDGE_REPO=/Users/mor_minhhieu/repos/hackathon-msol-nexus-lab
+export PROJECT_KNOWLEDGE_CLAUDE_BIN=/opt/homebrew/bin/claude
+python3 /Users/mor_minhhieu/repos/hackathon-msol-nexus-lab/openclaw-skills/project-knowledge/scripts/ingest_runner.py run <proposal_id>
+```
+
+`PROJECT_KNOWLEDGE_STATE_DIR` vẫn trỏ tới state directory dùng chung của
+Gateway; repo chính chỉ là nơi lấy code và tạo isolated worktree. Runner tự
+động dừng ở `ready_to_publish`, không tự merge vào corpus chính.
+
 Runner tự tạo review artifact local nếu NexusBot chưa tạo trước, sau đó tạo
 isolated worktree, register source, chạy extractor, lint, Gate 3b, DB/graph/RAG
 derive và `run_all.sh`. Runner dừng ở `ready_to_publish` để deployment layer
