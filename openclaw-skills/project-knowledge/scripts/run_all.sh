@@ -9,11 +9,21 @@ cd "$(dirname "$0")/.."
 # CHẠY từng ứng viên, lấy cái đầu tiên import được. PYTHONUTF8 cho tiếng Việt (console
 # Windows mặc định cp1252 sẽ vỡ khi in dấu).
 PY=""
-for c in python3 python py; do
-  if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys' >/dev/null 2>&1; then
-    PY="$c"; break
+if [ -n "${PROJECT_KNOWLEDGE_PYTHON:-}" ]; then
+  c="$PROJECT_KNOWLEDGE_PYTHON"
+  if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys, openpyxl' >/dev/null 2>&1; then
+    PY="$c"
+  else
+    echo "✗ PROJECT_KNOWLEDGE_PYTHON không chạy được hoặc thiếu openpyxl: $c" >&2
+    exit 1
   fi
-done
+else
+  for c in python3 python py; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys, openpyxl' >/dev/null 2>&1; then
+      PY="$c"; break
+    fi
+  done
+fi
 [ -n "$PY" ] || { echo "✗ không tìm thấy Python chạy được (thử python3/python/py)"; exit 1; }
 export PYTHONUTF8=1
 # Offline demo authority. Production must inject these values from SSO/ACL and
