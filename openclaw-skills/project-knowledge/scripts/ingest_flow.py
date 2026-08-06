@@ -81,7 +81,14 @@ def re_safe(value: str) -> str:
 
 def skill_root(worktree: Path) -> Path:
     """Accept either a repository worktree or a direct skill-root path."""
-    nested = worktree / SKILL.relative_to(REPO)
+    try:
+        relative_skill = SKILL.relative_to(REPO)
+    except ValueError:
+        # A runtime copy can import this module while REPO points at the
+        # checked-out host repository. In that mode a fixture/worktree may
+        # already be the direct skill root.
+        return worktree
+    nested = worktree / relative_skill
     return nested if nested.is_dir() else worktree
 
 
