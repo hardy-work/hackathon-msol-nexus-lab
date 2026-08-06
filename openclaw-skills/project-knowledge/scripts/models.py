@@ -35,6 +35,15 @@ CHEAP = os.getenv("PROJECT_KNOWLEDGE_HAIKU_MODEL", "haiku")
 # chỉ tìm `.exe` -> ["claude", ...] báo FileNotFoundError. Binary THẬT nằm trong
 # node_modules cạnh shim. Trên POSIX `claude` là binary chạy thẳng được.
 def _find_claude():
+    configured = os.getenv("PROJECT_KNOWLEDGE_CLAUDE_BIN", "").strip()
+    if configured:
+        candidate = Path(configured).expanduser()
+        if candidate.exists() and candidate.is_file():
+            return str(candidate.resolve())
+        raise FileNotFoundError(
+            "PROJECT_KNOWLEDGE_CLAUDE_BIN không tồn tại hoặc không phải file: "
+            f"{candidate}"
+        )
     exe = shutil.which("claude.exe")
     if exe:
         return exe

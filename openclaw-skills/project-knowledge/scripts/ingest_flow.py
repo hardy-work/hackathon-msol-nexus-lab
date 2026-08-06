@@ -19,7 +19,35 @@ import intake
 import reingest
 
 SKILL = Path(__file__).resolve().parent.parent
-REPO = next(parent for parent in SKILL.parents if (parent / ".git").exists())
+
+
+def _repo_root() -> Path:
+    """Resolve the Git repository used for isolated ingest worktrees.
+
+    The deployed OpenClaw workspace is a runtime copy and intentionally does
+    not contain ``.git``.  The host runner must therefore point at the
+    checked-out repository explicitly.  Local development keeps the previous
+    auto-discovery behaviour.
+    """
+    configured = os.getenv("PROJECT_KNOWLEDGE_REPO", "").strip()
+    if configured:
+        repo = Path(configured).expanduser().resolve()
+        if (repo / ".git").exists():
+            return repo
+        raise RuntimeError(
+            "PROJECT_KNOWLEDGE_REPO phải trỏ tới Git repository có .git: "
+            f"{repo}"
+        )
+    for parent in (SKILL, *SKILL.parents):
+        if (parent / ".git").exists():
+            return parent
+    raise RuntimeError(
+        "Không tìm thấy Git repository. Khi chạy từ workspace deploy, "
+        "hãy đặt PROJECT_KNOWLEDGE_REPO tới repo chính."
+    )
+
+
+REPO = _repo_root()
 
 
 def git_executable() -> str:
