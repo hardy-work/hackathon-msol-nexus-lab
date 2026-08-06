@@ -93,6 +93,12 @@ isolated worktree, register source, chạy extractor, lint, Gate 3b, DB/graph/RA
 derive và `run_all.sh`. Runner dừng ở `ready_to_publish` để deployment layer
 publish atomically, gọi `runtime_engine.KnowledgeRuntime.reload()`, rồi ghi nhận:
 
+Với initial ingest, Gate 3b chỉ review các trang `wiki/*.md` vừa được tạo hoặc
+thay đổi trong isolated worktree; không review lại toàn bộ corpus. Điều này giữ
+được kiểm tra nội dung cho write-set mới và tránh đưa các trang source lớn,
+không liên quan, vào một prompt review. Re-ingest vẫn review đúng write-set do
+`reingest-plan.json` khai báo.
+
 ```bash
 python3 scripts/ingest_runner.py record-published <proposal_id> \
   --corpus-version nexus-... --runtime-reloaded
