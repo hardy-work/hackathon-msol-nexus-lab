@@ -1,6 +1,6 @@
 ---
 name: reminder-followup
-description: Nhắc report task hàng ngày qua cron, và follow-up tag người chưa report ngay trong thread tin nhắc.
+description: Nhắc report task hàng ngày qua cron, tag từng người theo danh sách trong tab "Resource plan" của Google Sheet logtime, follow-up tag người chưa report trong thread, chấm format dòng report, rồi chuyển dòng hợp lệ sang skill gg-sheet (Action 4) để log lên sheet. BẮT BUỘC mở skill này trước khi trả lời mỗi khi có người tag bot kèm dòng report task (dòng có dấu "|" và mã task đầu dòng, kiểu "NEX-1 | 8 | 03-08-2026 | ..."), khi ai đó trả lời/giải thích vì sao task chậm hơn plan, hoặc khi hỏi về mẫu report / sao bị nhắc sai format — luật chấm và câu trả lời mẫu nằm trong skill, tuyệt đối không tự chấm bằng trí nhớ.
 user-invocable: true
 metadata:
   {
@@ -18,6 +18,8 @@ metadata:
                 "FOLLOWUP_CRON_1",
                 "FOLLOWUP_CRON_2",
                 "FOLLOWUP_CUTOFF_TIME",
+                "GOOGLE_SHEETS_API_KEY",
+                "LOGTIME_SHEET_LINK",
               ],
           },
       },
@@ -35,9 +37,25 @@ metadata:
   `claude-cli` báo lỗi `cannot enforce runtime toolsAllow`.
 - **Không delegate bước Slack nào cho subagent** — chạy trực tiếp (inline)
   trong phiên đang xử lý job.
-- Skill này **chỉ nhắc report và follow-up trong thread** — không thu thập nội
-  dung report, không xác nhận, không đẩy đi đâu (không Google Sheets, không
-  Jira). Cron job chạy xong và tin nhắn được gửi là xong việc.
+- **MỌI tin nhắc của skill này đều tag đích danh từng người bằng `<@id>`.**
+  Tuyệt đối không dùng `<!here>` / `<!channel>` ở bất kỳ tin nào — trong kênh có
+  người không phải report (PM, khách, bot), ping cả kênh là làm phiền nhầm
+  người. Danh sách id lấy từ Google Sheet, xem mục dưới.
+- **Skill này không tự ghi lên Google Sheet.** Sheet ở đây là **chỉ đọc**, và
+  chỉ để biết phải tag ai. Việc ghi dòng report vào lịch trình là của skill
+  **`gg-sheet`, Action 4** — skill này chấm format xong thì chuyển sang đó, không
+  tự dựng lệnh `curl`, không tự mint token. Ranh giới: skill này nắm **hội thoại
+  Slack** (ai report, tag ai, hạn bao lâu), `gg-sheet` nắm **cấu trúc sheet** (cột
+  nào, ghi thế nào).
+- **Bị tag là PHẢI có phản hồi — kể cả khi hỏng.** Không log được vì bất kỳ lý
+  do gì (mã task không có trong sheet, mất mạng, hết quyền ghi, script lỗi, đọc
+  file lỗi, không hiểu dev nói gì) thì **nói ra ngay tại chỗ**, kèm lý do ngắn
+  bằng tiếng Việt và việc dev cần làm tiếp. Tuyệt đối không im, không `NO_REPLY`,
+  không "để lát nữa Job B nhắc", không thả mỗi emoji rồi thôi. Im lặng là lỗi
+  **nặng hơn** lỗi ghi: dev tưởng đã log xong nên đi về, tới cuối sprint mới lòi
+  ra là sheet trống. Không chắc chuyện gì đang xảy ra → nói thẳng "mình chưa log
+  được, đang lỗi <…>" rồi hỏi lại, đừng đoán rồi im.
+- Skill này **không đẩy gì sang Jira** và không tổng hợp tiến độ.
 - Bot **chỉ kiểm cấu trúc dòng report** (xem "Luật kiểm format"), **không đánh
   giá nội dung**: không phán task này làm đúng chưa, giờ khai có hợp lý không,
   ghi chú đủ chi tiết chưa. Sai cấu trúc thì nhắc sửa, không bao giờ bình luận
@@ -54,11 +72,21 @@ Bot là người mở thread nên **mọi tin nhắn trong thread đó đều đ
 Đó **không** phải lời mời trả lời. Mặc định trong thread report là **im lặng
 tuyệt đối**.
 
+> ⚠️ **Luật này chỉ áp cho THREAD report do bot mở.** Ngoài kênh chính, bot cư
+> xử như thành viên bình thường. Và **hễ bị tag `<@bot_id>` là PHẢI trả lời** —
+> ở kênh hay trong thread, dù tin đó có ra câu hỏi hay không. `alo`, `ping`,
+> `còn sống không`, hay tag trống: đáp ngắn gọn một câu. Bị tag chính là lời
+> mời, bot không có quyền tự chấm xem tin đó có đáng trả lời hay không.
+>
+> Lỗi đã xảy ra thật (05-08-2026): phiên mới trả về `NO_REPLY` cho
+> `<@bot> alo alo`, nhìn từ ngoài y như bot chết, người dùng phải đi hỏi tại sao.
+> **Đừng bao giờ để ai phải phân vân bot còn sống hay không.**
+
 **Chỉ được nhắn vào thread trong đúng 2 trường hợp:**
 
-1. Có người **tag trực tiếp** `<@bot_id>` (hoặc DM bot) để hỏi/nhờ bot việc gì
-   đó. Tag một lần rồi mọi người nói chuyện tiếp với nhau → vẫn im, không coi là
-   được mời vào cuộc hội thoại.
+1. Có người **tag trực tiếp** `<@bot_id>` (hoặc DM bot). Tag một lần rồi mọi
+   người nói chuyện tiếp với nhau → vẫn im, không coi là được mời vào cả cuộc
+   hội thoại.
 2. **Job B (cron follow-up) đang chạy** — và khi đó chỉ đăng đúng nguyên văn
    template "Tin nhắc lại", không thêm câu dẫn, không thêm lời bình.
 
@@ -79,49 +107,103 @@ vừa nói là sắp xong. Nếu thấy cần ghi nhận thì **thả emoji reac
 Nguyên tắc gọn: **nhắc report là việc của cron, không phải việc của bot trong
 lúc người ta đang trao đổi.**
 
-## Roster — ai phải report
+## Ai phải report — lấy từ Google Sheet logtime (tab `Resource plan`)
 
-`{baseDir}/roster/<SLACK_CHANNEL_ID>.json`, mỗi nhóm 1 file (xem
-[`roster/README.md`](roster/README.md)):
+**Nguồn duy nhất** xác định ai phải report là tab `Resource plan` của Google
+Sheet logtime khai trong `.env`:
 
-```json
-[
-  { "id": "U0BKL0DJV7B", "name": "Kiên" },
-  { "id": "U0BKKXXXXXX", "name": "Tên nhân viên khác" }
-]
+| Env | Ý nghĩa |
+|-----|---------|
+| `LOGTIME_SHEET_LINK` | Link đầy đủ của Google Sheet logtime (fallback: `GOOGLE_SHEETS_LINK`) |
+| `LOGTIME_SHEET_TAB` | Tên tab, mặc định `Resource plan` — chỉ khai khi tab tên khác |
+| `GOOGLE_SHEETS_API_KEY` | API key đã bật Google Sheets API (chỉ cần quyền đọc) |
+
+Trong tab đó phải có một bảng với các cột header **`Member`**, **`Slack ID`**,
+`Slack name`, `Role`, kèm khối công *"Thời gian làm việc mỗi ngày"* (mỗi ngày 1
+cột). Mỗi dòng có `Slack ID` hợp lệ = **một người trong danh sách**.
+
+> Không có file roster nữa. Người được thêm/bớt bằng cách sửa thẳng Google
+> Sheet, có hiệu lực ngay lượt cron kế tiếp — không cần sửa file, không cần
+> restart Gateway.
+
+### Ai nghỉ hôm nay thì KHÔNG nhắc
+
+Ô công của **đúng ngày hôm nay** trống, `0`, `-`, `P`, `nghỉ`, `off` → người đó
+**nghỉ**: không tag, không tính vào "chưa report", **không hỏi han gì cả** — im
+hẳn. Không cần kiểm họ có trong group chat hay không, sheet nói nghỉ là nghỉ.
+
+Nhờ vậy T7/CN (ô công để trống) không ai bị nhắc mà không phải khai lịch nghỉ ở
+đâu khác. Ô ghi chữ lạ không hiểu được → coi như **đi làm** (thà nhắc thừa 1
+người còn hơn im lặng bỏ sót người phải report).
+
+### Lấy danh sách — luôn dùng script, không tự parse sheet bằng mắt
+
+```bash
+# JSON đầy đủ
+bash {baseDir}/scripts/resource-plan-members.sh
+
+# Chuỗi mention của riêng người phải report hôm nay: "<@U09QRTUHX24> <@U0APQSSGKTM> ..."
+bash {baseDir}/scripts/resource-plan-members.sh --mentions
 ```
 
-Đây là **nguồn duy nhất** xác định ai phải report. **Không** dùng danh sách
-thành viên kênh (`conversations.members`) nữa — ai không có trong roster thì
-không bao giờ bị nhắc, dù đang ở trong kênh.
+```json
+{
+  "date": "05-08-2026",
+  "found_day_column": true,
+  "people": [{ "id": "U09QRTUHX24", "name": "Bùi Hồng Sơn", "slack_name": "MH_SonBH", "role": "BE" }],
+  "off": [],
+  "no_id": []
+}
+```
 
-Đọc roster theo channel id của job đang chạy. File không tồn tại / rỗng / parse
-lỗi / sau khi bỏ bot còn 0 người → **chưa có roster**: không nhắc ai, không
-fallback sang member kênh, không tự đoán danh sách, không dùng `<!channel>` để
-nhắc bừa cả kênh.
+- `people` — **phải report hôm nay**. Chỉ tag đúng nhóm này.
+- `off` — nghỉ hôm nay. **Tuyệt đối không tag, không nhắc, không nhắn gì.**
+- `no_id` — có tên trong sheet nhưng thiếu ô `Slack ID` nên không tag được.
+  Khác rỗng → vẫn nhắc bình thường những người còn lại, và thêm vào **cuối** tin
+  đúng 1 dòng: `(Chưa có Id Slack nên mình không tag được: <tên 1>, <tên 2>)`.
+- `found_day_column: false` — sheet chưa kéo dài cột ngày tới hôm nay. **Không
+  phải lỗi**: script trả về cả đội, cứ nhắc bình thường, chỉ thêm vào **cuối**
+  tin đúng 1 dòng:
+  `(Bảng công trong sheet chưa có cột cho hôm nay, nhờ PM kéo dài giúp mình nhé.)`
 
-**Chưa có roster thì phải HỎI, không được im.** Job B reply ngay vào thread của
-Job A hôm nay để xin danh sách — xem "Chưa có roster → hỏi trong thread" bên
-dưới. Tuyệt đối **không** được trả về `tat ca da report`: chưa khai ai và mọi
-người đã report xong là hai chuyện khác hẳn nhau, gộp lại là báo cáo sai.
+Hai dòng phụ trên là **ngoại lệ duy nhất** được thêm vào template — ngoài chúng
+ra không được chế thêm câu nào.
 
-### Setup kênh mới → phải hỏi danh sách nhân viên
+Script tự dò **header theo tên cột** (`Slack ID`, `Member`…) và tự dò cột ngày
+theo tên tháng ở dòng header + số ngày ở dòng kế dưới, không hardcode dòng/cột —
+sheet chèn thêm dòng tiêu đề hay dịch bảng sang phải vẫn chạy đúng. Dòng không
+có user id dạng `U…`/`W…` bị bỏ qua (dòng SUM, dòng trống), id trùng chỉ lấy 1
+lần. "Hôm nay" tính theo `REMINDER_TIMEZONE`, không theo giờ máy chạy Gateway.
 
-Khi được yêu cầu bật reminder-followup cho một kênh **chưa có** file roster (hoặc
-được yêu cầu thêm/bớt người), **hỏi người dùng danh sách nhân viên trước** —
-không tự lấy thành viên kênh, không tự đoán, không tạo file rỗng rồi chạy.
+**Không tự gọi thẳng Sheets API rồi tự đoán cột.** Bảng trong `Resource plan`
+nằm lẫn với bảng kế hoạch nguồn lực khác ở cùng vùng dòng — đọc bằng mắt rất dễ
+bắt nhầm cột tên và tag sai người.
 
-Hỏi đúng ý này: *"Gửi danh sách người phải report của kênh &lt;tên kênh&gt;, mỗi
-dòng `<user_id> | <tên>` (lấy ID: Slack → profile → More → Copy member ID)."*
+Exit code của script — **không được nuốt lỗi**:
 
-Nhận được danh sách → **tự động tạo/cập nhật** `roster/<CHANNEL_ID>.json` theo
-đúng format trên, rồi báo lại đã ghi bao nhiêu người. Khi parse danh sách:
+| Exit | Nghĩa | Xử lý |
+|------|-------|-------|
+| 0 | OK, có ít nhất 1 người phải report hôm nay | Chạy tiếp |
+| 2 | Thiếu env / tham số sai | Dừng, báo lỗi — PM khai thiếu env |
+| 3 | Gọi Sheets API lỗi (sai link, chưa share, hết quota) | Dừng, báo lỗi |
+| 4 | Tab không có cột `Slack ID` | Dừng, báo lỗi — sai tab hoặc header bị đổi |
+| 5 | Có cột nhưng không có dòng người nào | Dừng, báo lỗi |
+| 6 | Đọc được sheet nhưng **hôm nay cả đội nghỉ** (T7/CN…) | **SKIP im lặng** — không đăng gì cả, đây KHÔNG phải lỗi |
 
-- Bỏ qua mọi dòng là **bot** (kể cả chính bot report) — bot không phải report,
-  và Job B vốn đã trừ chính bot ra.
-- Dòng không có user id dạng `U...` → hỏi lại, không tự suy ra id từ tên.
-- Đã có file rồi → nói rõ đang thêm hay ghi đè trước khi sửa, không âm thầm
-  xoá người cũ.
+Exit 2/3/4/5 → **không nhắc ai**, không fallback sang thành viên kênh, không tự
+đoán danh sách, không dùng `<!here>` để nhắc bừa cả kênh, và **không** được báo
+`tat ca da report` (chưa đọc được danh sách và mọi người đã report xong là hai
+chuyện khác hẳn nhau, gộp lại là báo cáo sai). Xem "Không đọc được sheet" bên
+dưới để biết báo ra ngoài thế nào.
+
+Exit 6 thì ngược lại: **tuyệt đối không báo lỗi ra Slack**. Cả đội nghỉ là
+chuyện bình thường, đăng cảnh báo vào ngày nghỉ mới là làm phiền.
+
+Ngoài ra: nếu chính bot report có mặt trong sheet thì **bỏ bot ra** — bot không
+phải report.
+
+Soi lỗi bằng tay ("hôm T7 bot có nhắc nhầm ai không?"): đặt `LOGTIME_TODAY=YYYY-MM-DD`
+để giả lập ngày. Chỉ dùng khi chạy tay — cron **không bao giờ** set biến này.
 
 ## State file
 
@@ -137,155 +219,203 @@ Chỉ lưu `ts` của tin nhắc hôm nay (Job A ghi, Job B đọc để biết 
 Danh sách ai đã report **không** lưu vào state — mỗi lần chạy Job B đọc lại
 reply trong thread rồi tính tươi, nên state hỏng/mất cũng không sai lệch.
 
+### `state/pending-overtime.json` — task đang chờ giải trình
+
+File thứ hai, **không** theo ngày (một pending mở lúc 16:50 phải sống qua nửa
+đêm nếu cần). Đây là chỗ **duy nhất** biết task nào đang bị treo vì vượt giờ
+plan, và mốc `asked_at` để tính hạn 1 tiếng.
+
+```json
+{ "pending": [ { "task_id": "PCS-7", "slack_id": "U...", "asked_at": 1754382000, "...": "..." } ] }
+```
+
+Cấu trúc đầy đủ, cách ghi/xoá, cách tính hạn: xem mục
+"Task chậm hơn plan — hạn 1 tiếng" bên dưới.
+
+Mất file này = mọi task đang treo coi như chưa từng bị hỏi: dev trả lời lý do sẽ
+không khớp được vào đâu, và Job B không nhắc ai quá hạn. Không nghiêm trọng bằng
+mất dữ liệu sheet, nhưng đừng xoá tay giữa ngày.
+
 ## Luật kiểm format — reply thế nào thì tính là đã report
 
 Reply vào thread **không** mặc nhiên là đã report. Người chỉ nói chuyện công
 việc kiểu "hôm nay em fix bug login xong rồi" vẫn tính là **chưa report**.
 
-Một dòng log task gồm **7 field, đúng thứ tự này**:
+**Toàn bộ luật chấm nằm ở [`template/log-task-rules.md`](template/log-task-rules.md)
+— đó là nguồn duy nhất.** File này cố ý **không** chép lại: 7 field, cách dọn
+dòng, dòng nào bị chấm, thế nào là Done, chia 3 nhóm — tất cả ở đó.
 
-```
-Id task | Re-estimate (h) | start date | end date | Actual Effort (h) | status | note
-```
-
-**Dọn dòng trước khi tách field** (làm đúng thứ tự này, bỏ bước nào là nhắc oan
-người ta):
-
-- Bỏ khoảng trắng đầu/cuối dòng.
-- Bỏ ký tự liệt kê / định dạng ở **đầu** dòng nếu có: `-`, `–`, `*`, `•`, `>`,
-  `1.`, `2)`… và dấu bôi đậm/`code` bọc quanh. Người ta gõ
-  `- NEX-123 | …` hay `• NEX-123 | …` là **bình thường**, không phải lỗi.
-- Bỏ dấu `|` thừa ở **đầu** dòng (dán từ Excel/Google Sheet ra thường có dạng
-  `|NEX-123|8|…|`). **Không** bỏ dấu `|` ở cuối — dấu cuối cùng chính là chỗ
-  đánh dấu `note` để trống, bỏ nó đi là dòng đang đúng bỗng thành thiếu field.
-
-Sau khi dọn, một **dòng hợp lệ** phải thoả tất cả:
-
-1. Có **ít nhất 6 dấu `|`** → đủ 7 field. Thừa field vẫn nhận (phần dư coi như
-   `note`). Thiếu dấu `|` là **sai**, kể cả khi field cuối để trống — vị trí là
-   thứ duy nhất phân biệt được cột nào ra cột nào, thiếu một dấu là mọi cột
-   phía sau lệch hết.
-2. **Id task**: đầu dòng phải là một mã task **có chứa số**. **Không có quy định
-   nào về dạng mã** — tiền tố chữ là tuỳ ý và không phân biệt hoa thường: `4`,
-   `NEX-100`, `DWM-2222`, `abc 12` đều hợp lệ như nhau.
-3. **Re-estimate (h)**, **Actual Effort (h)**, **status**: bắt buộc, **không
-   được để trống**. Nội dung viết gì cũng nhận — `8`, `8h`, `1.5`,
-   `In progress`, `đang làm` đều được; không kiểm đơn vị, không kiểm giá trị,
-   không phán giờ khai có hợp lý hay không.
-4. **start date**: bắt buộc, phải đúng dạng **`DD-MM-YYYY`** (2 số ngày, 2 số
-   tháng, 4 số năm, ngăn bằng dấu `-`), vd `03-08-2026`. `3-8-2026` hay
-   `2026-08-03` là **sai**.
-5. **end date**: được để trống khi status **khác** Done. Người ta ngại để ô
-   trống nên hay điền cho có — `-`, `--`, `x`, `?`, `N/A`, `chưa`, `chưa xong`,
-   `TBD` đều **tính y như để trống**, hợp lệ. Điền một ngày thật thì phải đúng
-   `DD-MM-YYYY`.
-6. **status là Done → end date bắt buộc** và phải là ngày thật đúng
-   `DD-MM-YYYY` (mấy chữ thay-cho-trống ở trên **không** được chấp nhận nữa).
-7. **note**: để trống thoải mái, không bao giờ là lý do báo sai format.
-
-**Thế nào là "status Done":** chuẩn hoá field status trước — bỏ emoji, dấu câu,
-khoảng trắng thừa, chuyển thường, bỏ tiền tố `đã ` — rồi so **bằng đúng** một
-trong: `done`, `completed`, `finished`, `xong`, `hoàn thành`, `hoan thanh`,
-`hoàn tất`.
-
-So **bằng đúng**, tuyệt đối **không** so kiểu "có chứa chữ done": `not done`,
-`chưa done`, `chưa xong`, `hoàn thành 90%` đều **không phải Done** → không được
-đòi end date của mấy dòng đó. Ngược lại `Done`, `DONE`, `done ✅`, `đã hoàn
-thành` đều **là Done** → thiếu end date là sai.
-
-Ngoài 7 điều trên thì **không kiểm gì nữa**: không đối chiếu Re-estimate với
-Actual Effort, không kiểm end date có sau start date không, không kiểm ngày có
-thật (`31-02-2026` vẫn nhận vì đúng dạng). Chỉ kiểm cấu trúc.
-
-**TUYỆT ĐỐI không nhắc ai về dạng mã task.** `004 | 18 | 01-08-2026 |
-03-08-2026 | 18 | đã hoàn thành | không có` và `DWM-2222| 8 | 03-08-2026 |  | 8
-| đang tiến hành |` đều **hợp lệ hoàn toàn** — không được rep kiểu *"nhắc nhẹ
-mẫu chuẩn là NEX-004…"*, không "ghi mã dạng NEX-số cho gọn", không đòi đổi tiền
-tố, không bắt thêm khoảng trắng quanh `|`. Đây là lỗi đã xảy ra thật: template
-cũ ghi `NEX-số` nên bot tự suy ra là bắt buộc. Góp ý về format **chỉ được nói
-khi dòng thật sự sai** theo đúng 7 điều kiện trên.
-
-### Dòng nào bị đem ra chấm
-
-Trong reply của một người, chỉ những dòng **có ý định là log task** mới bị chấm:
-dòng **có ít nhất 1 dấu `|`** *và* field đầu **có chứa số**. Gọi đó là các
-**dòng log**.
-
-Mọi dòng còn lại **bỏ qua hoàn toàn**, không bao giờ là lý do báo sai format:
-câu dẫn ("em báo cáo ạ", "hôm nay em làm mấy việc này"), giải thích thêm, ảnh,
-emoji, và cả **dòng tiêu đề** nếu ai đó copy nguyên bảng
-(`Id task | Re-estimate (h) | …` — field đầu không có số nên không phải dòng
-log).
-
-### Chấm cả cụm: một dòng sai là bị nhắc
-
-Một người tính là **đã report** khi: có **ít nhất 1 dòng log**, **và** *tất cả*
-dòng log của họ đều hợp lệ.
-
-Chỉ cần **một** dòng log sai là vào nhóm **sai format** và bị tag nhắc sửa — dù
-các dòng khác đúng hết. Đây là điểm cố ý khác với bản cũ ("có 1 dòng đúng là
-thoát"): bản cũ khiến người khai 5 task, sai 4 dòng, vẫn được tính là xong —
-tức là bao nhiêu công validate ngày tháng đổ sông đổ biển.
-
-Từ đó roster chia làm 3 nhóm mỗi lần chạy Job B:
-
-| Nhóm | Điều kiện | Xử lý |
-|------|-----------|-------|
-| Đã report | Có ≥1 dòng log, và **mọi** dòng log đều hợp lệ | Bỏ qua, không tag |
-| Chưa report | Không reply gì trong thread | Tag ở dòng "chưa report" |
-| Sai format | Có reply nhưng **không có dòng log nào**, hoặc có dòng log mà **≥1 dòng sai** | Tag ở dòng "sai format" |
+⚠️ **Cần chấm thì `cat` file đó ra đọc ngay lúc chấm.** Không nhớ lại từ tin
+nhắn cũ, không tái tạo từ trí nhớ phiên, không dựa vào bản tóm tắt nào. Lỗi đã
+xảy ra thật ba lần: bản copy cũ nằm sẵn trong context luôn thắng bản mới nằm
+trong file.
 
 Vẫn giữ nguyên luật **"Im lặng trong thread"**: thấy dòng sai lúc 10h thì
-**không** được nhảy vào nhắc ngay. Gom lại, đến Job B (16:30 / 17:00) mới tag
-một lần. Không có dòng sai nào thì tuyệt đối im — không xác nhận, không khen,
-không thả câu "đã ghi nhận".
+**không** được nhảy vào nhắc ngay — trừ khi người đó **tag bot trực tiếp** (xem
+mục dưới). Không ai tag thì gom lại, đến Job B (16:30 / 17:00) mới tag một lần.
+Không có dòng sai nào thì tuyệt đối im — không xác nhận, không khen, không thả
+câu "đã ghi nhận".
 
-Ví dụ:
+## Dev tag bot để report — kiểm format tại chỗ
+
+Ngoài luồng cron, dev có thể **tag bot kèm dòng report** để được chấm ngay,
+không phải đợi 16:30. Bị tag là **phải trả lời** (luật này đứng trên mọi luật im
+lặng — xem `AGENTS.md`).
+
+**Việc đầu tiên, trước khi nói bất cứ câu nào:** đọc
+[`template/log-task-rules.md`](template/log-task-rules.md) rồi chấm từng dòng
+log trong tin của họ. Không được trả lời trước rồi chấm sau, không được chấm
+bằng trí nhớ.
+
+Ba tình huống:
+
+**1. Không có dòng log nào** (họ chỉ hỏi han, nhờ việc khác) → đây không phải
+report. Trả lời bình thường theo nội dung họ hỏi, **không** lôi luật format ra.
+
+**2. Mọi dòng log đều hợp lệ** → **chuyển sang skill `gg-sheet`, Action 4** để
+log lên sheet. Không dừng ở câu "đã ghi nhận" nữa, và cũng **không tự ghi sheet
+ở đây**: mở `gg-sheet/SKILL.md` mục "Action 4: Log report task của dev" rồi làm
+theo `gg-sheet/log-report-rules.md`. Câu trả lời cuối cùng cho dev (log xong /
+hỏi lý do task chậm / mã task không có trong sheet) lấy mẫu trong chính file đó.
+
+Chuyển sang thì đưa đủ: **từng dòng report** đã chấm hợp lệ, `<@id>` và tên
+Slack của dev. Việc còn lại — tìm dòng theo `TaskID`, ghi cột nào, so giờ plan —
+là của `gg-sheet`.
+
+**3. Có ≥1 dòng log sai** → chỉ ra **đúng dòng nào sai và sai điều gì**, trích
+nguyên văn dòng đó, kèm bản sửa gợi ý. Mỗi dòng sai một gạch đầu dòng:
 
 ```
-NEX-123 | 8 | 01-08-2026 | 03-08-2026 | 7.5 | Done | xong sớm   → hợp lệ
-  nex-45 | 5 | 03-08-2026 |  | 2 | In progress |                → hợp lệ (chưa Done: end date + note trống vẫn ok)
-4 | 16 | 28-07-2026 | 03-08-2026 | 18 | đã hoàn thành | không có → hợp lệ (Done tiếng Việt, có end date)
-DWM-2222| 8 | 03-08-2026 |  | 8 | đang tiến hành |              → hợp lệ (tiền tố khác, thiếu space vẫn nhận)
-100 | 4 | 03-08-2026 |  | 4h | đang làm | đổi figma | +14h      → hợp lệ (thừa field vẫn nhận)
-- NEX-9 | 8 | 03-08-2026 |  | 8 | đang làm |                    → hợp lệ (gạch đầu dòng: dọn rồi mới chấm)
-|NEX-9|8|03-08-2026||8|đang làm|                                → hợp lệ (dán từ Excel, bỏ dấu | đầu dòng)
-NEX-9 | 8 | 03-08-2026 | - | 8 | đang làm |                     → hợp lệ (chưa Done: '-' tính như để trống)
-NEX-9 | 8 | 03-08-2026 |  | 8 | hoàn thành 90% |                → hợp lệ (KHÔNG phải Done → không đòi end date)
-NEX-9 | 8 | 03-08-2026 | 05-08-2026 | 8 | done ✅ | ok           → hợp lệ (Done kèm emoji, có end date)
-NEX-123 | 8 | 01-08-2026 | 03-08-2026 | 7.5 | Done              → SAI (thiếu note, chưa đủ 6 dấu |)
-NEX-123 | 8 | 1-8-2026 |  | 2 | In progress |                   → SAI (start date không đúng DD-MM-YYYY)
-NEX-123 | 8 | 2026-08-01 |  | 2 | In progress |                 → SAI (ngày viết ngược)
-NEX-123 | 8 | 01-08-2026 |  | 7.5 | Done | xong rồi             → SAI (status Done mà bỏ trống end date)
-NEX-123 |  | 01-08-2026 |  | 2 | In progress |                  → SAI (Re-estimate để trống)
-NEX-123 | 8 | 01-08-2026 |  |  | In progress |                  → SAI (Actual Effort để trống)
-NEX-9 | 8 | 03-08-2026 |  | 8 | đã hoàn thành |                 → SAI (là Done mà bỏ trống end date)
-NEX-9 | 8 | 03-08-2026 | - | 8 | Done | xong                    → SAI (Done thì end date phải là ngày thật)
+<@U0BK2KAN86B> dòng này chưa đúng mẫu nhé:
+• `NEX-2 | 8 | 3-8-2026 |  | 8 | đang làm |` → Start date phải dạng DD-MM-YYYY (`03-08-2026`)
 
-em báo cáo ạ                                                    → BỎ QUA (không có dấu |)
-Id task | Re-estimate (h) | start date | ...                    → BỎ QUA (dòng tiêu đề, field đầu không có số)
-xong hết việc rồi nhé | 8 | 03-08-2026 |  | 8 | đang làm |       → BỎ QUA (field đầu không có số)
+Report theo mẫu sau :
+Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status | Note
+
+VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi
 ```
 
-"BỎ QUA" nghĩa là **không chấm dòng đó**, chứ không phải người đó được tha: ai
-chỉ có toàn dòng bị bỏ qua = **không có dòng log nào** → vẫn vào nhóm sai
-format. Chấm cả cụm:
+Sai format thì **không log gì lên sheet cả**, kể cả những dòng đúng trong cùng
+tin nhắn. Sửa rồi report lại thì mới ghi.
 
+**4. Dev đang giải trình task chậm** → đây **không** phải dòng report, đừng đem
+đi chấm format. Xem mục "Task chậm hơn plan — hạn 1 tiếng" ngay dưới.
+
+Nhận ra bằng **ngữ cảnh hội thoại**: tin gần nhất của chính bot trong thread/kênh
+này có hỏi lý do một task chậm, và người đang nhắn chính là người bị hỏi. Câu trả
+lời không cần đúng mẫu gì cả — *"lý do là phát sinh CR từ khách hàng"* là đủ.
+
+⛔ **Không lấy `state/pending-overtime.json` làm điều kiện nhận diện.** File đó
+là bản ghi phụ cho Job B, có thể chưa kịp ghi, có thể bị xoá. Không thấy file →
+vẫn xử lý bình thường theo ngữ cảnh, rồi ghi file sau. Lỗi đã xảy ra thật
+(05-08-2026): bot hỏi lý do task PCS-10, dev trả lời có tag bot, bot mở skill,
+không thấy file pending nên không khớp case nào và **im luôn** — dev ngồi đợi
+một câu không bao giờ tới.
+
+⛔ **Bị tag thì không bao giờ được im**, kể cả khi không khớp case nào ở trên.
+Không hiểu ý họ thì hỏi lại một câu, đừng `NO_REPLY`.
+
+Ràng buộc khi trả lời:
+
+- **Luôn mở đầu bằng `<@id>` của chính người vừa report** — cả khi đúng lẫn khi
+  sai. Kênh `#daily` đông người và nhiều report chồng nhau, không tag thì không
+  ai biết bot đang nói với ai, nhất là khi có 2-3 người report sát giờ nhau.
+  Mention bằng `<@Uxxxx>` (id thật của họ), **không** gõ tên hay `@tên` —
+  gõ tay ra chữ thường thì Slack không đẩy notification, người ta không thấy.
+  Đúng một mention một tin: không tag thêm PM, không tag người khác vào.
+- **Chỉ nói lý do có trong `log-task-rules.md`.** Không tự chế thêm quy tắc.
+- **Không bao giờ nhắc về dạng mã task** — `4`, `abc 12`, `DWM-2222` đều hợp lệ.
+- **Không đánh giá nội dung công việc**: không phán giờ khai hợp lý hay không,
+  không hỏi sao task này lâu thế, không gợi ý chia nhỏ task.
+- Dòng nào **bỏ qua** (câu dẫn, emoji, dòng tiêu đề) thì đừng nhắc tới nó.
+- Trả lời **đúng chỗ họ tag**: tag trong thread thì rep trong thread, tag ngoài
+  kênh thì rep ngoài kênh. Không mở thread mới.
+- **Một tin duy nhất.** Không tách thành nhiều tin, không rep thêm lần hai cho
+  cùng một report.
+
+Chấm tại chỗ **không** thay thế Job B: người được chấm ở đây vẫn được Job B tính
+lại từ đầu lúc 16:30 (Job B đọc lại thread và chấm tươi), nên nếu họ sửa lại
+đúng thì tự khắc không bị tag nữa.
+
+## Task chậm hơn plan — hạn 1 tiếng
+
+`gg-sheet` Action 4 trả về **exit 9** khi giờ thực tế vượt giờ plan: nó **chưa
+ghi gì**, và hỏi dev lý do. Đây **không phải là từ chối log** — có lý do là ghi
+`Risk management` rồi log task như thường.
+
+Phần `gg-sheet` lo: so giờ, soạn câu hỏi, ghi risk, ghi task. Phần **skill này**
+lo: **đồng hồ**. `gg-sheet` không theo dõi hội thoại và không có bộ đếm giờ.
+
+### Ghi pending ngay khi hỏi
+
+File này **không phải điều kiện để nhận diện** dev đang giải trình (xem case 4)
+— nó chỉ để **Job B 16:30** biết ai đã được hỏi mà im luôn. Ghi file lỗi thì cứ
+tiếp tục hội thoại bình thường, đừng vì thế mà không trả lời dev.
+
+`{baseDir}/state/pending-overtime.json` (chưa có thì tạo `{"pending": []}`),
+mỗi task vướng một phần tử:
+
+```json
+{
+  "task_id": "PCS-7",
+  "slack_id": "U0BK2KAN86B",
+  "slack_name": "long.vn",
+  "assignee": "VinhNV",
+  "channel": "C0BKLP5KYD7",
+  "thread_ts": "1754...",
+  "asked_at": 1754382000,
+  "estimate": 8,
+  "actual": 9,
+  "diff": 1,
+  "report": { "re_est": "8", "start": "03-08-2026", "end": "04-08-2026", "actual": "9", "status": "Done", "note": "" }
+}
 ```
-em báo cáo ạ                                          ← bỏ qua
-NEX-1 | 8 | 03-08-2026 | 03-08-2026 | 8 | Done | xong ← hợp lệ
-NEX-2 | 8 | 3-8-2026 |  | 8 | đang làm |              ← SAI (ngày)
-→ người này vào nhóm SAI FORMAT (1 dòng sai là đủ), dù dòng đầu đã đúng.
-```
+
+`asked_at` lấy **bằng lệnh** `date +%s`, không tự nhẩm.
+
+Giữ nguyên `report` — lúc log lại thì dùng **đúng số cũ đã report**, không hỏi
+lại dev số liệu, không lấy số mới trong câu trả lời lý do.
+
+Đã có pending cùng `slack_id` + `task_id` → **cập nhật tại chỗ**, không thêm
+phần tử thứ hai và **không gia hạn `asked_at`**. Hỏi lại lần nữa không phải là
+được thêm một tiếng.
+
+### Dev trả lời lý do
+
+Câu trả lời **không cần đúng format report** — đây là câu giải thích. Chỉ vừa
+hỏi một task thì lý do đó là của task đó, đừng hỏi lại cho chắc. Đang treo nhiều
+task mà họ không nêu task nào → hỏi lại task nào, đừng gán bừa.
+
+Tính tuổi: `AGE = $(date +%s) - asked_at`. **Không có `asked_at`** (chưa kịp ghi
+pending) → lấy timestamp tin hỏi của bot trong thread; không lấy được nữa thì
+**coi như còn hạn** và log luôn. Thà log một task muộn còn hơn bắt dev gõ lại từ
+đầu vì bot đánh mất bản ghi của chính mình.
+
+- **`AGE <= 3600`** → chuyển sang `gg-sheet` Action 4 kèm lý do: ghi
+  `Risk management` **trước**, `log --force` **sau** (xem
+  `gg-sheet/log-report-rules.md`). Xong thì xoá phần tử pending.
+- **`AGE > 3600`** → **không log nữa**, dù lý do chính đáng đến đâu:
+
+  ```
+  <@U0BK2KAN86B> lý do này quá 1 tiếng rồi nên mình không tự log PCS-7 được nữa,
+  bạn báo trực tiếp PM giúp mình nhé.
+  ```
+
+  Rồi xoá phần tử pending (đã trả lời thì Job B không nhắc lại nữa).
+
+Ai im luôn thì Job B 16:30 quét pending quá hạn và tag một lần — xem mục
+"Tin nhắc lại (Job B)".
 
 ## Format tin nhắc chuẩn (BẮT BUỘC, không được diễn giải lại)
 
 Mọi tin nhắc report — dù do cron tự chạy, hay do ai đó nhắn tay bảo bot nhắc
 (vd "nhắc report đi", "nhắc lại mọi người report", "xem ai chưa report") —
-**PHẢI dùng đúng nguyên văn template dưới đây**, chỉ được thay
-`<mention_list>`. KHÔNG được tự thêm/bớt câu chữ, không đổi icon, không viết
-lại theo văn phong khác mỗi lần, không thêm bullet "Hôm qua làm gì / Hôm nay
-làm gì" tự chế.
+**PHẢI dùng đúng nguyên văn template dưới đây**, chỉ được thay phần
+`<mention_…>`. KHÔNG được tự thêm/bớt câu chữ, không thêm icon, không viết lại
+theo văn phong khác mỗi lần, không thêm bullet hướng dẫn ("Ngày viết dạng
+DD-MM-YYYY", "Bắt buộc: …", "Hôm qua làm gì / Hôm nay làm gì") tự chế. Luật
+format nằm ở mục "Luật kiểm format" là để **bot chấm**, không phải để dán vào
+tin nhắn.
 
 ### ⛔ Lấy template từ FILE NÀY, không copy tin nhắc cũ
 
@@ -304,56 +434,57 @@ Nguyên tắc: **tin nhắc cũ không phải là nguồn**. Nguồn duy nhất 
 mục này trong `SKILL.md`. Tin cũ trong kênh chỉ chứng minh hôm qua bot đã nhắc,
 không chứng minh hôm qua bot nhắc đúng.
 
-**Tin mở thread (Job A — đăng ra kênh):** dùng `<!here>`, **không** liệt kê
-mention từng người — đầu giờ chưa ai report nên tag cả roster chỉ tổ ồn:
+### Tin mở thread (Job A — đăng ra kênh)
 
 ```
-<!here> ⏰ Đến giờ report task rồi, mọi người report hôm nay giúp mình nhé!
+<mention_tat_ca> Đến giờ report task rồi, mọi người report hôm nay giúp mình nhé!
 
-Report theo mẫu sau (copy và điền vào):
-Id task | Re-estimate (h) | start date | end date | Actual Effort (h) | status | note
+Report theo mẫu sau :
+Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status | Note
 
-• Ngày viết dạng DD-MM-YYYY (vd 03-08-2026)
-• Bắt buộc: Id task, Re-estimate, start date, Actual Effort, status
-• end date chỉ bắt buộc khi status = Done — chưa xong thì để trống nhưng vẫn giữ đủ dấu |
-• note để trống cũng được
-
-VD: NEX-xxx | 8 | 01-08-2026 | 03-08-2026 | 7.5 | Done | xong sớm
-VD: DWM-yyy | 5 | 03-08-2026 |  | 2 | In progress |
+VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi
 ```
 
-Câu `⏰ Đến giờ report task rồi` là **mốc nhận diện** Job B dùng để tìm lại
+- `<mention_tat_ca>` = **những người phải report hôm nay** (`people`), lấy
+  nguyên văn output của `scripts/resource-plan-members.sh --mentions`. Đầu giờ
+  chưa ai report nên ai đi làm cũng bị tag — đây là chủ ý, không phải thừa.
+  Người nghỉ hôm nay đã bị script loại sẵn.
+- **Không** dùng `<!here>`/`<!channel>` thay cho danh sách này.
+
+Câu `Đến giờ report task rồi` là **mốc nhận diện** Job B dùng để tìm lại
 thread — đổi câu này thì phải đổi cả bước 2 của Job B.
 
-**Tin nhắc lại (Job B — reply trong thread, không đăng ra kênh):**
+### Tin nhắc lại (Job B — reply trong thread, không đăng ra kênh)
 
 ```
-⏰ Nhắc lại: <mention_chua_report> chưa report hôm nay nhé!
-⚠️ <mention_sai_format> đã report nhưng chưa đúng mẫu, sửa lại giúp mình nhé!
+<mention_chua_report> chưa report hôm nay nhé!
+<mention_sai_format> đã report nhưng chưa đúng mẫu, sửa lại giúp mình nhé!
+<mention_qua_han_giai_trinh> chưa nói lý do vượt giờ plan nên các task <ids> mình chưa log lên sheet nhé!
 
-Report theo mẫu sau (copy và điền vào):
-Id task | Re-estimate (h) | start date | end date | Actual Effort (h) | status | note
+Report theo mẫu sau :
+Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status | Note
 
-• Ngày viết dạng DD-MM-YYYY (vd 03-08-2026)
-• Bắt buộc: Id task, Re-estimate, start date, Actual Effort, status
-• end date chỉ bắt buộc khi status = Done — chưa xong thì để trống nhưng vẫn giữ đủ dấu |
-• note để trống cũng được
-
-VD: NEX-xxx | 8 | 01-08-2026 | 03-08-2026 | 7.5 | Done | xong sớm
-VD: DWM-yyy | 5 | 03-08-2026 |  | 2 | In progress |
+VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi
 ```
 
 - Nhóm nào rỗng thì **bỏ hẳn dòng đó**, không in ra dòng cụt không có mention.
-  Cả 2 nhóm rỗng → không reply gì cả.
-- Giữ nguyên phần "Report theo mẫu sau" kể cả khi chỉ còn 1 dòng nhắc.
-
-- `<mention_chua_report>` / `<mention_sai_format>` (chỉ có ở tin nhắc lại của
-  Job B) = `<@U03H0QB426A> <@U03Q60UCBJS> ...` — user id **lấy từ roster**,
-  phân nhóm theo bảng ở mục "Luật kiểm format", cách nhau bởi dấu cách. Mention
-  bằng `<@id>` chứ không gõ tên, để Slack thật sự ping đúng người.
-- Không lấy được roster → **không nhắc lại** (xem mục "Roster"). Không dùng
-  `<!channel>`/`<!here>` thay cho danh sách mention ở Job B — nhắc lại mà ping
-  cả kênh là làm phiền người đã report.
+  Cả 3 nhóm rỗng → không reply gì cả.
+- `<mention_qua_han_giai_trinh>` lấy từ `state/pending-overtime.json`: phần tử
+  có `asked_at` cách hiện tại **hơn 3600 giây**. `<ids>` là danh sách `task_id`
+  của chính người đó, cách nhau dấu phẩy. Nhắc xong thì **xoá** phần tử khỏi
+  state — mỗi task chỉ bị nhắc đúng một lần, không lôi sang hôm sau.
+  Đây là **ngoại lệ duy nhất** của luật "không trích lại nội dung của ai": không
+  có id task thì dev không biết task nào bị treo, câu nhắc thành vô dụng. Vẫn
+  chỉ nêu id, **không** nêu số giờ, không nêu lý do, không bình luận.
+- Giữ nguyên phần "Report theo mẫu sau :" kể cả khi chỉ còn 1 dòng nhắc.
+- `<mention_chua_report>` / `<mention_sai_format>` = `<@U09QRTUHX24>
+  <@U0APQSSGKTM> …` — user id **lấy từ sheet**, phân nhóm theo bảng ở mục "Luật
+  kiểm format", cách nhau bởi dấu cách. Mention bằng `<@id>` chứ không gõ tên,
+  để Slack thật sự ping đúng người. Cột `Member`/`Slack name` chỉ để người đọc
+  file/log cho dễ.
+- Không lấy được danh sách từ sheet → **không nhắc lại** (xem mục "Ai phải
+  report"). Không dùng `<!channel>`/`<!here>` thay cho danh sách mention — nhắc
+  lại mà ping cả kênh là làm phiền người đã report.
 - Không liệt kê dòng sai của ai ra thread, không trích lại nội dung họ đã gõ —
   chỉ tag và trỏ về mẫu.
 - Nếu người dùng nhắn tay yêu cầu nhắc lại (không phải qua cron), vẫn áp dụng
@@ -363,6 +494,12 @@ VD: DWM-yyy | 5 | 03-08-2026 |  | 2 | In progress |
 
 ## Cron (setup 1 lần, dùng cron expression thật — không diễn giải giờ chung
 chung để tránh trôi giờ)
+
+> ⚠️ **Prompt thật của 2 job nằm ở [`cron/`](cron/README.md), không phải ở
+> file này.** Phiên cron `isolated` không đọc `SKILL.md` — nó chỉ có cái prompt
+> được nhét vào job. Sửa luật ở đây thì **phải sửa song song
+> `cron/job-a.prompt.txt` / `cron/job-b.prompt.txt` rồi apply lại**, không thì
+> ngoài Slack không đổi gì cả (lỗi đã xảy ra thật 05-08-2026).
 
 **Không gán `--model` cho 2 job dưới đây.** Để cron dùng model mặc định của
 workspace/agent. Pin cứng một model id vào skill sẽ vỡ ngay khi workspace đổi
@@ -375,7 +512,7 @@ giờ/phút nếu khác, vd 09:30 → `30 9 * * *`):**
 
 ```bash
 openclaw cron create "0 9 * * *" \
-  "Việc A skill reminder-followup: đăng tin nhắc report, lưu message ts vào state." \
+  "Việc A skill reminder-followup: lấy mention list từ Google Sheet rồi đăng tin nhắc report tag từng người." \
   --name reminder-followup-0900 --tz "$REMINDER_TIMEZONE" \
   --session isolated --announce \
   --channel slack --to "channel:$SLACK_REPORT_CHANNEL_ID"
@@ -383,9 +520,18 @@ openclaw cron create "0 9 * * *" \
 `--announce` bắt buộc — thiếu nó, cron chạy xong vẫn không tự đẩy kết quả ra
 Slack (`delivered: false` dù `status: ok`).
 
-Chạy: xuất ra final message **đúng nguyên văn template "Tin mở thread"** ở mục
-trên (không tự diễn giải lại, không thêm lời dẫn) — `--announce` lo việc đăng
-vào kênh, nên job này không cần gọi tool Slack và không cần roster.
+Chạy:
+
+1. `bash {baseDir}/scripts/resource-plan-members.sh --mentions` → chuỗi mention.
+2. Exit 0 → xuất ra final message **đúng nguyên văn template "Tin mở thread"**,
+   thay `<mention_tat_ca>` bằng chuỗi ở bước 1 (không tự diễn giải lại, không
+   thêm lời dẫn) — `--announce` lo việc đăng vào kênh, nên job này không cần gọi
+   tool Slack.
+3. **Exit 6 (cả đội nghỉ hôm nay) → không đăng gì cả**, kết thúc bằng
+   `SKIP | ca doi nghi hom nay`. Đây là cách T7/CN không có tin nhắc rác.
+4. Exit 2/3/4/5 → **vẫn phải đăng tin nhắc**, nhưng theo template "Không đọc
+   được sheet" ở mục dưới. Im lặng bỏ hẳn một ngày còn tệ hơn: thread không tồn
+   tại thì Job B cũng chết theo mà không ai biết.
 
 Job A không tự ghi được `reminderThreadTs` (nó không cầm `ts` của tin do
 announce đăng) — đó là lý do bước 2 của Job B luôn có nhánh quét history để tìm
@@ -464,9 +610,12 @@ Kết quả nằm trong `payload.messages`, là raw Slack API (có `user`, `ts`,
    **dòng log** → chấm từng dòng theo "Luật kiểm format" → **đã report** khi có
    ≥1 dòng log và **mọi** dòng log đều hợp lệ; **sai format** khi không có dòng
    log nào, hoặc có ≥1 dòng log sai.
-4. Đọc roster của kênh, trừ chính bot → chia 3 nhóm theo bảng ở "Luật kiểm
-   format". Nhóm "chưa report" và "sai format" đều rỗng → dừng, không reply gì
-   cả. Roster lỗi → dừng, log lỗi.
+4. Chạy `bash {baseDir}/scripts/resource-plan-members.sh` lấy danh sách từ
+   sheet. Chỉ xét `people` (trừ chính bot) → chia 3 nhóm theo bảng ở "Luật kiểm
+   format"; **`off` bị bỏ ra hoàn toàn**, kể cả khi họ không reply gì. Nhóm
+   "chưa report" và "sai format" đều rỗng → dừng, không reply gì cả. Exit 6 →
+   `SKIP | ca doi nghi hom nay`, không reply. Exit 2/3/4/5 → xem "Không đọc
+   được sheet" bên dưới.
 5. Reply **vào chính thread ở bước 2** (`thread_ts` = `reminderThreadTs`),
    đúng nguyên văn template "Tin nhắc lại", điền `<@id>` vào 2 nhóm mention
    (nhóm rỗng thì bỏ dòng). TUYỆT ĐỐI không đăng tin mới ra kênh, không DM ai.
@@ -481,47 +630,71 @@ tool Slack:
 
 ```
 REPLIED | chua report: <N> | sai format: <M>
-ASKED | chua co roster
+NOTIFIED | khong doc duoc sheet (exit <mã>)
 SKIP | <lý do: qua gio cutoff / khong tim thay thread hom nay / tat ca da report
-        / chua co roster, da hoi roi>
+        / ca doi nghi hom nay / khong doc duoc sheet, da bao roi>
 ERROR | <mô tả ngắn>
 ```
 
 Dòng này **không** ra Slack vì Job B để `delivery: none`.
 
-## Chưa có roster → hỏi trong thread
+## Không đọc được sheet → phải báo ra ngoài, không im
 
-Kênh chưa khai roster mà cứ im lặng log `ERROR` là hỏng: `delivery: none` nên
-không ai đọc được dòng đó, trong khi Job A vẫn đăng tin nhắc mỗi sáng → nhìn
-bên ngoài y như đang chạy tốt, thực ra chả nhắc được ai suốt nhiều ngày.
+> Mục này **chỉ áp dụng cho exit 2/3/4/5**. Exit 6 (cả đội nghỉ) là chuyện bình
+> thường: im hẳn, không đăng gì, không cảnh báo ai.
 
-Nên khi **chưa có roster**, Job B reply đúng 1 lần vào thread hôm nay, **không
+Script lỗi mà cứ im lặng log `ERROR` là hỏng: Job B để `delivery: none` nên
+không ai đọc được dòng đó, trong khi Job A vẫn đăng tin mỗi sáng → nhìn bên
+ngoài y như đang chạy tốt, thực ra chả tag được ai suốt nhiều ngày.
+
+**Job A** (script lỗi ở bước 1) — vẫn đăng tin, nhưng thay dòng mention bằng
+cảnh báo, vẫn giữ nguyên câu mốc để Job B còn tìm được thread:
+
+```
+⚠️ Mình chưa đọc được danh sách người phải report từ Google Sheet logtime (tab Resource plan) nên hôm nay chưa tag được ai — nhờ PM kiểm tra lại link/quyền chia sẻ giúp mình nhé.
+
+Đến giờ report task rồi, mọi người report hôm nay giúp mình nhé!
+
+Report theo mẫu sau :
+Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status | Note
+
+VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi
+```
+
+**Job B** (script lỗi ở bước 4) — reply đúng 1 lần vào thread hôm nay, **không
 tag ai** (chưa biết ai mà tag), không đăng tin mới ra kênh:
 
 ```
-📋 Mình chưa có danh sách người phải report cho kênh này, nên hôm nay chưa nhắc được ai.
-
-Nhờ mọi người tag mình kèm danh sách, mỗi dòng 1 người:
-<user_id> | <tên>
-
-(Lấy user ID: Slack → profile người đó → More → Copy member ID)
+⚠️ Mình chưa đọc được danh sách người phải report từ Google Sheet logtime (tab Resource plan) nên chưa nhắc được ai. Nhờ PM kiểm tra lại link/quyền chia sẻ của sheet giúp mình nhé.
 ```
 
-Câu **"tag mình kèm danh sách"** là bắt buộc, không được bỏ: luật "Im lặng trong
-thread" khiến bot bỏ qua mọi tin không tag nó — ai đó dán danh sách trần vào
-thread thì bot **không hề thấy**. Phải nói rõ là phải tag.
+Rồi trả về `NOTIFIED | khong doc duoc sheet (exit <mã>)`.
 
-**Chống hỏi lặp:** trước khi đăng, soi lại reply trong thread (kể cả tin của
-chính bot) xem đã có tin nào chứa `chưa có danh sách người phải report` chưa. Có
-rồi → `SKIP | chua co roster, da hoi roi`. Không có bước này thì 16:30 và 17:00
-hỏi 2 lần y hệt nhau mỗi ngày.
+**Chống báo lặp:** trước khi đăng, soi lại reply trong thread (kể cả tin của
+chính bot) xem đã có tin nào chứa `chưa đọc được danh sách người phải report`
+chưa. Có rồi → `SKIP | khong doc duoc sheet, da bao roi`. Không có bước này thì
+16:30 và 17:00 báo 2 lần y hệt nhau mỗi ngày.
 
 Guard ngày vẫn giữ nguyên: không tìm thấy thread hôm nay thì dừng ở bước 2, câu
-hỏi này **không** phải cái cớ để đăng tin mới ra kênh.
+báo lỗi này **không** phải cái cớ để đăng tin mới ra kênh.
 
-Có người tag kèm danh sách → xử lý theo "Setup kênh mới → phải hỏi danh sách
-nhân viên" ở trên: ghi file roster, báo lại đã ghi bao nhiêu người. Lượt cron
-kế tiếp là nhắc được ngay, không cần restart Gateway.
+Sửa xong sheet/env là lượt cron kế tiếp nhắc được ngay — trừ khi phải thêm env
+mới thì cần nạp lại env cho Gateway (xem README).
+
+## Thêm/bớt người phải report
+
+Ai đó nhờ *"thêm bạn X vào danh sách nhắc"*, *"bỏ bạn Y ra"*:
+
+- **Không** tạo file roster, **không** ghi danh sách vào skill hay vào state —
+  nguồn duy nhất là Google Sheet.
+- Hướng dẫn sửa thẳng tab `Resource plan`: thêm/xoá dòng, điền đúng cột `Member`
+  và `Slack ID` (lấy user ID: Slack → profile người đó → **More** → *Copy member
+  ID*). Có hiệu lực ngay lượt cron kế tiếp.
+- Skill này **chỉ đọc** sheet. Muốn bot tự ghi vào sheet thì đó là việc của skill
+  `gg-sheet` (có Service Account quyền Editor) — không tự thêm quyền ghi vào đây.
+- Ai hỏi *"ai đang trong danh sách nhắc?"* → chạy
+  `scripts/resource-plan-members.sh` rồi trả lời bằng cột `Member`, không tag ai
+  (chỉ liệt kê thì không cần ping).
 
 ## Tổng hợp theo yêu cầu (không qua cron)
 
@@ -533,16 +706,16 @@ bất kể đang là mấy giờ:
   hay 21:00 đều phải chạy. Cutoff chỉ tồn tại để chặn cron, không phải để chặn
   người.
 - Làm đúng **bước 2 → 4** của Job B (tìm thread hôm nay, đọc reply, đối chiếu
-  roster, chia 3 nhóm). Guard ngày vẫn giữ nguyên: không có thread hôm nay thì
-  báo lại là chưa có tin nhắc, **không** tự đăng tin nhắc mới, **không** đụng
-  thread hôm qua.
+  danh sách từ sheet, chia 3 nhóm). Guard ngày vẫn giữ nguyên: không có thread
+  hôm nay thì báo lại là chưa có tin nhắc, **không** tự đăng tin nhắc mới,
+  **không** đụng thread hôm qua.
 - Kết quả trả về:
   - Người hỏi chỉ muốn **biết** ("ai chưa report?") → trả lời ngay chỗ họ hỏi,
-    liệt kê tên, **không** reply vào thread và không tag ai. Xem tình hình
-    không phải là đi nhắc.
+    liệt kê tên (cột `Member`), **không** reply vào thread và không tag ai. Xem
+    tình hình không phải là đi nhắc.
   - Người hỏi bảo **nhắc** ("nhắc mấy người đó đi") → reply vào thread hôm nay
     theo đúng nguyên văn template "Tin nhắc lại", như Job B.
-- Cả 2 nhóm rỗng → nói thẳng "cả roster đã report đủ", không reply vào thread.
+- Cả 2 nhóm rỗng → nói thẳng "cả danh sách đã report đủ", không reply vào thread.
 
 Đây là lối vào duy nhất còn hoạt động ngoài giờ cron — đừng để luật "Im lặng
 trong thread" chặn nhầm nó: luật đó cấm **tự ý** nói, còn đây là **được tag và
@@ -559,9 +732,12 @@ mới nói** — mục này không phải cửa sau để nhảy vào thread khi
 
 | Lỗi | Phản hồi |
 |-----|---------|
-| Không đọc được roster của kênh (thiếu file/rỗng/parse lỗi) | Dừng job, log lỗi, **không** nhắc ai — không fallback sang thành viên kênh, không dùng `<!channel>` |
+| `resource-plan-members.sh` exit 2/3/4/5 (thiếu env / API lỗi / sai tab / sheet rỗng) | Không nhắc ai, không fallback sang thành viên kênh, không dùng `<!channel>` — báo ra ngoài theo mục "Không đọc được sheet" |
+| `resource-plan-members.sh` exit 6 (cả đội nghỉ hôm nay) | Im hẳn: không đăng tin, không cảnh báo, `SKIP \| ca doi nghi hom nay` |
+| Sheet có người thiếu ô `Slack ID` (`no_id`) | Vẫn nhắc những người còn lại, thêm 1 dòng cuối tin liệt kê tên không tag được. **Không** tự đoán id từ tên |
+| Ô công hôm nay ghi chữ lạ (không phải số, không phải chữ nghỉ) | Coi như đi làm → vẫn nhắc. Thà nhắc thừa còn hơn bỏ sót |
 | Không đọc được lịch sử kênh/thread | Dừng job, log lỗi, không reply mù, không crash job |
 | Job B không tìm thấy thread tin nhắc hôm nay | Dừng, không tự đăng tin nhắc mới ra kênh |
-| Roster có user id đã rời workspace | Vẫn mention theo id (Slack tự hiển thị inactive) — sửa bằng cách xoá khỏi roster |
+| Sheet có user id đã rời workspace | Vẫn mention theo id (Slack tự hiển thị inactive) — sửa bằng cách xoá dòng đó khỏi sheet |
 | Không chắc một dòng có hợp lệ hay không | Coi là **hợp lệ** (không nhắc) — thà bỏ sót còn hơn báo sai format cho người đã report tử tế |
-| Có người thắc mắc "tôi report rồi mà vẫn bị nhắc" | Trả lời là dòng report chưa đủ 7 field `Id task \| Re-estimate \| start date \| end date \| Actual Effort \| status \| note`, hoặc ngày chưa đúng `DD-MM-YYYY`, hoặc status Done mà thiếu end date — và nói rõ **chỉ cần 1 dòng sai là bị nhắc**, dù các dòng khác đã đúng. Chỉ nói lại mẫu, không phán nội dung công việc |
+| Có người thắc mắc "tôi report rồi mà vẫn bị nhắc" | Trả lời là dòng report chưa đủ 7 field `Id task \| Re-estimate (h) \| Start date \| End date \| Actual Effort (h) \| Status \| Note`, hoặc ngày chưa đúng `DD-MM-YYYY`, hoặc Status Done mà thiếu End date — và nói rõ **chỉ cần 1 dòng sai là bị nhắc**, dù các dòng khác đã đúng. Chỉ nói lại mẫu, không phán nội dung công việc |
