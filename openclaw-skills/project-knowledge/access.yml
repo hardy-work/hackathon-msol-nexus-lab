@@ -11,3 +11,29 @@ visibility_roles:
 coverage_permissions:
   person_role: project_knowledge:approve_coverage
   person_task: project_knowledge:approve_coverage
+
+# Ingest is a write-like action. The trusted NexusBot supplies the requester's
+# Slack user ID; free-form message text and display names never grant permission.
+# This allowlist is the only gate for starting a knowledge ingest.
+ingest:
+  allowed_users:
+    - user_id: U03H0QB426A
+      name: MH_TungDV
+    - user_id: U03Q60UCBJS
+      name: MA_Toan
+    - user_id: U03SC6QAP52
+      name: MH_PhongDT
+    - user_id: U03TJ5FG3K7
+      name: MH_Duong_MH
+    - user_id: U08FT511ZEF
+      name: MH_HoangMV
+    - user_id: U08GQJRUT3Q
+      name: MH_KienDT
+    - user_id: U09PXK5SCP4
+      name: MH_Ngoc Long
+    - user_id: U09QRTUHX24
+      name: MH_SonBH
+    - user_id: U0A2PDFHHL7
+      name: MH_VinhNV
+    - user_id: U0APQSSGKTM
+      name: MH_DoNT

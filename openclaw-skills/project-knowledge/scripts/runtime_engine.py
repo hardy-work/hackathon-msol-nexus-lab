@@ -84,6 +84,26 @@ class KnowledgeRuntime:
             self._views.move_to_end(key)
         return kb, token
 
+    def reload(self) -> None:
+        """Drop corpus-bound state after an atomic publish.
+
+        The normal query path already detects a changed corpus digest lazily.
+        NexusBot/deployment code can call this explicit hook immediately after
+        publishing a new approved corpus version, avoiding a window where a
+        long-lived process still holds old DuckDB/graph/vector views.
+        """
+        with self._lock:
+            for kb in self._views.values():
+                try:
+                    kb.con.close()
+                except Exception:
+                    pass
+            self._views.clear()
+            self._corpus_token = None
+            self._last_version_check = 0.0
+            answer.reset_indexes()
+            answer.numeric_guard.reset(self.root)
+
     def query(self, project: str, question: str, *, llm: bool = False,
               actor: str | None = None, roles: str | list[str] | None = None,
               history: list[dict] | None = None, use_cache: bool = True) -> dict:

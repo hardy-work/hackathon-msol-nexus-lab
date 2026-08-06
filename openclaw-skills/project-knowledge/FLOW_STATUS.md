@@ -23,6 +23,7 @@
 | Long-lived runtime | `runtime_engine.py`, `benchmark.py` | Reuses access-scoped DuckDB views, graph, BGE-M3 and cache connections |
 | Read-only filesystem boundary | `scripts/filesystem_boundary.py` | Runtime chỉ đọc corpus/index trong skill root; chặn traversal/symlink escape; cache/telemetry nằm ở `.runtime` hoặc volume riêng |
 | Gateway integration | External NexusBot owns transport; this skill exposes `scripts/run.py` | Trusted actor/roles, history and JSON response contract; no Slack adapter in this skill |
+| Slack ingest proposal | `scripts/ingest_proposal.py`, `scripts/review_artifact.py`, `scripts/ingest_runner.py` | File/hash/type + Slack ID allowlist → review artifact → isolated ingest worktree; no human approval step; stops before deployment publish |
 | Telemetry | `telemetry.py`, `/health` | Query/queue latency and state without raw question, answer or actor identity |
 | Production eval | onboarding + production suites | Auth/context/cache/concurrency and 10 PM/new-dev representative questions |
 | Demo showcase | `demo/run_demo.sh`, `scripts/demo_showcase.py` | Freshness-aware, one-process, offline 7-step story; human and JSON output |

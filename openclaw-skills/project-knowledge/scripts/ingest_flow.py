@@ -83,6 +83,23 @@ def execute(worktree: Path, doc_id: str, version: int, review: bool) -> None:
         if plan_path:
             command += ["--plan", str(plan_path.relative_to(skill))]
         run(command, skill, env)
+    elif extractor == "spreadsheet":
+        run([sys.executable, str(scripts / "extract_spreadsheet.py"), "--doc", doc_id],
+            skill, env)
+        if doc.get("supersedes") is not None:
+            reingest.reconcile_artifacts(
+                skill, doc_id, int(doc["supersedes"]), int(version)
+            )
+            plan = reingest.build_plan(
+                skill, doc_id, int(doc["supersedes"]), int(version)
+            )
+            reingest.archive_retired_pages(skill, plan)
+            reingest.archive_one_to_one_pages(skill, plan)
+            plan_path = reingest.write_plan(skill, plan)
+        command = [sys.executable, str(scripts / "ingest_spreadsheet.py"), "--doc", doc_id]
+        if plan_path:
+            command += ["--plan", str(plan_path.relative_to(skill))]
+        run(command, skill, env)
     elif extractor == "van":
         run([sys.executable, str(scripts / "extract_van.py"), "--doc", doc_id], skill, env)
         run([sys.executable, str(scripts / "structure.py"), "--doc", doc_id], skill, env)
@@ -119,7 +136,7 @@ def execute(worktree: Path, doc_id: str, version: int, review: bool) -> None:
     else:
         raise RuntimeError(
             f"document `{doc_id}@v{version}` có extractor `{extractor or 'missing'}` "
-            "chưa được triển khai; hiện hỗ trợ Nexus XLSX, DOCX/PDF và Markdown"
+            "chưa được triển khai; hiện hỗ trợ Nexus XLSX, generic XLSX, DOCX/PDF và Markdown"
         )
     run([sys.executable, str(scripts / "lint.py")], skill, env)
     if review:

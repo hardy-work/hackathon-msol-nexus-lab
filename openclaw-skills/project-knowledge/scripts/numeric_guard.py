@@ -334,6 +334,29 @@ class AnswerGuard:
                         if u:
                             self.value_units.setdefault(f, set()).add(u)
                             ubucket.setdefault(f, set()).add(u)
+                # Source pages may deliberately keep structured numbers only
+                # in their paired raw/*.facts.json (for example a generic
+                # workbook whose cells were not curated into frontmatter one
+                # by one).  Load those current sibling facts into the page's
+                # citation scope.  The registry/path check remains mandatory;
+                # a stale or unregistered facts file cannot unlock a number.
+                for raw_rel in fm.get("raw_paths") or []:
+                    raw_rel = str(raw_rel)
+                    if raw_rel.endswith(".fulltext.md"):
+                        facts_rel = raw_rel[:-len(".fulltext.md")] + ".facts.json"
+                    elif raw_rel.endswith(".md"):
+                        facts_rel = raw_rel[:-len(".md")] + ".facts.json"
+                    else:
+                        continue
+                    try:
+                        facts_path = self.boundary.resolve(facts_rel, must_exist=True)
+                        data = json.loads(self.boundary.read_text(facts_rel))
+                    except (filesystem_boundary.BoundaryError, FileNotFoundError,
+                            OSError, json.JSONDecodeError):
+                        continue
+                    if not payload_is_current(data, self.root, path=facts_path):
+                        continue
+                    self._collect(data, bucket, ubucket)
                 path = p.relative_to(self.root).as_posix()
                 self.by_page[path] = bucket
                 self.units_by_page[path] = ubucket
