@@ -45,19 +45,3 @@ def get_values(file_id: str, range_a1: str, token: str) -> list[list]:
     url = f"{BASE_URL}/{file_id}/values/{enc_range}"
     result = _request("GET", url, token)
     return result.get("values", [])
-
-
-def update_values(file_id: str, range_a1: str, values: list[list], token: str, value_input_option: str = "USER_ENTERED") -> dict:
-    enc_range = urllib.parse.quote(range_a1, safe="")
-    url = f"{BASE_URL}/{file_id}/values/{enc_range}?valueInputOption={value_input_option}"
-    return _request("PUT", url, token, {"values": values})
-
-
-def batch_update_values(file_id: str, data: list[dict], token: str, value_input_option: str = "USER_ENTERED") -> dict:
-    url = f"{BASE_URL}/{file_id}/values:batchUpdate"
-    return _request("POST", url, token, {"valueInputOption": value_input_option, "data": data})
-
-
-def batch_update_spreadsheet(file_id: str, requests: list[dict], token: str) -> dict:
-    url = f"{BASE_URL}/{file_id}:batchUpdate"
-    return _request("POST", url, token, {"requests": requests})

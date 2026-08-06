@@ -67,27 +67,74 @@ def apply_status_log(tasks: list[dict], today: str) -> list[dict]:
     return tasks
 
 
+def _find_col_index(header: list, name: str) -> int | None:
+    for i, c in enumerate(header):
+        if str(c).strip() == name:
+            return i
+    return None
+
+
+def _require_col_index(header: list, tab_name: str, name: str) -> int:
+    idx = _find_col_index(header, name)
+    if idx is None:
+        raise ValueError(f'Không tìm thấy cột "{name}" trong tab "{tab_name}"')
+    return idx
+
+
 def read_output_tab(file_id: str, tab_name: str, token: str) -> list[dict]:
-    """Đọc dòng dữ liệu thật (bỏ header) từ Risk/Issue management — schema cố
-    định A-H: ID | Date Detected | Description | Priority | Related
-    Assignee/Task | Next Action | Status | Notes.
+    """Đọc dòng dữ liệu thật (bỏ header) từ Risk/Issue management — TỰ DÒ vị
+    trí cột theo TÊN header, KHÔNG hardcode range A-H, vì 2 tab lệch nhau
+    trên sheet thật: Isssue management gộp chung "Related Assignee/Task" (1
+    cột), còn Risk management đã tách thành "Related Assignee" + "Task" (2
+    cột riêng) — đọc cứng theo vị trí sẽ lệch hết các cột sau đó (Next
+    Action/Status/Notes), khiến `split_existing_by_status()` so status sai
+    mà không báo lỗi gì (đã xác nhận bằng dữ liệu thật, xem SKILL.md).
     """
-    rows = get_values(file_id, f"'{tab_name}'!A2:H500", token)
+    rows = get_values(file_id, f"'{tab_name}'!A1:K500", token)
+    if not rows:
+        return []
+    header = rows[0]
+
+    id_idx = _require_col_index(header, tab_name, "ID")
+    date_idx = _require_col_index(header, tab_name, "Date Detected")
+    desc_idx = _require_col_index(header, tab_name, "Description")
+    priority_idx = _require_col_index(header, tab_name, "Priority")
+    next_action_idx = _require_col_index(header, tab_name, "Next Action")
+    status_idx = _require_col_index(header, tab_name, "Status")
+    notes_idx = _require_col_index(header, tab_name, "Notes")
+
+    combined_idx = _find_col_index(header, "Related Assignee/Task")
+    assignee_idx = _find_col_index(header, "Related Assignee")
+    task_idx = _find_col_index(header, "Task")
+    if combined_idx is None and (assignee_idx is None or task_idx is None):
+        raise ValueError(
+            f'Không tìm thấy cột "Related Assignee/Task" (hoặc cặp "Related Assignee" + "Task") trong tab "{tab_name}"'
+        )
+
+    def cell(row: list, idx: int | None) -> str:
+        return row[idx].strip() if idx is not None and idx < len(row) and row[idx] else ""
+
     items = []
-    for row in rows:
-        if not row or not row[0]:
+    for row in rows[1:]:
+        row_id = cell(row, id_idx)
+        if not row_id:
             continue
-        row = list(row) + [""] * (8 - len(row))
+        if combined_idx is not None:
+            related = cell(row, combined_idx)
+        else:
+            assignee = cell(row, assignee_idx)
+            task = cell(row, task_idx)
+            related = f"{assignee} / {task}" if assignee and task else (assignee or task)
         items.append(
             {
-                "id": row[0],
-                "dateDetected": row[1],
-                "description": row[2],
-                "priority": row[3],
-                "relatedAssigneeTask": row[4],
-                "nextAction": row[5],
-                "status": row[6],
-                "notes": row[7],
+                "id": row_id,
+                "dateDetected": cell(row, date_idx),
+                "description": cell(row, desc_idx),
+                "priority": cell(row, priority_idx),
+                "relatedAssigneeTask": related,
+                "nextAction": cell(row, next_action_idx),
+                "status": cell(row, status_idx),
+                "notes": cell(row, notes_idx),
             }
         )
     return items

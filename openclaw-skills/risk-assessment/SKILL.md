@@ -87,6 +87,8 @@ Toàn bộ cấu hình nằm trong `config.json` (cùng thư mục skill, gitign
 
 ⚠️ **Bảng "Thời gian làm việc mỗi ngày" (Resource plan) hiện chỉ phủ 1 khoảng ngày cố định** (vd 27/7–9/8) — nếu sprint kéo dài hơn khoảng này, những ngày sau đó sẽ không có dữ liệu (P1/P4/S2 coi như capacity = 0 cho các ngày thiếu, KHÔNG suy đoán). Khi PM báo đã mở rộng bảng trên sheet, không cần sửa gì trong code, `resource_plan.py` tự đọc lại đúng theo header ngày mới.
 
+⚠️ **`Risk management`/`Isssue management` có thể lệch schema NHAU** (đã xảy ra thật): `Isssue management` gộp chung cột "Related Assignee/Task", nhưng `Risk management` đã tách thành 2 cột riêng "Related Assignee" + "Task" — `read_output_tab()` trong `scan.py` tự dò cột theo TÊN header (không hardcode range A-H) để chịu được sai lệch này, tự ghép lại thành `"{assignee} / {task}"` nếu gặp schema tách. Nếu PM báo "sheet vừa đổi cột" ở 2 tab này hoặc kết quả "Chưa xử lý"/"Đang xử lý" thiếu dòng bất thường → đọc lại header thật (`get_values` range `A1:K1`) trước khi tin dữ liệu.
+
 **Công thức Capacity (P4/S2)** — `compute_person_capacity()` trong `rule_engine.py`:
 
 ```
