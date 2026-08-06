@@ -74,5 +74,46 @@ class ParseResourcePlanTest(unittest.TestCase):
         self.assertEqual(son["slackId"], "U09QRTUHX24")
 
 
+# Dữ liệu mẫu THẬT đọc lại từ tab "Resource plan" (session 2026-08-06) — cấu
+# trúc đã đổi lần nữa: "Slack ID"/"Slack name" giờ nằm TRƯỚC "Role" (giống hệt
+# tab Overtime), không còn cột "Name"/"Id Slack" nằm SAU cụm ngày như trước.
+NEW_LAYOUT_ROWS = [
+    ["KẾ HOẠCH QUẢN LÝ NGUỒN LỰC\nDự án Project Based/ Labo host management"],
+    ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "Thời gian làm việc mỗi ngày"],
+    ["Kế hoạch phân bổ nguồn lực", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+     "#", "Member", "Slack ID", "Slack name", "Role", "July", "", "", "", "", "August"],
+    ["NGUỒN LỰC DỰ KIẾN (MM)", "", "", "", "NGUỒN LỰC PHÂN BỔ VÀO DỰ ÁN (MM)", "", "", "", "", "", "", "", "", "", "", "",
+     "SO SÁNH \nNGUỒN LỰC", "GHI CHÚ", "", "", "", "", "", "", "",
+     "27", "28", "29", "30", "31", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+    ["#", "Project scope", "Original estimated effort", "Re-estimated effort", "Tên nhân sự", "Role", "Level",
+     "Migration", "", "", "", "", "", "", "", "Effort theo vai trò (MM)", "Chênh lệch (MM)", "", "", "",
+     "1", "Bùi Hồng Sơn", "U09QRTUHX24", "MH_SonBH", "BE", "8", "8", "8", "8", "8", "", "", "8", "8", "8", "8", "8"],
+    ["", "", "", "", "", "", "", "July", "", "", "", "August", "", "", "", "", "", "", "", "",
+     "2", "Nguyễn Thành Đô", "U0APQSSGKTM", "MH_DoNT", "BE", "8", "8", "8", "8", "8", "", "", "8", "8", "8", "8", "8"],
+]
+
+
+class ParseResourcePlanNewLayoutTest(unittest.TestCase):
+    def test_finds_people_with_slack_name_column_before_role(self):
+        result = parse_resource_plan(NEW_LAYOUT_ROWS, PERSON_CODE_MAP, year=2026)
+        self.assertEqual(len(result), 2)
+
+    def test_maps_assignee_code_from_slack_name_column(self):
+        result = parse_resource_plan(NEW_LAYOUT_ROWS, PERSON_CODE_MAP, year=2026)
+        codes = {p["assigneeCode"] for p in result}
+        self.assertEqual(codes, {"SơnBH", "ĐôNT"})
+
+    def test_slack_id_read_from_slack_id_column(self):
+        result = parse_resource_plan(NEW_LAYOUT_ROWS, PERSON_CODE_MAP, year=2026)
+        son = next(p for p in result if p["assigneeCode"] == "SơnBH")
+        self.assertEqual(son["slackId"], "U09QRTUHX24")
+
+    def test_daily_hours_still_correct_with_days_column_after_role(self):
+        result = parse_resource_plan(NEW_LAYOUT_ROWS, PERSON_CODE_MAP, year=2026)
+        son = next(p for p in result if p["assigneeCode"] == "SơnBH")
+        self.assertEqual(son["dailyHours"]["2026-07-27"], 8.0)
+        self.assertEqual(son["dailyHours"]["2026-08-01"], None)  # weekend, để trống
+
+
 if __name__ == "__main__":
     unittest.main()

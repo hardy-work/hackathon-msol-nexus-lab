@@ -13,7 +13,6 @@ from rule_engine import (
     rule_S2_sprint_at_risk,
     rule_M1_bug_trend_by_module,
     rule_M2_category_behind_own_deadline,
-    apply_trend,
     run_rules,
     compute_person_capacity,
     compute_sprint_health,
@@ -240,7 +239,7 @@ class RuleP4SprintBacklogOverloadTest(unittest.TestCase):
                 "2026-08-04": 8.0, "2026-08-05": 8.0,
             }},
         ]
-        out = rule_P4_sprint_backlog_overload(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS)
+        out = rule_P4_sprint_backlog_overload(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS, now_hour=20)
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0]["rule"], "P4")
 
@@ -253,13 +252,13 @@ class RuleP4SprintBacklogOverloadTest(unittest.TestCase):
                 "2026-08-04": 8.0, "2026-08-05": 8.0,
             }},
         ]
-        out = rule_P4_sprint_backlog_overload(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS)
+        out = rule_P4_sprint_backlog_overload(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS, now_hour=20)
         self.assertEqual(out, [])
 
     def test_ot_today_covers_deficit_prevents_fire(self):
-        # Backlog 12h, capacity thường (chỉ ngày mai 08-05) = 8h -> thiếu 4h
-        # nếu không có OT. Có 4h OT đăng ký đúng HÔM NAY (08-04) -> đủ bù,
-        # không còn fire nữa.
+        # Backlog 12h, capacity thường (chỉ ngày mai 08-05, gọi sau cutoff nên
+        # hôm nay không tính) = 8h -> thiếu 4h nếu không có OT. Có 4h OT đăng
+        # ký đúng HÔM NAY (08-04) -> đủ bù, không còn fire nữa.
         tasks = [
             base_task(id="T1", detectedFrom="T1", assignee="SơnBH", sprint="Sprint 1", isDone=False, remainingHours=12),
         ]
@@ -267,7 +266,7 @@ class RuleP4SprintBacklogOverloadTest(unittest.TestCase):
             {"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {"2026-08-05": 8.0}},
         ]
         ot_by_person = {"SơnBH": {"2026-08-04": 4.0}}
-        out = rule_P4_sprint_backlog_overload(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS, ot_by_person)
+        out = rule_P4_sprint_backlog_overload(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS, ot_by_person, now_hour=20)
         self.assertEqual(out, [])
 
     def test_without_ot_same_scenario_still_fires(self):
@@ -277,31 +276,54 @@ class RuleP4SprintBacklogOverloadTest(unittest.TestCase):
         resource_plan = [
             {"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {"2026-08-05": 8.0}},
         ]
-        out = rule_P4_sprint_backlog_overload(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS)
+        out = rule_P4_sprint_backlog_overload(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS, now_hour=20)
         self.assertEqual(len(out), 1)
+
+    def test_called_before_cutoff_includes_today_capacity(self):
+        # Gọi buổi sáng (9h, trước cutoff 18h mặc định) -> capacity tính cả
+        # hôm nay (08-04) lẫn ngày mai (08-05) = 16h, đủ bù backlog 12h.
+        tasks = [
+            base_task(id="T1", detectedFrom="T1", assignee="SơnBH", sprint="Sprint 1", isDone=False, remainingHours=12),
+        ]
+        resource_plan = [
+            {"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {"2026-08-04": 8.0, "2026-08-05": 8.0}},
+        ]
+        out = rule_P4_sprint_backlog_overload(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS, now_hour=9)
+        self.assertEqual(out, [])
 
 
 class ComputePersonCapacityTest(unittest.TestCase):
-    def test_today_regular_hours_excluded_end_of_day_convention(self):
+    def test_called_after_cutoff_today_regular_hours_excluded(self):
         daily_hours = {"2026-08-04": 8.0, "2026-08-05": 8.0}
-        capacity = compute_person_capacity(daily_hours, {}, "2026-08-04", "2026-08-05")
-        self.assertEqual(capacity, 8.0)  # chỉ 08-05 (ngày mai), KHÔNG cộng 08-04 (hôm nay)
+        capacity = compute_person_capacity(daily_hours, {}, "2026-08-04", "2026-08-05", THRESHOLDS, now_hour=20)
+        self.assertEqual(capacity, 8.0)  # sau cutoff (18h) -> chỉ 08-05 (ngày mai), KHÔNG cộng 08-04 (hôm nay)
 
-    def test_ot_today_is_included(self):
+    def test_called_before_cutoff_today_regular_hours_included(self):
+        daily_hours = {"2026-08-04": 8.0, "2026-08-05": 8.0}
+        capacity = compute_person_capacity(daily_hours, {}, "2026-08-04", "2026-08-05", THRESHOLDS, now_hour=9)
+        self.assertEqual(capacity, 16.0)  # trước cutoff (18h) -> tính cả 08-04 lẫn 08-05
+
+    def test_custom_cutoff_hour_from_thresholds(self):
+        daily_hours = {"2026-08-04": 8.0, "2026-08-05": 8.0}
+        th = {**THRESHOLDS, "cutoffHour": 9}
+        capacity = compute_person_capacity(daily_hours, {}, "2026-08-04", "2026-08-05", th, now_hour=10)
+        self.assertEqual(capacity, 8.0)  # 10h > cutoffHour=9 -> coi như đã qua giờ làm, loại hôm nay
+
+    def test_ot_today_is_included_regardless_of_cutoff(self):
         daily_hours = {"2026-08-05": 8.0}
         ot_daily_hours = {"2026-08-04": 4.0}
-        capacity = compute_person_capacity(daily_hours, ot_daily_hours, "2026-08-04", "2026-08-05")
-        self.assertEqual(capacity, 12.0)  # 8 (ngày mai) + 4 (OT hôm nay)
+        capacity = compute_person_capacity(daily_hours, ot_daily_hours, "2026-08-04", "2026-08-05", THRESHOLDS, now_hour=20)
+        self.assertEqual(capacity, 12.0)  # 8 (ngày mai) + 4 (OT hôm nay, luôn tính bất kể giờ)
 
     def test_ot_before_today_is_excluded(self):
         daily_hours = {"2026-08-05": 8.0}
         ot_daily_hours = {"2026-08-03": 4.0}  # OT ngày đã qua, ngoài phạm vi
-        capacity = compute_person_capacity(daily_hours, ot_daily_hours, "2026-08-04", "2026-08-05")
+        capacity = compute_person_capacity(daily_hours, ot_daily_hours, "2026-08-04", "2026-08-05", THRESHOLDS, now_hour=20)
         self.assertEqual(capacity, 8.0)
 
     def test_none_ot_daily_hours_treated_as_no_overtime(self):
         daily_hours = {"2026-08-05": 8.0}
-        capacity = compute_person_capacity(daily_hours, None, "2026-08-04", "2026-08-05")
+        capacity = compute_person_capacity(daily_hours, None, "2026-08-04", "2026-08-05", THRESHOLDS, now_hour=20)
         self.assertEqual(capacity, 8.0)
 
 
@@ -341,20 +363,20 @@ class RuleS2SprintAtRiskTest(unittest.TestCase):
             {"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {"2026-08-04": 8.0}},
             {"member": "Nguyễn Văn Vinh", "assigneeCode": "VinhNV", "dailyHours": {"2026-08-04": 8.0}},
         ]
-        out = rule_S2_sprint_at_risk(tasks, resource_plan, TODAY, "2026-08-04", "Sprint 1", THRESHOLDS)
+        out = rule_S2_sprint_at_risk(tasks, resource_plan, TODAY, "2026-08-04", "Sprint 1", THRESHOLDS, now_hour=20)
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0]["rule"], "S2")
 
     def test_team_capacity_sufficient_does_not_fire(self):
-        # Capacity giờ tính từ NGÀY MAI (không phải hôm nay) -- sprint_end
-        # phải là ngày mai để còn capacity thật sự tính được.
+        # Capacity giờ tính từ NGÀY MAI (gọi sau cutoff) -- sprint_end phải là
+        # ngày mai để còn capacity thật sự tính được.
         tasks = [
             base_task(id="T1", detectedFrom="T1", assignee="SơnBH", sprint="Sprint 1", isDone=False, remainingHours=4),
         ]
         resource_plan = [
             {"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {"2026-08-05": 8.0}},
         ]
-        out = rule_S2_sprint_at_risk(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS)
+        out = rule_S2_sprint_at_risk(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS, now_hour=20)
         self.assertEqual(out, [])
 
 
@@ -362,7 +384,7 @@ class ComputeSprintHealthTest(unittest.TestCase):
     def test_off_track_reports_on_track_false(self):
         tasks = [base_task(id="T1", detectedFrom="T1", assignee="SơnBH", sprint="Sprint 1", isDone=False, remainingHours=40)]
         resource_plan = [{"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {"2026-08-05": 8.0}}]
-        health = compute_sprint_health(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1")
+        health = compute_sprint_health(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS, now_hour=20)
         self.assertFalse(health["onTrack"])
         self.assertEqual(health["totalBacklog"], 40.0)
         self.assertEqual(health["totalCapacity"], 8.0)
@@ -371,15 +393,22 @@ class ComputeSprintHealthTest(unittest.TestCase):
     def test_on_track_reports_on_track_true(self):
         tasks = [base_task(id="T1", detectedFrom="T1", assignee="SơnBH", sprint="Sprint 1", isDone=False, remainingHours=4)]
         resource_plan = [{"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {"2026-08-05": 8.0}}]
-        health = compute_sprint_health(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1")
+        health = compute_sprint_health(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS, now_hour=20)
         self.assertTrue(health["onTrack"])
 
     def test_returns_data_even_when_exactly_on_track_boundary(self):
         # backlog == capacity -> vẫn coi là onTrack (không thiếu, dùng <=)
         tasks = [base_task(id="T1", detectedFrom="T1", assignee="SơnBH", sprint="Sprint 1", isDone=False, remainingHours=8)]
         resource_plan = [{"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {"2026-08-05": 8.0}}]
-        health = compute_sprint_health(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1")
+        health = compute_sprint_health(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS, now_hour=20)
         self.assertTrue(health["onTrack"])
+
+    def test_called_before_cutoff_includes_today_capacity(self):
+        tasks = [base_task(id="T1", detectedFrom="T1", assignee="SơnBH", sprint="Sprint 1", isDone=False, remainingHours=12)]
+        resource_plan = [{"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {"2026-08-04": 8.0, "2026-08-05": 8.0}}]
+        health = compute_sprint_health(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS, now_hour=9)
+        self.assertTrue(health["onTrack"])
+        self.assertEqual(health["totalCapacity"], 16.0)
 
 
 class RuleM1BugTrendByModuleTest(unittest.TestCase):
@@ -424,38 +453,6 @@ class RuleM2CategoryBehindOwnDeadlineTest(unittest.TestCase):
         self.assertEqual(rule_M2_category_behind_own_deadline(tasks, TODAY, THRESHOLDS), [])
 
 
-class ApplyTrendTest(unittest.TestCase):
-    def test_new_when_absent_from_snapshot(self):
-        risks = [{"layer": "Task", "rule": "T3", "detectedFrom": "AU-1", "score": 4}]
-        risks, resolved = apply_trend(risks, None)
-        self.assertEqual(risks[0]["trend"], "New")
-        self.assertEqual(resolved, [])
-
-    def test_increasing_when_score_went_up(self):
-        risks = [{"layer": "Task", "rule": "T3", "detectedFrom": "AU-1", "score": 6}]
-        snapshot = {"risks": [{"layer": "Task", "rule": "T3", "detectedFrom": "AU-1", "score": 4}]}
-        risks, _ = apply_trend(risks, snapshot)
-        self.assertEqual(risks[0]["trend"], "Increasing")
-
-    def test_decreasing_when_score_went_down(self):
-        risks = [{"layer": "Task", "rule": "T3", "detectedFrom": "AU-1", "score": 2}]
-        snapshot = {"risks": [{"layer": "Task", "rule": "T3", "detectedFrom": "AU-1", "score": 4}]}
-        risks, _ = apply_trend(risks, snapshot)
-        self.assertEqual(risks[0]["trend"], "Decreasing")
-
-    def test_stable_when_score_unchanged(self):
-        risks = [{"layer": "Task", "rule": "T3", "detectedFrom": "AU-1", "score": 4}]
-        snapshot = {"risks": [{"layer": "Task", "rule": "T3", "detectedFrom": "AU-1", "score": 4}]}
-        risks, _ = apply_trend(risks, snapshot)
-        self.assertEqual(risks[0]["trend"], "Stable")
-
-    def test_resolved_risks_lists_snapshot_entries_no_longer_present(self):
-        risks = []
-        snapshot = {"risks": [{"layer": "Task", "rule": "T3", "detectedFrom": "AU-9", "score": 4}]}
-        _, resolved = apply_trend(risks, snapshot)
-        self.assertEqual(resolved, ["AU-9"])
-
-
 class RunRulesTest(unittest.TestCase):
     def test_combines_issues_and_risks_without_resource_plan(self):
         tasks = [
@@ -465,7 +462,6 @@ class RunRulesTest(unittest.TestCase):
         result = run_rules(tasks=tasks, thresholds=THRESHOLDS, today=TODAY)
         self.assertEqual(len(result["issues"]), 2)
         self.assertEqual(result["risks"], [])
-        self.assertEqual(result["resolvedRisks"], [])
 
     def test_includes_person_and_sprint_rules_when_resource_plan_given(self):
         tasks = [

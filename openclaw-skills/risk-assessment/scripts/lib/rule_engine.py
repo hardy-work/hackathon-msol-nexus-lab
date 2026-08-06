@@ -1,15 +1,15 @@
 """Rule engine cho skill risk-assessment — thuần deterministic, KHÔNG có LLM.
 scan.py chỉ gọi run_rules() rồi diễn giải kết quả bằng tiếng Việt.
 
-12 rule chia theo 4 layer (Person/Task/Sprint/Module) + 1 bước hậu xử lý
-cross-cutting (Trend). Xem chi tiết công thức từng rule ở
-morkit/output/spec/risk-assessment/design.md.
+12 rule chia theo 4 layer (Person/Task/Sprint/Module). Skill này CHỈ ĐỌC +
+ĐÁNH GIÁ — không ghi gì vào Sheet (việc ghi risk/issue do skill khác đảm
+nhiệm), nên không cần Trend/so sánh lịch sử, mỗi lần chạy là 1 bức ảnh độc
+lập tại thời điểm gọi.
 
-Output item (risk hoặc issue) khớp đúng schema unified của sheet thật:
-`ID | Date Detected | Description | Priority | Related Assignee/Task |
-Next Action | Status | Notes` — các field khác (layer/rule/score/trend/
-source/detectedFrom) là nội bộ, dùng để dedupe/tính trend, KHÔNG phải cột
-riêng trên sheet.
+Output item (risk hoặc issue): `layer`, `rule`, `description`, `priority`,
+`relatedAssigneeTask`, `nextAction`/`nextActionOptions`, `score`,
+`detectedFrom` — thuần để hiển thị/phân tích, không tương ứng cột nào trên
+Sheet (skill không ghi gì cả).
 
 Phân loại Risk vs Issue theo quy ước PM cổ điển (giữ nguyên từ v1):
   Issue = sự thật đã xảy ra rồi (T1 trễ hạn, T2 effort đã vượt xa ước tính)
@@ -30,7 +30,7 @@ DEFAULT_THRESHOLDS = {
     "unassignedNearDeadlineDays": 2,
     "velocityDropMarginPct": 15,
     "notStartedGraceDays": 0,
-    "inProgressReminderDays": 1,
+    "cutoffHour": 18,
 }
 
 
@@ -76,13 +76,6 @@ def make_item(
         "relatedAssigneeTask": related_assignee_task or detected_from,
         "nextAction": next_action_options[0] if next_action_options else "",
         "nextActionOptions": list(next_action_options or []),
-        # Ghi "In progress" ngay từ đầu (không phải "Open") — PM coi như đã
-        # tiếp nhận, và Date Detected trở thành mốc để nhắc lại nếu quá lâu
-        # không xử lý (xem find_stale_in_progress() trong scan.py).
-        "status": "In progress",
-        "notes": "",
-        "source": "AI",
-        "trend": "New",
         "score": score,
         "detectedFrom": detected_from,
     }
@@ -243,8 +236,9 @@ def rule_S2_sprint_at_risk(
     sprint_name: str,
     th: dict,
     ot_by_person: dict[str, dict] | None = None,
+    now_hour: int | None = None,
 ) -> list[dict]:
-    by_person = compute_capacity_backlog_by_person(tasks, resource_plan_people, today, sprint_end, sprint_name, ot_by_person)
+    by_person = compute_capacity_backlog_by_person(tasks, resource_plan_people, today, sprint_end, sprint_name, th, ot_by_person, now_hour)
     total_capacity = sum(cb["capacity"] for cb in by_person.values())
     total_backlog = sum(cb["backlog"] for cb in by_person.values())
     if total_backlog > total_capacity:
@@ -487,19 +481,42 @@ def rule_P3_unassigned_near_deadline(tasks: list[dict], today: str, th: dict) ->
 
 
 # --- Helper dùng chung cho P4 và S2 (Sprint layer) ----------------------------
-def compute_person_capacity(daily_hours: dict, ot_daily_hours: dict, today: str, sprint_end: str) -> float:
-    """Capacity = giờ làm bình thường TỪ NGÀY MAI tới hết sprint + giờ OT TỪ
-    HÔM NAY tới hết sprint, cộng lại.
+def compute_person_capacity(
+    daily_hours: dict,
+    ot_daily_hours: dict,
+    today: str,
+    sprint_end: str,
+    th: dict,
+    now_hour: int | None = None,
+) -> float:
+    """Capacity = giờ làm bình thường (từ mốc `regular_start` tới hết sprint)
+    + giờ OT (từ HÔM NAY tới hết sprint), cộng lại.
 
-    Phân tích chạy vào cuối ngày nên giờ làm bình thường của hôm nay coi như
-    đã dùng hết (không còn tính là capacity "còn trống" nữa) — chỉ OT mới
-    tính từ hôm nay vì OT có thể làm thêm ngay trong ngày để bù backlog.
+    `regular_start` phụ thuộc giờ đồng hồ THẬT lúc gọi, so với
+    `th["cutoffHour"]` (mặc định 18h — coi như hết giờ làm việc thông
+    thường):
+      - Gọi TRƯỚC cutoff (vd buổi sáng/trong giờ làm) -> hôm nay CHƯA dùng
+        hết giờ -> `regular_start` = hôm nay (tính đủ cả hôm nay).
+      - Gọi SAU cutoff (vd buổi tối) -> hôm nay coi như đã dùng hết ->
+        `regular_start` = ngày mai (như cũ).
+
+    `now_hour` cho phép tiêm giờ giả để test (không phụ thuộc đồng hồ máy
+    thật) — bỏ trống thì dùng giờ thật (`datetime.now().hour`).
+
+    OT vẫn LUÔN tính từ hôm nay bất kể giờ nào gọi — vì OT là làm thêm ngoài
+    giờ hành chính, không phụ thuộc đã hết giờ làm thông thường hay chưa.
 
     Ngày không có trong `daily_hours`/`ot_daily_hours` (ngoài phạm vi bảng)
     hoặc giá trị None/rỗng (cuối tuần/chưa điền/chưa đăng ký OT) đều tính 0.
     """
-    tomorrow = (date.fromisoformat(today) + timedelta(days=1)).isoformat()
-    regular = sum(h for d, h in daily_hours.items() if tomorrow <= d <= sprint_end and h)
+    now_hour = datetime.now().hour if now_hour is None else now_hour
+    cutoff_hour = th.get("cutoffHour", 18)
+    if now_hour < cutoff_hour:
+        regular_start = today
+    else:
+        regular_start = (date.fromisoformat(today) + timedelta(days=1)).isoformat()
+
+    regular = sum(h for d, h in daily_hours.items() if regular_start <= d <= sprint_end and h)
     overtime = sum(h for d, h in (ot_daily_hours or {}).items() if today <= d <= sprint_end and h)
     return regular + overtime
 
@@ -518,14 +535,16 @@ def compute_capacity_backlog_by_person(
     today: str,
     sprint_end: str,
     sprint_name: str,
+    th: dict,
     ot_by_person: dict[str, dict] | None = None,
+    now_hour: int | None = None,
 ) -> dict[str, dict]:
     ot_by_person = ot_by_person or {}
     result = {}
     for person in resource_plan_people:
         code = person["assigneeCode"]
         result[code] = {
-            "capacity": compute_person_capacity(person["dailyHours"], ot_by_person.get(code), today, sprint_end),
+            "capacity": compute_person_capacity(person["dailyHours"], ot_by_person.get(code), today, sprint_end, th, now_hour),
             "backlog": compute_person_backlog(code, tasks, sprint_name),
         }
     return result
@@ -537,13 +556,15 @@ def compute_sprint_health(
     today: str,
     sprint_end: str,
     sprint_name: str,
+    th: dict,
     ot_by_person: dict[str, dict] | None = None,
+    now_hour: int | None = None,
 ) -> dict:
     """Tổng backlog/capacity CẢ TEAM — LUÔN trả về số liệu (khác S2, chỉ sinh
     risk khi vượt ngưỡng) — dùng cho mục "Sức khỏe Sprint" trong draft, PM cần
     thấy con số này mỗi lần chạy, kể cả khi sprint đang ổn.
     """
-    by_person = compute_capacity_backlog_by_person(tasks, resource_plan_people, today, sprint_end, sprint_name, ot_by_person)
+    by_person = compute_capacity_backlog_by_person(tasks, resource_plan_people, today, sprint_end, sprint_name, th, ot_by_person, now_hour)
     total_capacity = sum(cb["capacity"] for cb in by_person.values())
     total_backlog = sum(cb["backlog"] for cb in by_person.values())
     return {
@@ -563,9 +584,10 @@ def rule_P4_sprint_backlog_overload(
     sprint_name: str,
     th: dict,
     ot_by_person: dict[str, dict] | None = None,
+    now_hour: int | None = None,
 ) -> list[dict]:
     out = []
-    by_person = compute_capacity_backlog_by_person(tasks, resource_plan_people, today, sprint_end, sprint_name, ot_by_person)
+    by_person = compute_capacity_backlog_by_person(tasks, resource_plan_people, today, sprint_end, sprint_name, th, ot_by_person, now_hour)
     for code, cb in by_person.items():
         if cb["backlog"] > cb["capacity"]:
             deficit = cb["backlog"] - cb["capacity"]
@@ -621,57 +643,26 @@ def rule_T4_not_started(tasks: list[dict], today: str, th: dict) -> list[dict]:
     return out
 
 
-# --- Trend (cross-cutting, không phải layer riêng) ----------------------------
-def apply_trend(risks: list[dict], snapshot: dict | None) -> tuple[list[dict], list[str]]:
-    """So mọi risk (bất kể layer) với snapshot hôm qua theo key
-    (layer, rule, detectedFrom) -> New/Increasing/Stable/Decreasing, cộng
-    resolvedRisks (risk có ở snapshot nhưng không còn phát hiện được nữa).
-    """
-    prev_by_key = {}
-    if snapshot and snapshot.get("risks"):
-        for r in snapshot["risks"]:
-            prev_by_key[(r["layer"], r["rule"], r["detectedFrom"])] = r
-
-    for r in risks:
-        key = (r["layer"], r["rule"], r["detectedFrom"])
-        prev = prev_by_key.get(key)
-        if not prev:
-            r["trend"] = "New"
-        elif r["score"] > prev["score"]:
-            r["trend"] = "Increasing"
-        elif r["score"] < prev["score"]:
-            r["trend"] = "Decreasing"
-        else:
-            r["trend"] = "Stable"
-
-    current_keys = {(r["layer"], r["rule"], r["detectedFrom"]) for r in risks}
-    resolved_risks = []
-    if snapshot and snapshot.get("risks"):
-        for r in snapshot["risks"]:
-            key = (r["layer"], r["rule"], r["detectedFrom"])
-            if key not in current_keys:
-                resolved_risks.append(r["detectedFrom"])
-
-    return risks, resolved_risks
-
-
 def run_rules(
     *,
     tasks: list[dict],
     resource_plan_people: list[dict] | None = None,
     sprint_end: str | None = None,
     sprint_name: str | None = None,
-    snapshot: dict | None = None,
     thresholds: dict | None = None,
     today: str | None = None,
     ot_by_person: dict[str, dict] | None = None,
 ) -> dict:
     """Entrypoint DUY NHẤT scan.py cần gọi — chạy đủ 12 rule theo đúng thứ tự
-    layer rồi áp Trend. `resource_plan_people`/`sprint_end`/`sprint_name` là
-    optional: thiếu 1 trong 3 thì bỏ qua P1/P4/S2 (cần dữ liệu Resource plan +
-    biết sprint đang phân tích), các rule còn lại vẫn chạy bình thường.
+    layer. `resource_plan_people`/`sprint_end`/`sprint_name` là optional:
+    thiếu 1 trong 3 thì bỏ qua P1/P4/S2 (cần dữ liệu Resource plan + biết
+    sprint đang phân tích), các rule còn lại vẫn chạy bình thường.
     `ot_by_person` (assigneeCode -> dailyHours OT, optional) cộng thêm vào
     capacity của P4/S2 — xem `compute_person_capacity()`.
+
+    Skill này chỉ ĐỌC + ĐÁNH GIÁ, không ghi gì vào Sheet — nên không cần so
+    sánh với lần chạy trước (không có Trend/resolvedRisks, mỗi lần chạy là 1
+    bức ảnh độc lập tại thời điểm gọi).
     """
     th = {**DEFAULT_THRESHOLDS, **(thresholds or {})}
     today = today or date.today().isoformat()
@@ -682,7 +673,7 @@ def run_rules(
         *rule_T2_effort_overrun(tasks, today, th),
     ]
 
-    risks_raw = [
+    risks = [
         *rule_T3_stalled(tasks, today, th),
         *rule_T4_not_started(tasks, today, th),
         *rule_P2_daily_overload(tasks, today, th),
@@ -693,10 +684,8 @@ def run_rules(
     ]
 
     if resource_plan_people and sprint_end and sprint_name:
-        risks_raw += rule_P1_leave_cascade(tasks, resource_plan_people, today, th)
-        risks_raw += rule_P4_sprint_backlog_overload(tasks, resource_plan_people, today, sprint_end, sprint_name, th, ot_by_person)
-        risks_raw += rule_S2_sprint_at_risk(tasks, resource_plan_people, today, sprint_end, sprint_name, th, ot_by_person)
+        risks += rule_P1_leave_cascade(tasks, resource_plan_people, today, th)
+        risks += rule_P4_sprint_backlog_overload(tasks, resource_plan_people, today, sprint_end, sprint_name, th, ot_by_person)
+        risks += rule_S2_sprint_at_risk(tasks, resource_plan_people, today, sprint_end, sprint_name, th, ot_by_person)
 
-    risks, resolved_risks = apply_trend(risks_raw, snapshot)
-
-    return {"risks": risks, "issues": issues, "resolvedRisks": resolved_risks}
+    return {"risks": risks, "issues": issues}

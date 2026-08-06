@@ -3,8 +3,6 @@ import unittest
 
 from draft import build_draft
 
-THRESHOLDS = {"highScoreThreshold": 6, "inProgressReminderDays": 1}
-
 
 def make_passive(**overrides):
     item = {
@@ -16,7 +14,6 @@ def make_passive(**overrides):
         "nextAction": "Do Y",
         "nextActionOptions": ["Do Y"],
         "score": 3,
-        "trend": "New",
     }
     item.update(overrides)
     return item
@@ -33,64 +30,117 @@ class BuildDraftTest(unittest.TestCase):
         out = build_draft(
             today="2026-08-04", project_title="Test Nexus",
             existing_open=[], existing_in_progress=[], passive_risks=[], passive_issues=[],
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=None,
-            thresholds=THRESHOLDS,
+            sprint_health=None,
         )
         self.assertIn("Chưa xử lý", out)
         self.assertIn("Đang xử lý", out)
-        self.assertIn("Rủi ro mới phát hiện", out)
-        self.assertIn("Hiện không có rủi ro/issue mới nào", out)
+        self.assertIn("Đánh giá", out)
+        self.assertIn("Chưa phát hiện dấu hiệu nào", out)
 
     def test_header_includes_bold_project_title_and_date(self):
         out = build_draft(
             today="2026-08-04", project_title="Test Nexus",
             existing_open=[], existing_in_progress=[], passive_risks=[], passive_issues=[],
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=None,
-            thresholds=THRESHOLDS,
+            sprint_health=None,
         )
         self.assertIn("**Test Nexus** — 2026-08-04", out)
 
-    def test_no_sprint_health_hides_section(self):
+    def test_no_sprint_health_omits_sprint_line_but_keeps_section(self):
         out = build_draft(
             today="2026-08-04", project_title="Test Nexus",
             existing_open=[], existing_in_progress=[], passive_risks=[], passive_issues=[],
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=None,
-            thresholds=THRESHOLDS,
+            sprint_health=None,
         )
-        self.assertNotIn("Sức khỏe", out)
+        self.assertNotIn("KHÔNG kịp tiến độ", out)
+        self.assertNotIn("Đang bám sát kế hoạch", out)
 
     def test_sprint_health_on_track_shows_surplus_and_maintain_message(self):
         health = make_health(onTrack=True, totalBacklog=100.0, totalCapacity=120.0)
         out = build_draft(
             today="2026-08-04", project_title="Test Nexus",
             existing_open=[], existing_in_progress=[], passive_risks=[], passive_issues=[],
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=health,
-            thresholds=THRESHOLDS,
+            sprint_health=health,
         )
-        self.assertIn("Sức khỏe Sprint 1", out)
-        self.assertIn("Đang bám sát kế hoạch", out)
+        self.assertIn("Sprint 1: **Đang bám sát kế hoạch**", out)
         self.assertIn("dư 20.0h", out)
         self.assertIn("Duy trì nhịp độ hiện tại", out)
 
-    def test_sprint_health_off_track_shows_deficit_and_action_options(self):
+    def test_sprint_health_off_track_shows_deficit_and_recommendation(self):
         health = make_health(onTrack=False, totalBacklog=198.0, totalCapacity=88.0)
         out = build_draft(
             today="2026-08-04", project_title="Test Nexus",
             existing_open=[], existing_in_progress=[], passive_risks=[], passive_issues=[],
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=health,
-            thresholds=THRESHOLDS,
+            sprint_health=health,
         )
-        self.assertIn("KHÔNG kịp tiến độ", out)
+        self.assertIn("Sprint 1: **KHÔNG kịp tiến độ**", out)
         self.assertIn("thiếu 110.0h", out)
-        self.assertIn("cắt bớt task ưu tiên thấp", out)
+        self.assertIn("Đề xuất: rà soát scope", out)
+
+    def test_p4_items_shown_as_person_deficit_list(self):
+        items = [
+            make_passive(rule="P4", detectedFrom="SơnBH, sprint Sprint 1", relatedAssigneeTask="SơnBH",
+                         description="SơnBH, sprint Sprint 1: tồn đọng 32.0h ... (thiếu 8.0h)."),
+            make_passive(rule="P4", detectedFrom="ĐôNT, sprint Sprint 1", relatedAssigneeTask="ĐôNT",
+                         description="ĐôNT, sprint Sprint 1: tồn đọng 32.0h ... (thiếu 16.0h)."),
+        ]
+        out = build_draft(
+            today="2026-08-04", project_title="Test Nexus",
+            existing_open=[], existing_in_progress=[], passive_risks=items, passive_issues=[],
+            sprint_health=None,
+        )
+        self.assertIn("Người có nguy cơ không kịp việc của mình:", out)
+        self.assertIn("**SơnBH** (thiếu 8.0h)", out)
+        self.assertIn("**ĐôNT** (thiếu 16.0h)", out)
+
+    def test_m2_items_shown_as_category_lag_list(self):
+        items = [
+            make_passive(rule="M2", detectedFrom="Product Catalog & Search", relatedAssigneeTask="Product Catalog & Search",
+                         description='Category "Product Catalog & Search" đang tụt hậu tiến độ so với deadline riêng: đã trôi qua 83% thời gian nhưng chỉ 42% sub-task hoàn thành.'),
+        ]
+        out = build_draft(
+            today="2026-08-04", project_title="Test Nexus",
+            existing_open=[], existing_in_progress=[], passive_risks=items, passive_issues=[],
+            sprint_health=None,
+        )
+        self.assertIn("Category có nguy cơ không kịp deadline riêng:", out)
+        self.assertIn("**Product Catalog & Search** (83% thời gian/42% xong)", out)
+
+    def test_s1_item_shown_verbatim(self):
+        items = [make_passive(rule="S1", description="Velocity giảm: Sprint 2 hoàn thành 40% so với Sprint 1 là 80%.")]
+        out = build_draft(
+            today="2026-08-04", project_title="Test Nexus",
+            existing_open=[], existing_in_progress=[], passive_risks=items, passive_issues=[],
+            sprint_health=None,
+        )
+        self.assertIn("Velocity giảm: Sprint 2 hoàn thành 40% so với Sprint 1 là 80%.", out)
+
+    def test_non_assessment_rules_excluded_from_danh_gia_counted_in_detail_note(self):
+        items = [make_passive(rule="T4", description="Sub-task PCS-9 bị nghi block")]
+        out = build_draft(
+            today="2026-08-04", project_title="Test Nexus",
+            existing_open=[], existing_in_progress=[], passive_risks=items, passive_issues=[],
+            sprint_health=None,
+        )
+        narrative = out.split("```json")[0]
+        self.assertNotIn("Sub-task PCS-9 bị nghi block", narrative)
+        self.assertIn("Ngoài ra còn 1 risk + 0 issue khác được phát hiện", narrative)
+        self.assertIn("hỏi mình nếu muốn biết chi tiết", narrative)
+
+    def test_no_detail_note_when_nothing_outside_assessment(self):
+        items = [make_passive(rule="P4", description="X thiếu 8.0h")]
+        out = build_draft(
+            today="2026-08-04", project_title="Test Nexus",
+            existing_open=[], existing_in_progress=[], passive_risks=items, passive_issues=[],
+            sprint_health=None,
+        )
+        self.assertNotIn("Ngoài ra còn", out)
 
     def test_existing_open_lists_items_with_id(self):
         existing = [{"id": "R-000", "description": "SơnBH xin nghỉ", "nextAction": "Reschedule", "status": "Open"}]
         out = build_draft(
             today="2026-08-04", project_title="Test Nexus",
             existing_open=existing, existing_in_progress=[], passive_risks=[], passive_issues=[],
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=None,
-            thresholds=THRESHOLDS,
+            sprint_health=None,
         )
         self.assertIn("R-000", out)
         self.assertIn("SơnBH xin nghỉ", out)
@@ -100,176 +150,39 @@ class BuildDraftTest(unittest.TestCase):
         out = build_draft(
             today="2026-08-04", project_title="Test Nexus",
             existing_open=existing, existing_in_progress=[], passive_risks=[], passive_issues=[],
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=None,
-            thresholds=THRESHOLDS,
+            sprint_health=None,
         )
         self.assertIn("chưa có Next Action", out)
 
-    def test_existing_in_progress_shows_idle_days(self):
+    def test_existing_in_progress_shows_idle_days_unambiguously(self):
         existing = [{"id": "R-001", "description": "Test follow up", "nextAction": "x", "status": "In progress", "idleDays": 9}]
         out = build_draft(
             today="2026-08-04", project_title="Test Nexus",
             existing_open=[], existing_in_progress=existing, passive_risks=[], passive_issues=[],
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=None,
-            thresholds=THRESHOLDS,
+            sprint_health=None,
         )
         self.assertIn("(đã xử lý được 9 ngày, chưa xong)", out)
 
-    def test_no_previous_snapshot_hides_resolved_section_entirely(self):
-        out = build_draft(
-            today="2026-08-04", project_title="Test Nexus",
-            existing_open=[], existing_in_progress=[], passive_risks=[], passive_issues=[],
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=None,
-            thresholds=THRESHOLDS,
-        )
-        self.assertNotIn("Đã hết rủi ro", out)
-
-    def test_has_previous_snapshot_and_resolved_risks_lists_them_with_date(self):
-        out = build_draft(
-            today="2026-08-04", project_title="Test Nexus",
-            existing_open=[], existing_in_progress=[], passive_risks=[], passive_issues=[],
-            resolved_risks=["AU-9"], previous_snapshot_date="2026-08-03", sprint_health=None,
-            thresholds=THRESHOLDS,
-        )
-        self.assertIn("Đã hết rủi ro* (so với báo cáo ngày 2026-08-03)", out)
-        self.assertIn("AU-9", out)
-
-    def test_urgent_and_non_urgent_split_into_separate_groups_not_by_layer(self):
-        urgent = make_passive(layer="Person", rule="P4", description="Urgent item", score=9, detectedFrom="P-1", relatedAssigneeTask="A / P-1")
-        normal = make_passive(layer="Task", rule="T3", description="Normal item", score=2, detectedFrom="T-1", relatedAssigneeTask="B / T-1")
-        out = build_draft(
-            today="2026-08-04", project_title="Test Nexus",
-            existing_open=[], existing_in_progress=[], passive_risks=[urgent], passive_issues=[normal],
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=None,
-            thresholds=THRESHOLDS,
-        )
-        self.assertIn("Cần chú ý ngay", out)
-        self.assertIn("Còn lại", out)
-        self.assertLess(out.index("Urgent item"), out.index("Còn lại"))
-        self.assertNotIn("[Person]", out)
-        self.assertNotIn("[Task]", out)
-
-    def test_only_urgent_present_omits_con_lai_heading(self):
-        urgent = make_passive(score=9)
-        out = build_draft(
-            today="2026-08-04", project_title="Test Nexus",
-            existing_open=[], existing_in_progress=[], passive_risks=[urgent], passive_issues=[],
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=None,
-            thresholds=THRESHOLDS,
-        )
-        self.assertIn("Cần chú ý ngay", out)
-        self.assertNotIn("Còn lại", out)
-
-    def test_next_action_shows_all_options_with_dash_separator(self):
-        item = make_passive(
-            description="X tồn đọng",
-            nextActionOptions=["OT bù giờ", "San bớt task sang người khác", "Xin dời deadline sprint"],
-        )
-        out = build_draft(
-            today="2026-08-04", project_title="Test Nexus",
-            existing_open=[], existing_in_progress=[], passive_risks=[item], passive_issues=[],
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=None,
-            thresholds=THRESHOLDS,
-        )
-        self.assertIn("— OT bù giờ / San bớt task sang người khác / Xin dời deadline sprint.", out)
-
-    def test_two_t1_items_grouped_into_one_compact_line(self):
-        items = [
-            make_passive(rule="T1", description="Sub-task A trễ", detectedFrom="A-1", relatedAssigneeTask="NguoiA / A-1"),
-            make_passive(rule="T1", description="Sub-task B trễ", detectedFrom="B-1", relatedAssigneeTask="NguoiB / B-1"),
-        ]
-        out = build_draft(
-            today="2026-08-04", project_title="Test Nexus",
-            existing_open=[], existing_in_progress=[], passive_risks=[], passive_issues=items,
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=None,
-            thresholds=THRESHOLDS,
-        )
-        narrative = out.split("```json")[0]
-        self.assertIn("2 sub-task đã trễ Plan End: `A-1`·NguoiA, `B-1`·NguoiB.", narrative)
-        self.assertNotIn("Sub-task A trễ", narrative)
-
-    def test_t4_group_depersonalizes_next_action_name(self):
-        items = [
-            make_passive(
-                rule="T4", detectedFrom="A-1", relatedAssigneeTask="KiênĐT / A-1",
-                description="Sub-task A quá Plan Start", nextActionOptions=["Hỏi KiênĐT lý do chưa bắt đầu", "Dời Plan Start"],
-            ),
-            make_passive(
-                rule="T4", detectedFrom="B-1", relatedAssigneeTask="SơnBH / B-1",
-                description="Sub-task B quá Plan Start", nextActionOptions=["Hỏi SơnBH lý do chưa bắt đầu", "Dời Plan Start"],
-            ),
-        ]
-        out = build_draft(
-            today="2026-08-04", project_title="Test Nexus",
-            existing_open=[], existing_in_progress=[], passive_risks=items, passive_issues=[],
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=None,
-            thresholds=THRESHOLDS,
-        )
-        narrative = out.split("```json")[0]
-        self.assertIn("Hỏi từng người lý do chưa bắt đầu", narrative)
-        self.assertNotIn("Hỏi KiênĐT", narrative)
-
-    def test_two_p4_items_grouped_with_deficit_extracted_from_description(self):
-        items = [
-            make_passive(
-                rule="P4", detectedFrom="SơnBH, sprint Sprint 1", relatedAssigneeTask="SơnBH",
-                description="SơnBH, sprint Sprint 1: tồn đọng 32.0h trong khi capacity còn lại tới hết sprint chỉ 24.0h (thiếu 8.0h).",
-            ),
-            make_passive(
-                rule="P4", detectedFrom="ĐôNT, sprint Sprint 1", relatedAssigneeTask="ĐôNT",
-                description="ĐôNT, sprint Sprint 1: tồn đọng 32.0h trong khi capacity còn lại tới hết sprint chỉ 16.0h (thiếu 16.0h).",
-            ),
-        ]
-        out = build_draft(
-            today="2026-08-04", project_title="Test Nexus",
-            existing_open=[], existing_in_progress=[], passive_risks=items, passive_issues=[],
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=None,
-            thresholds=THRESHOLDS,
-        )
-        self.assertIn("**SơnBH** thiếu **8.0h**", out)
-        self.assertIn("**ĐôNT** thiếu **16.0h**", out)
-        self.assertIn("người đều đang vượt capacity còn lại tới hết sprint", out)
-
-    def test_rule_order_is_fixed_not_input_order(self):
-        # Đưa vào theo thứ tự M2 trước P3 -- output phải theo _RULE_ORDER (P
-        # trước M), không theo thứ tự list đầu vào.
-        items = [
-            make_passive(rule="M2", description="Category tụt hậu", score=9),
-            make_passive(rule="P3", description="Chưa gán người", score=9),
-        ]
-        out = build_draft(
-            today="2026-08-04", project_title="Test Nexus",
-            existing_open=[], existing_in_progress=[], passive_risks=items, passive_issues=[],
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=None,
-            thresholds=THRESHOLDS,
-        )
-        self.assertLess(out.index("Chưa gán người"), out.index("Category tụt hậu"))
-
-    def test_json_block_embeds_new_field_names(self):
+    def test_json_block_embeds_expected_fields(self):
         existing_open = [{"id": "R-000", "description": "x", "status": "Open"}]
         existing_ip = [{"id": "R-001", "description": "y", "status": "In progress", "idleDays": 3}]
         health = make_health()
+        risks = [make_passive(rule="P4")]
+        issues = [make_passive(rule="T1")]
         out = build_draft(
             today="2026-08-04", project_title="Test Nexus",
-            existing_open=existing_open, existing_in_progress=existing_ip, passive_risks=[], passive_issues=[],
-            resolved_risks=["AU-9"], previous_snapshot_date=None, sprint_health=health,
-            thresholds=THRESHOLDS,
+            existing_open=existing_open, existing_in_progress=existing_ip, passive_risks=risks, passive_issues=issues,
+            sprint_health=health,
         )
         json_text = out.split("```json\n")[1].split("\n```")[0]
         parsed = json.loads(json_text)
         self.assertEqual(parsed["existingOpen"], existing_open)
         self.assertEqual(parsed["existingInProgress"], existing_ip)
-        self.assertEqual(parsed["resolvedRisks"], ["AU-9"])
+        self.assertEqual(parsed["passiveRisks"], risks)
+        self.assertEqual(parsed["passiveIssues"], issues)
         self.assertEqual(parsed["sprintHealth"], health)
-
-    def test_tally_and_new_detected_count_shown_in_section_header(self):
-        out = build_draft(
-            today="2026-08-04", project_title="Test Nexus",
-            existing_open=[], existing_in_progress=[], passive_risks=[make_passive()], passive_issues=[make_passive(), make_passive()],
-            resolved_risks=[], previous_snapshot_date=None, sprint_health=None,
-            thresholds=THRESHOLDS,
-        )
-        self.assertIn("Rủi ro mới phát hiện* (1 risk + 2 issue)", out)
+        self.assertNotIn("resolvedRisks", parsed)
+        self.assertNotIn("activeRisks", parsed)
 
 
 if __name__ == "__main__":

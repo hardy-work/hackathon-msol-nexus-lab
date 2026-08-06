@@ -25,7 +25,7 @@
     "unassignedNearDeadlineDays": 2,
     "velocityDropMarginPct": 15,
     "notStartedGraceDays": 0,
-    "inProgressReminderDays": 1
+    "cutoffHour": 18
   },
   "notify": {
     "channel": null,

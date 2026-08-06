@@ -1,7 +1,8 @@
 #!/usr/bin/env python
-"""Action 1: Scan — đọc Sprint tab + Resource plan + Risk/Issue management
-thật, chạy rule engine, ghi draft + snapshot. KHÔNG BAO GIỜ ghi gì vào Sheet
-thật (chỉ đọc + ghi file local `drafts/`, `state/`).
+"""Scan — đọc Sprint tab + Resource plan + Overtime + Risk/Issue management
+thật, chạy rule engine, ghi draft (`drafts/`). Skill này CHỈ ĐỌC + ĐÁNH GIÁ —
+KHÔNG BAO GIỜ ghi gì vào Sheet thật (việc ghi risk/issue vào Sheet do skill
+khác — "daily report" — đảm nhiệm).
 
 Chạy: `python scripts/scan.py` (script tự resolve mọi file theo vị trí của
 chính nó, không phụ thuộc cwd lúc gọi).
@@ -10,7 +11,6 @@ chính nó, không phụ thuộc cwd lúc gọi).
 from __future__ import annotations
 
 import json
-import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -27,11 +27,6 @@ from resource_plan import parse_resource_plan  # noqa: E402
 from rule_engine import compute_sprint_health, days_between, run_rules  # noqa: E402
 from sheets_client import SheetsApiError, get_values  # noqa: E402
 from summary_project import find_sprint_end  # noqa: E402
-
-# Status thật trên dropdown Config tab: Open, In progress, Done, Pending,
-# Cancel — KHÔNG có "Closed"/"Resolved". Dòng "Cancel" coi như đã đóng, phải
-# loại khỏi tập "đang mở" để không bị dedupe chặn tái phát hiện mãi mãi.
-CLOSED_STATUSES = ("Done", "Cancel")
 
 
 def load_config() -> dict | None:
@@ -72,24 +67,6 @@ def apply_status_log(tasks: list[dict], today: str) -> list[dict]:
     return tasks
 
 
-def load_latest_snapshot(today: str) -> tuple[dict | None, str | None]:
-    """Trả `(snapshot, date)` — `date` là ngày của snapshot trước đó tìm được
-    (lấy từ tên file `risk-snapshot-YYYY-MM-DD.json`), `None` nếu chưa từng
-    Scan lần nào trước đó (dùng để ẩn hẳn mục "Đã hết rủi ro" trong draft,
-    thay vì hiện "hiện không có" gây hiểu nhầm là đã so sánh mà không có gì).
-    """
-    state_dir = SKILL_DIR / "state"
-    if not state_dir.exists():
-        return None, None
-    files = sorted(p for p in state_dir.glob("risk-snapshot-*.json") if p.stem != f"risk-snapshot-{today}")
-    if not files:
-        return None, None
-    latest = files[-1]
-    snapshot_date = latest.stem.removeprefix("risk-snapshot-")
-    with open(latest, "r", encoding="utf-8") as f:
-        return json.load(f), snapshot_date
-
-
 def read_output_tab(file_id: str, tab_name: str, token: str) -> list[dict]:
     """Đọc dòng dữ liệu thật (bỏ header) từ Risk/Issue management — schema cố
     định A-H: ID | Date Detected | Description | Priority | Related
@@ -116,50 +93,14 @@ def read_output_tab(file_id: str, tab_name: str, token: str) -> list[dict]:
     return items
 
 
-def _detected_from_matches(detected: str, text: str) -> bool:
-    """So khớp `detected` như 1 token trọn vẹn trong `text`, không phải
-    substring thô — tránh việc TaskID ngắn (vd "AU-1") bị coi là trùng với
-    TaskID dài hơn cùng tiền tố (vd "AU-10", "AU-11") chỉ vì "AU-1" là chuỗi
-    con của "AU-10".
-    """
-    if not text:
-        return False
-    pattern = r"(?<![\w-])" + re.escape(detected) + r"(?![\w-])"
-    return re.search(pattern, text) is not None
-
-
-def dedupe_against_existing(candidates: list[dict], existing_items: list[dict]) -> list[dict]:
-    """Loại risk/issue bị động trùng với dòng đã có sẵn trên sheet (đang mở,
-    KHÔNG phải Done/Cancel) — match theo `detectedFrom` xuất hiện (dạng token
-    trọn vẹn) trong "Related Assignee/Task" hoặc "Description" của dòng đã có.
-
-    Đây là heuristic — sheet schema mới không có cột detectedFrom/rule riêng
-    để match chính xác tuyệt đối (đã đơn giản hoá theo template thật, xem
-    design.md).
-    """
-    open_existing = [i for i in existing_items if i["status"] not in CLOSED_STATUSES]
-    out = []
-    for c in candidates:
-        detected = c["detectedFrom"]
-        if any(
-            _detected_from_matches(detected, i["relatedAssigneeTask"]) or _detected_from_matches(detected, i["description"])
-            for i in open_existing
-        ):
-            continue
-        out.append(c)
-    return out
-
-
 def split_existing_by_status(existing_items: list[dict], today: str) -> tuple[list[dict], list[dict]]:
     """Chia dòng đã có sẵn trên Risk/Issue management theo Status — PM cần
-    thấy "cái gì đang treo" tách biệt hẳn khỏi "cái gì mới phát hiện hôm nay".
+    thấy "cái gì đang treo" tách biệt hẳn khỏi phần đánh giá của rule engine.
 
     - "Chưa xử lý": Status="Open" HOẶC "Pending" (dev tự báo qua daily report,
       PM chưa chốt phương án) — với PM cả 2 đều là "chưa ai làm gì cả".
     - "Đang xử lý": Status="In progress", đính kèm `idleDays` (số ngày kể từ
-      Date Detected — dùng thẳng cột này làm mốc "từ khi nào bắt đầu 'In
-      progress'", vì mọi dòng mới ghi đều khởi tạo Status="In progress" ngay
-      từ đầu, xem make_item() trong rule_engine.py).
+      Date Detected).
     - Done/Cancel: loại hẳn (đã đóng, không còn liên quan).
     """
     open_items = [i for i in existing_items if i["status"] in ("Open", "Pending")]
@@ -224,14 +165,11 @@ def run_scan() -> dict:
             plan_ends = [t["planEnd"] for t in tasks if t.get("planEnd")]
             sprint_end = max(plan_ends) if plan_ends else today
 
-        snapshot, previous_snapshot_date = load_latest_snapshot(today)
-
         result = run_rules(
             tasks=tasks,
             resource_plan_people=people,
             sprint_end=sprint_end,
             sprint_name=current_sprint_name,
-            snapshot=snapshot,
             thresholds=config["thresholds"],
             today=today,
             ot_by_person=ot_by_person,
@@ -241,34 +179,22 @@ def run_scan() -> dict:
         issue_existing = read_output_tab(file_id, config["output"]["issueTab"]["name"], token)
 
         existing_open, existing_in_progress = split_existing_by_status(risk_existing + issue_existing, today)
-        passive_risks = dedupe_against_existing(result["risks"], risk_existing)
-        passive_issues = dedupe_against_existing(result["issues"], issue_existing)
-        sprint_health = compute_sprint_health(tasks, people, today, sprint_end, current_sprint_name, ot_by_person)
+        sprint_health = compute_sprint_health(tasks, people, today, sprint_end, current_sprint_name, config["thresholds"], ot_by_person)
 
         draft_text = build_draft(
             today=today,
             project_title=config.get("projectTitle", "dự án"),
             existing_open=existing_open,
             existing_in_progress=existing_in_progress,
-            passive_risks=passive_risks,
-            passive_issues=passive_issues,
-            resolved_risks=result["resolvedRisks"],
-            previous_snapshot_date=previous_snapshot_date,
+            passive_risks=result["risks"],
+            passive_issues=result["issues"],
             sprint_health=sprint_health,
-            thresholds=config["thresholds"],
         )
 
         drafts_dir = SKILL_DIR / "drafts"
         drafts_dir.mkdir(exist_ok=True)
         draft_path = drafts_dir / f"draft-{today}.md"
         draft_path.write_text(draft_text, encoding="utf-8")
-
-        state_dir = SKILL_DIR / "state"
-        state_dir.mkdir(exist_ok=True)
-        (state_dir / f"risk-snapshot-{today}.json").write_text(
-            json.dumps({"risks": passive_risks, "issues": passive_issues}, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
 
         return {
             "ok": True,
@@ -277,9 +203,8 @@ def run_scan() -> dict:
             "summary": {
                 "existingOpen": len(existing_open),
                 "existingInProgress": len(existing_in_progress),
-                "passiveRisks": len(passive_risks),
-                "passiveIssues": len(passive_issues),
-                "resolvedRisks": len(result["resolvedRisks"]),
+                "passiveRisks": len(result["risks"]),
+                "passiveIssues": len(result["issues"]),
                 "sprintOnTrack": sprint_health["onTrack"] if sprint_health else None,
             },
         }
