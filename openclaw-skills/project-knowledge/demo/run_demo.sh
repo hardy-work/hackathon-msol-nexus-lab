@@ -37,8 +37,8 @@ fi
 if [ "$needs_build" = "1" ]; then
   echo "[demo] corpus thiếu hoặc stale; dựng lại offline-safe"
   HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
-    PROJECT_KNOWLEDGE_SKIP_VECTOR=1 \
-    PROJECT_KNOWLEDGE_RUN_SLACK_TESTS=0 bash scripts/run_all.sh
+    PROJECT_KNOWLEDGE_EMBEDDING_BACKEND=hash \
+    bash scripts/run_all.sh
 fi
 
 echo "[demo] Python: $("$PY" --version 2>&1) ($PY)"
@@ -49,6 +49,13 @@ echo "[demo] kiểm tra nhanh ingest/retrieval contract"
 "$PY" scripts/skill_selftest.py >/dev/null
 "$PY" scripts/graph_selftest.py >/dev/null
 "$PY" scripts/versioning.py check --summary
+
+if [[ "${PROJECT_KNOWLEDGE_LLM:-0}" =~ ^(1|true|yes|on)$ ]]; then
+  echo "[demo] kiểm tra live Haiku router + Sonnet answer"
+  "$PY" scripts/llm_routing_selftest.py
+else
+  echo "[demo] LLM routing check bỏ qua; đặt PROJECT_KNOWLEDGE_LLM=1 để chạy live"
+fi
 
 echo
 "$PY" scripts/demo_showcase.py

@@ -17,6 +17,7 @@ báo, số trong đó không phải nguyên văn.
   python3 scripts/ingest_van.py --doc chinh-sach-attt
   python3 scripts/ingest_van.py --all
 """
+import json
 import re
 import subprocess
 import sys
@@ -162,6 +163,13 @@ def main():
     contract = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
     schema = (ROOT / "schema.yml").read_text(encoding="utf-8")
     docs = load_docs()
+    plan = None
+    if "--plan" in sys.argv:
+        plan_path = Path(sys.argv[sys.argv.index("--plan") + 1])
+        if not plan_path.is_absolute():
+            plan_path = ROOT / plan_path
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    write_pages = set(plan.get("page_actions", {}).get("write", [])) if plan else None
 
     if "--all" in sys.argv:
         targets = [k for k, d in docs.items() if d.get("page_type") == "source"]
@@ -176,6 +184,10 @@ def main():
     for doc_id in targets:
         if doc_id not in docs:
             print(f"{R}✗{OFF} {doc_id}: không có trong extract/van-docs.yml")
+            continue
+        page_rel = f"wiki/sources/{doc_id}.md"
+        if write_pages is not None and page_rel not in write_pages:
+            print(f"{D}↷{OFF} {doc_id}: page không impacted, giữ nguyên")
             continue
         text, dt, err = ingest_one(doc_id, docs[doc_id], contract, schema)
         tot += dt

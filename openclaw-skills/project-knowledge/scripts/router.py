@@ -9,6 +9,7 @@ offline.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -114,8 +115,10 @@ def heuristic_route(query: str) -> Decision:
     return Decision("document", 0.40, "không đủ tín hiệu; dùng retrieval an toàn", "heuristic")
 
 
-def classify(query: str, timeout: int = 20) -> Decision:
+def classify(query: str, timeout: int | None = None) -> Decision:
     """Call Haiku and return a safe decision on every failure path."""
+    if timeout is None:
+        timeout = max(1, int(os.getenv("PROJECT_KNOWLEDGE_ROUTER_TIMEOUT_SECONDS", "60")))
     try:
         proc = subprocess.run(
             [models.CLAUDE, "-p", "--model", models.CHEAP, "--allowedTools", ""],

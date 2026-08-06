@@ -10,18 +10,23 @@ Do chủ dự án quy định:
 Đổi chính sách thì sửa ĐÚNG file này. KHÔNG rải model id ra từng script.
 """
 
-# Nặng: Stage 4 WIKI-INGEST (ingest.py). Gate 3b dùng REVIEW để tương thích
-# Claude Pro và không ép tài khoản Pro gọi Opus.
-HEAVY = "claude-opus-4-8"
+import os
+import shutil
+from pathlib import Path
+
+# Claude Code supports the short aliases below and resolves them to the
+# currently available model family.  Deployments may pin exact IDs through
+# environment variables when they need reproducibility.
+HEAVY = os.getenv("PROJECT_KNOWLEDGE_HEAVY_MODEL", "opus")
 
 # Nhẹ: tổng hợp câu trả lời bậc 3 (answer.py), Stage 3 STRUCTURE (khi dựng luồng VĂN).
-LIGHT = "claude-sonnet-5"
+LIGHT = os.getenv("PROJECT_KNOWLEDGE_SONNET_MODEL", "sonnet")
 
-# Gate 3b: review nội dung wiki bằng Sonnet 5 khi chạy Claude Code subscription.
-REVIEW = "claude-sonnet-5"
+# Gate 3b: review nội dung wiki bằng Sonnet khi chạy Claude Code subscription.
+REVIEW = os.getenv("PROJECT_KNOWLEDGE_REVIEW_MODEL", LIGHT)
 
 # Rẻ: định tuyến / phân loại query trước khi chọn retrieval tier.
-CHEAP = "claude-haiku-4-5-20251001"
+CHEAP = os.getenv("PROJECT_KNOWLEDGE_HAIKU_MODEL", "haiku")
 
 
 # ---------------------------------------------------------------------------
@@ -29,10 +34,6 @@ CHEAP = "claude-haiku-4-5-20251001"
 # Trên Windows, npm đặt shim `claude.CMD`/`.ps1` trên PATH, nhưng Python subprocess
 # chỉ tìm `.exe` -> ["claude", ...] báo FileNotFoundError. Binary THẬT nằm trong
 # node_modules cạnh shim. Trên POSIX `claude` là binary chạy thẳng được.
-import shutil  # noqa: E402
-from pathlib import Path  # noqa: E402
-
-
 def _find_claude():
     exe = shutil.which("claude.exe")
     if exe:

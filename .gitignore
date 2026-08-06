@@ -36,9 +36,6 @@ openclaw-skills/*/*-audit.log
 # Runtime-generated output — not source, don't commit
 openclaw-skills/reminder-followup/state/
 
-# Roster chứa tên/user id nhân viên thật — chỉ commit file mẫu
-openclaw-skills/reminder-followup/roster/*.json
-!openclaw-skills/reminder-followup/roster/*.example.json
 openclaw-skills/meeting-notetaker/notes/
 openclaw-skills/slack-evidence-sheet/downloads/
 **/jira-audit.log

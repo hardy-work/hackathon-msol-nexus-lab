@@ -23,13 +23,23 @@ jobs:
           cache-dependency-path: openclaw-skills/project-knowledge/requirements.txt
       - name: Install skill dependencies
         run: python -m pip install -r openclaw-skills/project-knowledge/requirements.txt
+      - name: Run intake to re-ingest to Gate 3a to derive
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+          PROJECT_KNOWLEDGE_EMBEDDING_BACKEND: "hash"
+        run: python openclaw-skills/project-knowledge/scripts/ingest_flow_selftest.py
+      - name: Run Gate 3a history metadata contract
+        run: python openclaw-skills/project-knowledge/scripts/lint_history_selftest.py
+      - name: Run Gate 3b consensus contract
+        run: python openclaw-skills/project-knowledge/scripts/review_selftest.py
+      - name: Run read-only filesystem boundary contract
+        run: python openclaw-skills/project-knowledge/scripts/filesystem_boundary_selftest.py
       - name: Run deterministic Nexus demo
         env:
           HF_HUB_OFFLINE: "1"
           TRANSFORMERS_OFFLINE: "1"
-          PROJECT_KNOWLEDGE_SKIP_VECTOR: "1"
+          PROJECT_KNOWLEDGE_EMBEDDING_BACKEND: "hash"
           PROJECT_KNOWLEDGE_COVERAGE_GRANTS: '{"Đô":["project_knowledge:approve_coverage"]}'
           PROJECT_KNOWLEDGE_APPROVAL_IDS: "nexus-demo-person-role-20260803,nexus-demo-person-task-20260803"
         run: bash openclaw-skills/project-knowledge/demo/run_demo.sh
-      - name: Run Slack-shaped adapter demo
-        run: bash openclaw-skills/project-knowledge/demo/run_slack_demo.sh

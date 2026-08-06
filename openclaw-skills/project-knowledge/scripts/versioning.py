@@ -20,6 +20,7 @@ METADATA_NAME = "corpus_version.json"
 EXCLUDED = {"MANIFEST.sha256", ".gitkeep", "log.md"}
 INPUT_FILES = ("originals", "raw", "structured", "wiki", "schema.yml",
                "coverage.yml", "documents.yml", "access.yml")
+RAG_INDEX_MANIFEST = "derived/rag_indexes.json"
 
 
 def _sha256(path: Path) -> str:
@@ -84,6 +85,56 @@ def build(root: Path, *, generated_at: str | None = None) -> dict[str, Any]:
     return metadata
 
 
+def rag_index_errors(root: Path, current_sha: str | None = None) -> list[str]:
+    """Validate the mandatory BM25 + Chroma derived stores without importing them.
+
+    This keeps the freshness module usable by the build scripts themselves and
+    lets the CLI/runtime fail closed before serving a corpus whose retrieval
+    indexes are absent or were built from another input digest.
+    """
+    errors: list[str] = []
+    manifest_path = root / RAG_INDEX_MANIFEST
+    if not manifest_path.exists():
+        return [f"thiếu hoặc hỏng {RAG_INDEX_MANIFEST}"]
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return [f"không đọc được {RAG_INDEX_MANIFEST}"]
+    if manifest.get("schema") != "nexus-rag-indexes/v1":
+        errors.append(f"{RAG_INDEX_MANIFEST} sai schema")
+    current_sha = current_sha or digest_hashes(file_hashes(root))
+    if manifest.get("input_sha256") != current_sha:
+        errors.append("BM25/vector index không cùng digest với input hiện tại")
+    bm25 = manifest.get("bm25") or {}
+    if bm25.get("backend") != "bm25s":
+        errors.append("BM25 index không dùng backend bm25s")
+    bm25_dir = root / "derived/bm25"
+    if not bm25_dir.is_dir() or not (bm25_dir / "paths.json").is_file():
+        errors.append("thiếu derived/bm25/")
+    vector = manifest.get("vector") or {}
+    if vector.get("backend") != "chroma":
+        errors.append("vector index không dùng backend Chroma")
+    chroma_dir = root / "derived/chroma"
+    if not chroma_dir.is_dir() or not any(chroma_dir.iterdir()):
+        errors.append("thiếu persistent derived/chroma/")
+    if vector.get("collection") != "nexus-wiki":
+        errors.append("Chroma collection không đúng tên canonical")
+    page_count = int(manifest.get("page_count") or 0)
+    if page_count <= 0:
+        errors.append("rag_indexes.json không có wiki page nào được index")
+    try:
+        paths = json.loads((bm25_dir / "paths.json").read_text(encoding="utf-8"))
+        if len(paths) != page_count:
+            errors.append("BM25 page count lệch manifest")
+    except (OSError, json.JSONDecodeError, TypeError):
+        errors.append("BM25 paths.json không đọc được")
+    return errors
+
+
+def indexes_ready(root: Path = None) -> bool:
+    return not rag_index_errors(root or Path(__file__).resolve().parent.parent)
+
+
 def check(root: Path) -> dict[str, Any]:
     """Return a machine-readable freshness status; never raises for missing metadata."""
     metadata_path = root / "derived" / METADATA_NAME
@@ -111,6 +162,8 @@ def check(root: Path) -> dict[str, Any]:
     changed = sorted({*current, *previous} - {
         name for name in set(current) & set(previous) if current[name] == previous[name]
     })
+    current_sha = digest_hashes(current)
+    index_errors = rag_index_errors(root, current_sha)
     state = "fresh" if not changed else "stale"
     reason = "derived khớp với originals/raw/wiki hiện tại" if state == "fresh" else (
         "đầu vào đã thay đổi sau lần build; chạy scripts/run_all.sh trước khi demo"
@@ -124,6 +177,10 @@ def check(root: Path) -> dict[str, Any]:
         "input_sha256": recorded.get("input_sha256"),
         "current_input_sha256": digest_hashes(current),
         "changed_files": changed,
+        "indexes": {
+            "state": "fresh" if not index_errors else "stale",
+            "errors": index_errors,
+        },
     }
 
 
@@ -143,7 +200,9 @@ def main() -> int:
                   f"changed={len(result.get('changed_files', []))}")
     else:
         print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if args.command == "build" or result["state"] == "fresh" else 1
+    return 0 if args.command == "build" or (
+        result["state"] == "fresh" and not (result.get("indexes") or {}).get("errors")
+    ) else 1
 
 
 if __name__ == "__main__":

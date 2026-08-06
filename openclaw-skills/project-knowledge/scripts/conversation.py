@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small local conversation store keyed by the Slack thread/session id."""
+"""Small local conversation store keyed by a gateway thread/session id."""
 from __future__ import annotations
 
 import json

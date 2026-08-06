@@ -124,9 +124,9 @@ function uploadFile(name, parentId, filePath, mimetype) {
   });
 }
 
-const esc = (s) => String(s).replace(/"/g, '""');
-
-const fileLabel = (f, i) => f.name || `ảnh ${i + 1}`;
+// Tên hiển thị của ảnh trong sheet: tên file gốc từ Slack thường dài
+// ("Screenshot 2026-07-29 at 15.18.55.png") nên rút gọn thành "ảnh N".
+const fileLabel = (f, i) => `ảnh ${i + 1}`;
 
 // Chế độ "image": 1 ô chỉ chứa được 1 =IMAGE nên cột nở ra nhiều ô.
 // Chế độ "link": gom mọi ảnh vào ĐÚNG 1 ô, mỗi ảnh 1 dòng. Không dùng
@@ -162,11 +162,24 @@ function linkRuns(files) {
   const cols = config.columns || [];
 
   if (DRY) {
-    console.log(`DRY RUN — ${people.length} người, không ghi gì lên Drive.\n`);
-    console.log(cols.map((c) => c.header).join(' | '));
-    people.forEach((p, i) =>
-      console.log([i + 1, p.name, p.email, p.sentAt, `${p.files.length} ảnh`].join(' | '))
-    );
+    const totalFiles = people.reduce((sum, p) => sum + p.files.length, 0);
+    const missingEmails = people.filter((p) => !p.email).map((p) => p.name);
+    const sheetTitle = fill(config.sheetTitle) || `Evidence log ${today}`;
+    const viewers = (config.viewers || []).length > 0 ? config.viewers.join(', ') : 'chỉ mình bạn';
+    const sharingMode = config.imageSharing === 'anyone'
+      ? 'anyone (ai có link cũng xem được)'
+      : 'restricted (chỉ viewers xem được)';
+
+    console.log(`Sắp tạo sheet "${sheetTitle}" từ thread #${manifest.channel}:`);
+    console.log('─────────────────────────────────────────');
+    console.log(`• Số người có evidence : ${people.length}`);
+    console.log(`• Tổng số ảnh          : ${totalFiles}`);
+    if (missingEmails.length > 0) {
+      console.log(`• Thiếu email          : ${missingEmails.join(', ')}`);
+    }
+    console.log(`• Chế độ chia sẻ ảnh   : ${sharingMode}`);
+    console.log(`• Người được share     : ${viewers}`);
+    console.log('─────────────────────────────────────────');
     return;
   }
 
@@ -193,8 +206,9 @@ function linkRuns(files) {
 
   let uploaded = 0;
   for (const p of people) {
-    for (const f of p.files) {
-      const up = await uploadFile(`${p.name} — ${f.name}`, imgFolder.id, f.path, f.mimetype);
+    for (let i = 0; i < p.files.length; i++) {
+      const f = p.files[i];
+      const up = await uploadFile(`${p.name} — ảnh ${i + 1}`, imgFolder.id, f.path, f.mimetype);
       f.driveId = up.id;
       f.webViewLink = up.webViewLink;
       uploaded++;
@@ -286,7 +300,6 @@ function linkRuns(files) {
     rows.push(row);
   });
 
-  const lastCol = flatCols.length;
   await api(
     `https://sheets.googleapis.com/v4/spreadsheets/${sheet.id}/values/A1?valueInputOption=USER_ENTERED`,
     'PUT',
@@ -369,10 +382,12 @@ function linkRuns(files) {
     }
   }
 
-  console.log('\n=== KẾT QUẢ ===');
-  console.log(`Sheet : https://docs.google.com/spreadsheets/d/${sheet.id}/edit`);
+  const sheetTitle = fill(config.sheetTitle) || `Evidence log ${today}`;
+  console.log(`\n✓ Đã tạo sheet "${sheetTitle}" với ${people.length} dòng.`);
+  // URL trần, không bọc <> — đây là log cho model đọc, không phải mrkdwn gửi
+  // thẳng lên Slack. Cách gửi lên Slack quy định ở Response Format trong SKILL.md.
+  console.log(`Sheet: https://docs.google.com/spreadsheets/d/${sheet.id}/edit`);
   console.log(`Folder: ${folder.webViewLink}`);
-  console.log(`Số dòng: ${people.length}  (cột cuối: ${lastCol})`);
 })().catch((e) => {
   console.error('LỖI:\n' + e.message);
   process.exit(1);

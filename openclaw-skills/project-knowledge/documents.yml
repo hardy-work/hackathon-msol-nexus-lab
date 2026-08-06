@@ -4,6 +4,7 @@ documents:
   - doc_id: nexus-plan
     version: 1
     original: originals/nexus-plan.xlsx
+    source_name: Nexus Plan.xlsx
     kind: xlsx
     sha256: df3369a7bfbe56eb8d2222053f8e23c744d7dfee70640e37166175cbad2d6d58
     status: canonical
