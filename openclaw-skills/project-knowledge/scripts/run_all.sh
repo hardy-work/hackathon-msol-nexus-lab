@@ -76,6 +76,8 @@ echo; echo "══ READ-ONLY FILESYSTEM BOUNDARY (offline) ══"; "$PY" script
 echo; echo "══ GRAPH RETRIEVAL (offline) ══"; "$PY" scripts/graph_selftest.py
 echo; echo "══ INVENTORY (offline) ══"; "$PY" scripts/inventory_selftest.py
 echo; echo "══ AUTOMATIC FILE INTAKE (offline) ══"; "$PY" scripts/intake_selftest.py
+echo; echo "══ GENERIC XLSX INGEST (offline) ══"; "$PY" scripts/spreadsheet_ingest_selftest.py
+echo; echo "══ SLACK INGEST ALLOWLIST (offline) ══"; "$PY" scripts/ingest_proposal_selftest.py
 echo; echo "══ MARKDOWN INTAKE → WIKI (offline) ══"; "$PY" scripts/markdown_ingest_selftest.py
 echo; echo "══ GATE 3a HISTORY METADATA (offline) ══"; "$PY" scripts/lint_history_selftest.py
 echo; echo "══ GATE 3b CONSENSUS CONTRACT (offline) ══"; "$PY" scripts/review_selftest.py

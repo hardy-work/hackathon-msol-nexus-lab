@@ -122,7 +122,8 @@ def main() -> int:
         registered_new = document_registry.current(decision["doc_id"], root)
         assert registered_new["doc_id"] == decision["doc_id"]
         assert registered_new["version"] == 1
-        assert registered_new["extractor"] == "unsupported"
+        assert registered_new["extractor"] == "spreadsheet"
+        assert registered_new["raw_paths"] == [f"raw/{decision['doc_id']}.md"]
 
     print("✓ intake self-test: 10/10 qua")
     return 0

@@ -235,6 +235,21 @@ NexusBot là gateway giao tiếp bên ngoài của skill. Nó gọi `scripts/run
 skill không chứa Slack adapter riêng. Gateway phải truyền actor/roles tin cậy và đặt
 `PROJECT_KNOWLEDGE_LLM=1` nếu muốn câu hỏi mở đi qua Haiku router rồi Sonnet.
 
+## Slack-triggered ingest
+
+NexusBot có thể gọi `scripts/ingest_proposal.py` khi người dùng mention bot kèm file.
+Đây là action write-like tách khỏi query runtime: proposal, file hash, review artifact
+và ingest state nằm ở `PROJECT_KNOWLEDGE_STATE_DIR`, không nằm trong corpus. Quyền
+ingest được quyết định trực tiếp bằng Slack user ID allowlist trong `access.yml`;
+hiện có 10 member được phép. Không có bước approve/reject và display name không thay
+thế user ID.
+
+Review Excel được sinh deterministic bởi `scripts/review_artifact.py`. Google Sheet/Doc
+publisher là lớp ngoài; nó không biến artifact review thành source of truth và không đưa
+credential Google vào query skill. Proposal hợp lệ có thể chạy thẳng
+`scripts/ingest_runner.py` trong isolated worktree; runner dừng ở `ready_to_publish`
+cho tới khi deployment layer publish atomically và gọi explicit runtime reload.
+
 ## Ranh giới tích hợp Agent
 
 Agent PM có thể dùng output của skill để lập context, đề xuất action hoặc yêu cầu approval. Không đưa credential Jira/mail/meeting vào skill này. Các action tương lai nên nhận `citations` và `project` từ output để ghi audit log.

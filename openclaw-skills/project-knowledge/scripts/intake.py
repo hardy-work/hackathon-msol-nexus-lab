@@ -131,6 +131,8 @@ def extractor_for(doc_id: str, kind: str) -> str:
     """Select only an actually implemented downstream lane."""
     if doc_id == "nexus-plan":
         return "nexus"
+    if kind == "xlsx":
+        return "spreadsheet"
     if kind in {"markdown", "text/markdown"}:
         return "markdown"
     if kind in {"docx", "pdf"}:
@@ -339,7 +341,8 @@ def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, An
             "supersedes": None,
             "visibility": "internal",
             "extractor": extractor,
-            "raw_paths": [f"raw/{doc_id}.md"] if extractor == "markdown" else [],
+            "raw_paths": [f"raw/{doc_id}.md"] if extractor in {"markdown", "spreadsheet"}
+            else [],
         }
 
     destination = root / original
