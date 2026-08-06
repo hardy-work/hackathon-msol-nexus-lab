@@ -96,7 +96,7 @@ không tạo task mới. Id task không có trong sheet thì báo lại, không 
 của dev, nói **chưa log được** + lý do ngắn bằng tiếng Việt + việc họ cần làm:
 
 ```
-<@U0BK2KAN86B> mình chưa log PCS-10 lên sheet được nhé — bot chưa có quyền ghi vào file (lỗi 403).
+<@U0BK2KAN86B> mình chưa log **PCS-10** lên sheet được nhé — bot chưa có quyền ghi vào file (lỗi 403).
 Bạn báo PM share quyền Editor cho service account giúp mình, report của bạn mình giữ nguyên đây.
 ```
 
@@ -120,7 +120,7 @@ Exit 9 in ra JSON có `estimate`, `actual`, `diff`, `assignee`, `tab`, `row`, v�
 Đây **không phải là từ chối log** — chỉ là hoãn lại để lấy lý do. Hỏi:
 
 ```
-<@U0BK2KAN86B> mình thấy task PCS-7 đang bị chậm so với plan: plan 8h mà thực tế 9h, vượt 1h.
+<@U0BK2KAN86B> mình thấy task **PCS-7** đang bị chậm so với plan: plan **8h** mà thực tế **9h**, vượt **1h**.
 Lý do là gì để mình log vào tab Risk management rồi log task luôn nhé?
 ```
 
@@ -159,7 +159,7 @@ sửa câu chữ. Script tự sinh `R-xx` kế tiếp, tự điền ngày, tự 
 Xong thì báo lại, nêu cả mã risk:
 
 ```
-<@U0BK2KAN86B> ok mình ghi lý do vào Risk management (R-02) và log PCS-7 lên Sprint 1 rồi nhé ✅
+<@U0BK2KAN86B> ok mình ghi lý do vào Risk management (**R-02**) và log **PCS-7** lên Sprint 1 rồi nhé
 ```
 
 ### Bao lâu chưa trả lời thì thôi
@@ -177,17 +177,17 @@ report chính là lệnh của dev, hỏi lại "xác nhận không?" mỗi lầ
 status) để dev bắt lỗi ngay:
 
 ```
-<@U0BK2KAN86B> log lên Sprint 1 rồi nhé ✅
-• AU-1 — 8h, Done
-• UPM-3 — 4h, In progress
+<@U0BK2KAN86B> log lên Sprint 1 rồi nhé
+• **AU-1** — **8h**, **Done**
+• **UPM-3** — **4h**, **In progress**
 ```
 
 Có dòng không log được thì nói rõ dòng nào, vì sao, đừng gộp thành "có lỗi":
 
 ```
 <@U0BK2KAN86B> log được 1 task, còn 1 task chưa nhé:
-• AU-1 — 8h, Done → đã ghi vào Sprint 1 ✅
-• NEX-1 → không có mã này trong sheet, bạn kiểm lại giúp mình
+• **AU-1** — **8h**, **Done** → đã ghi vào Sprint 1
+• **NEX-1** → không có mã này trong sheet, bạn kiểm lại giúp mình
 ```
 
 **Không bịa kết quả**: chưa chạy script thì chưa được nói "đã log". Script lỗi

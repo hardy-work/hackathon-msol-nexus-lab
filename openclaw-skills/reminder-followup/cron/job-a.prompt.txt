@@ -26,7 +26,7 @@ VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi
 
 4. EXIT 2/3/4/5 (không đọc được sheet) → VẪN PHẢI đăng tin, xuất ra đúng nguyên văn nội dung dưới đây. Bỏ hẳn một ngày còn tệ hơn: không có tin này thì lượt follow-up chiều cũng chết theo mà không ai biết. Giữ nguyên câu "Đến giờ report task rồi" vì lượt follow-up dựa vào đó để tìm lại thread:
 
-⚠️ Mình chưa đọc được danh sách người phải report từ Google Sheet logtime (tab Resource plan) nên hôm nay chưa tag được ai — nhờ PM kiểm tra lại link/quyền chia sẻ giúp mình nhé.
+Mình chưa đọc được danh sách người phải report từ Google Sheet logtime (tab Resource plan) nên hôm nay chưa tag được ai — nhờ PM kiểm tra lại link/quyền chia sẻ giúp mình nhé.
 
 Đến giờ report task rồi, mọi người report hôm nay giúp mình nhé!
 

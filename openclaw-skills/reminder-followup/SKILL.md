@@ -65,6 +65,11 @@ metadata:
   mới ra kênh ở Job B.
 - **Trong thread report, mặc định là IM LẶNG** — chỉ nói khi bị tag trực tiếp,
   hoặc khi Job B chạy. Xem mục "Im lặng trong thread" ngay dưới.
+- **Trình bày tin nhắn theo [`../OUTPUT-STYLE.md`](../OUTPUT-STYLE.md)**: bôi
+  đậm id task / tên người / số % / số giờ / status, và **không bao giờ dùng
+  icon** — kể cả trong tin báo lỗi hay tin xác nhận đã ghi xong. Bôi đậm bằng **hai**
+  dấu sao kiểu Markdown (`**Done**`) — openclaw tự dịch sang mrkdwn; gõ một sao
+  `*Done*` là ra chữ **nghiêng**. Mention `<@Uxxx>` để nguyên, không bọc sao.
 
 ## Im lặng trong thread — chỉ nói khi được tag
 
@@ -588,13 +593,13 @@ thread — đổi câu này thì phải đổi cả bước 2 của Job B.
 ### Tin nhắc lại (Job B — reply trong thread, không đăng ra kênh)
 
 ```
-Nhắc nhẹ mọi người trước khi hết ngày nhé 🙌
+Nhắc nhẹ mọi người trước khi hết ngày nhé
 
 • Chưa report hôm nay: <mention_chua_report>
 • Report chưa đúng mẫu, sửa lại giúp mình nhé: <mention_sai_format>
 
 Mấy task này mình chưa log lên sheet được vì chưa có lý do vượt giờ plan:
-• <@id> — <ids>
+• <@id> — **<ids>**
 
 <một dòng cho mỗi người ở nhóm "thieu_gio_con_dang_lam">
 
@@ -798,7 +803,7 @@ ngoài y như đang chạy tốt, thực ra chả tag được ai suốt nhiều
 cảnh báo, vẫn giữ nguyên câu mốc để Job B còn tìm được thread:
 
 ```
-⚠️ Mình chưa đọc được danh sách người phải report từ Google Sheet logtime (tab Resource plan) nên hôm nay chưa tag được ai — nhờ PM kiểm tra lại link/quyền chia sẻ giúp mình nhé.
+Mình chưa đọc được danh sách người phải report từ Google Sheet logtime (tab Resource plan) nên hôm nay chưa tag được ai — nhờ PM kiểm tra lại link/quyền chia sẻ giúp mình nhé.
 
 Đến giờ report task rồi, mọi người report hôm nay giúp mình nhé!
 
@@ -812,7 +817,7 @@ VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi
 tag ai** (chưa biết ai mà tag), không đăng tin mới ra kênh:
 
 ```
-⚠️ Mình chưa đọc được danh sách người phải report từ Google Sheet logtime (tab Resource plan) nên chưa nhắc được ai. Nhờ PM kiểm tra lại link/quyền chia sẻ của sheet giúp mình nhé.
+Mình chưa đọc được danh sách người phải report từ Google Sheet logtime (tab Resource plan) nên chưa nhắc được ai. Nhờ PM kiểm tra lại link/quyền chia sẻ của sheet giúp mình nhé.
 ```
 
 Rồi trả về `NOTIFIED | khong doc duoc sheet (exit <mã>)`.
