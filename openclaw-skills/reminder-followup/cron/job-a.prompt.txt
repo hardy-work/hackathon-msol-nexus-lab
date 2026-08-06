@@ -12,9 +12,11 @@ Việc A skill reminder-followup: đăng tin nhắc report vào kênh, TAG ĐÍC
 
 2. EXIT 6 = hôm nay CẢ ĐỘI NGHỈ (T7/CN hoặc cả đội off). KHÔNG ĐĂNG GÌ CẢ, không cảnh báo ai — chỉ xuất ra đúng 1 dòng: SKIP | ca doi nghi hom nay
 
-3. EXIT 0 → XUẤT RA final message CHÍNH LÀ nội dung dưới đây để hệ thống tự đăng vào kênh. KHÔNG dùng thêm tool nào, KHÔNG giải thích, KHÔNG thêm lời dẫn, KHÔNG thêm bullet hướng dẫn tự chế. Thay <MENTIONS> bằng đúng nguyên văn DÒNG 1 ở bước 1, và nối các dòng phụ (nếu có) vào cuối:
+3. EXIT 0 → XUẤT RA final message CHÍNH LÀ nội dung dưới đây để hệ thống tự đăng vào kênh. KHÔNG dùng thêm tool nào, KHÔNG giải thích, KHÔNG thêm lời dẫn, KHÔNG thêm bullet hướng dẫn tự chế. Thay <MENTIONS> bằng đúng nguyên văn DÒNG 1 ở bước 1, và nối các dòng phụ (nếu có) vào cuối. GIỮ NGUYÊN các dòng trống: chuỗi mention đứng RIÊNG MỘT DÒNG, cách câu "Đến giờ report task rồi" bằng một dòng trống — không gộp chung một dòng:
 
-<MENTIONS> Đến giờ report task rồi, mọi người report hôm nay giúp mình nhé!
+<MENTIONS>
+
+Đến giờ report task rồi, mọi người report hôm nay giúp mình nhé!
 
 Report theo mẫu sau :
 Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status | Note

@@ -262,6 +262,32 @@ def resolve_columns(hdr):
 
 REQUIRED = ["task_id", "estimate", "re_est", "start", "end", "actual", "status"]
 
+# Tab "Risk management" header 1 tầng. Khớp theo TÊN, không theo vị trí: PM chèn
+# thêm cột vào giữa (đã xảy ra: cột 'Task' xen giữa 'Related Assignee' và
+# 'Next Action') là mọi ô sau đó lệch sang phải, không exit code nào nổ ra.
+RISK_ALIASES = {
+    "id": ("id",),
+    "date": ("date detected", "date"),
+    "desc": ("description", "mô tả"),
+    "prio": ("priority",),
+    "assignee": ("related assignee", "assignee"),
+    "task": ("task", "related task"),
+    "next": ("next action", "action"),
+    "status": ("status",),
+    "notes": ("notes", "note"),
+}
+
+
+def resolve_risk_columns(hdr):
+    """['ID','Date Detected',...] (đã norm) -> {tên cột: chỉ số}."""
+    col = {}
+    for key, names in RISK_ALIASES.items():
+        for n in names:
+            if n in hdr:
+                col[key] = hdr.index(n)
+                break
+    return col
+
 
 def find_task(task_id):
     want = norm(task_id)
@@ -500,12 +526,14 @@ if CMD == "risk":
     if not risk_tab:
         die(4, "không thấy tab 'Risk management' trong sheet")
 
-    vr = batch_get(["%s!A1:H500" % risk_tab])[0]
+    vr = batch_get(["%s!A1:Z500" % risk_tab])[0]
     rows = vr.get("values", [])
     hdr = [norm(c) for c in (rows[0] if rows else [])]
     for need in ("id", "date detected", "description", "priority"):
         if need not in hdr:
             die(4, "tab '%s' thiếu cột '%s'" % (risk_tab, need))
+
+    rcol = resolve_risk_columns(hdr)
 
     last_row = len(rows)
     max_n = 0
@@ -521,22 +549,38 @@ if CMD == "risk":
     desc = "%s vượt %sh ở task %s: %s" % (
         assignee or "Dev", ("%g" % diff), f["task"], f["reason"].strip(),
     )
-    related = ("%s/%s" % (assignee, f["task"])) if assignee else f["task"]
+    # Có cột 'Task' riêng thì Related Assignee chỉ để tên người, cho khớp với
+    # các dòng PM tự nhập tay. Không có thì mới gộp 'Tên/TaskID' như trước.
+    if "task" in rcol:
+        related = assignee
+    else:
+        related = ("%s/%s" % (assignee, f["task"])) if assignee else f["task"]
     nxt = f.get("next") or "PM review giờ vượt"
     notes = "Ghi tự động từ report Slack ngày %s%s" % (
         today().strftime("%d-%m-%Y"),
         (", người report %s" % f["reporter"]) if f.get("reporter") else "",
     )
+    vals = {
+        "id": new_id, "date": today().strftime("%d-%m-%Y"), "desc": desc,
+        "prio": prio, "assignee": related, "task": f["task"], "next": nxt,
+        "status": "Open", "notes": notes,
+    }
+    width = max(len(hdr), max(rcol.values()) + 1 if rcol else 1)
+    row_vals = [""] * width
+    for key, i in rcol.items():
+        row_vals[i] = vals[key]
     new_row = last_row + 1
     post(
         "%s/%s/values/%s?valueInputOption=USER_ENTERED"
-        % (API, FILE_ID, urllib.parse.quote("%s!A%d:H%d" % (risk_tab, new_row, new_row), safe="")),
-        {"values": [[new_id, today().strftime("%d-%m-%Y"), desc, prio, related, nxt, "Open", notes]]},
+        % (API, FILE_ID, urllib.parse.quote(
+            "%s!A%d:%s%d" % (risk_tab, new_row, col_letter(width - 1), new_row), safe="")),
+        {"values": [row_vals]},
         method="PUT",
     )
     print(json.dumps({
         "ok": True, "risk_id": new_id, "tab": risk_tab, "row": new_row,
         "description": desc, "priority": prio, "related": related,
+        "columns": {k: col_letter(i) for k, i in sorted(rcol.items(), key=lambda kv: kv[1])},
     }, ensure_ascii=False))
     sys.exit(0)
 PY

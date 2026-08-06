@@ -563,7 +563,9 @@ không chứng minh hôm qua bot nhắc đúng.
 ### Tin mở thread (Job A — đăng ra kênh)
 
 ```
-<mention_tat_ca> Đến giờ report task rồi, mọi người report hôm nay giúp mình nhé!
+<mention_tat_ca>
+
+Đến giờ report task rồi, mọi người report hôm nay giúp mình nhé!
 
 Report theo mẫu sau :
 Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status | Note
@@ -576,6 +578,9 @@ VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi
   chưa ai report nên ai đi làm cũng bị tag — đây là chủ ý, không phải thừa.
   Người nghỉ hôm nay đã bị script loại sẵn.
 - **Không** dùng `<!here>`/`<!channel>` thay cho danh sách này.
+- Chuỗi mention đứng **riêng một dòng**, cách câu "Đến giờ report task rồi" bằng
+  một dòng trống. Sáu cái `@tên` dính liền đầu câu làm câu nhắc bị đẩy khuất
+  sang phải, đọc trên mobile là mất hẳn. Đừng gộp lại thành một dòng.
 
 Câu `Đến giờ report task rồi` là **mốc nhận diện** Job B dùng để tìm lại
 thread — đổi câu này thì phải đổi cả bước 2 của Job B.
@@ -583,9 +588,17 @@ thread — đổi câu này thì phải đổi cả bước 2 của Job B.
 ### Tin nhắc lại (Job B — reply trong thread, không đăng ra kênh)
 
 ```
-<mention_chua_report> chưa report hôm nay nhé!
-<mention_sai_format> đã report nhưng chưa đúng mẫu, sửa lại giúp mình nhé!
-<mention_qua_han_giai_trinh> chưa nói lý do vượt giờ plan nên các task <ids> mình chưa log lên sheet nhé!
+Nhắc nhẹ mọi người trước khi hết ngày nhé 🙌
+
+• Chưa report hôm nay: <mention_chua_report>
+• Report chưa đúng mẫu, sửa lại giúp mình nhé: <mention_sai_format>
+
+Mấy task này mình chưa log lên sheet được vì chưa có lý do vượt giờ plan:
+• <@id> — <ids>
+
+<một dòng cho mỗi người ở nhóm "thieu_gio_con_dang_lam">
+
+<một dòng cho mỗi người ở nhóm "thieu_gio_da_xong_het">
 
 Report theo mẫu sau :
 Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status | Note
@@ -593,11 +606,19 @@ Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status |
 VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi
 ```
 
-- Nhóm nào rỗng thì **bỏ hẳn dòng đó**, không in ra dòng cụt không có mention.
-  Cả 3 nhóm rỗng → không reply gì cả.
-- `<mention_qua_han_giai_trinh>` lấy từ `state/pending-overtime.json`: phần tử
-  có `asked_at` cách hiện tại **hơn 3600 giây**. `<ids>` là danh sách `task_id`
-  của chính người đó, cách nhau dấu phẩy. Nhắc xong thì **xoá** phần tử khỏi
+Hai nhóm thiếu giờ chỉ xuất hiện ở **lượt 16:30**, xem mục "Log thiếu giờ so
+với công đăng ký". Lượt 17:00 dùng đúng template này nhưng bỏ hẳn 2 khối đó.
+
+- Nhóm nào rỗng thì **bỏ hẳn dòng đó** cùng dòng tiêu đề và dòng trống đi kèm,
+  không in ra dòng cụt không có mention, không để tiêu đề "Mấy task này mình
+  chưa log…" đứng trơ không ai bên dưới, không để 2 dòng trống liền nhau.
+  Mọi nhóm rỗng → không reply gì cả.
+- Mỗi nhóm **một dấu `•` riêng**, không gộp hai nhóm vào một dòng — gộp là mất
+  luôn thông tin ai thuộc nhóm nào, mà đó chính là thứ duy nhất tin này mang.
+- Nhóm quá hạn giải trình lấy từ `state/pending-overtime.json`: phần tử có
+  `asked_at` cách hiện tại **hơn 3600 giây**. Nhóm này ghi **mỗi người một
+  dòng** `• <@id> — <ids>` chứ không gộp mention, vì `<ids>` là task của **riêng
+  người đó** — gộp chung là mỗi người thấy cả task của người khác. Nhắc xong thì **xoá** phần tử khỏi
   state — mỗi task chỉ bị nhắc đúng một lần, không lôi sang hôm sau.
   Đây là **ngoại lệ duy nhất** của luật "không trích lại nội dung của ai": không
   có id task thì dev không biết task nào bị treo, câu nhắc thành vô dụng. Vẫn
