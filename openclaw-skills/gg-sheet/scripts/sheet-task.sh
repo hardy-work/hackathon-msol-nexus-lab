@@ -21,9 +21,13 @@
 #       -> JSON {task_id, tab, row, estimate, assignee, task, sub_task, status}
 #
 #   sheet-task.sh log <TASKID> --re-est X --start DD-MM-YYYY --end DD-MM-YYYY|"" \
-#                              --actual X --status S [--note N] [--force]
+#                              --actual X --status S [--note N] [--force] \
+#                              [--slack-id U...] [--date YYYY-MM-DD]
 #       -> ghi 6 ô khối Actual + Status + Note của ĐÚNG dòng task đó.
 #          Actual Effort > Estimate mà không có --force -> exit 9, KHÔNG ghi gì.
+#          Có --slack-id thì ghi thêm 1 dòng vào sổ cái effort-today.json (giờ
+#          vừa bỏ thêm vào = actual mới - actual đang có trên sheet) để lượt
+#          follow-up 16:30 so được với công đăng ký. Không có thì bỏ qua im lặng.
 #
 #   sheet-task.sh risk --task <TASKID> --assignee <A> --diff <h> --reason <text> \
 #                      [--next <hành động>] [--reporter <slack name>]
@@ -79,9 +83,15 @@ if [ "$CMD" != "find" ]; then
   esac
 fi
 
-export FILE_ID ACCESS_TOKEN CMD
+# Sổ cái "hôm nay ai log bao nhiêu giờ", để lượt follow-up 16:30 so với công
+# đăng ký trong Resource plan. Nằm bên skill reminder-followup vì đó là nơi đọc
+# nó; hai skill là thư mục anh em trong workspace nên tính bằng ../ là ra, khỏi
+# cần biến env hay đường dẫn tuyệt đối nào.
+EFFORT_LEDGER_FILE="${EFFORT_LEDGER_FILE:-$SKILL_DIR/../reminder-followup/state/effort-today.json}"
+
+export FILE_ID ACCESS_TOKEN CMD EFFORT_LEDGER_FILE
 exec python3 - "$@" <<'PY'
-import json, os, re, sys, urllib.parse, urllib.request
+import json, os, re, sys, time, urllib.parse, urllib.request
 from datetime import datetime
 
 try:
@@ -308,6 +318,10 @@ def find_task(task_id):
         "row": row,
         "estimate": to_number(cell("estimate")),
         "estimate_raw": cell("estimate"),
+        # Giờ đang có TRƯỚC khi ghi. Cần để tính delta = giờ vừa bỏ thêm vào hôm
+        # nay: "Actual Effort" trên sheet là số CỘNG DỒN của cả task, cộng thẳng
+        # các dòng report lại là ra tổng của cả sprint chứ không phải của 1 ngày.
+        "actual_before": to_number(cell("actual")),
         "assignee": cell("assignee"),
         "task": cell("task"),
         "sub_task": cell("sub_task"),
@@ -340,6 +354,43 @@ def parse_flags(argv, known):
     return pos, flags
 
 
+# ------------------------------------------------------------------------- sổ cái
+def write_ledger(slack_id, date_str, entry):
+    """Ghi thêm 1 dòng vào sổ cái giờ-log-hôm-nay. Trả về mô tả ngắn để in kèm.
+
+    KHÔNG có --slack-id thì bỏ qua im lặng: log lên sheet vẫn là log thành công,
+    thiếu sổ cái chỉ làm lượt 16:30 kém thông tin hơn. Và mọi lỗi ghi sổ đều bị
+    nuốt — không đời nào để một task đã ghi đúng lên sheet bị báo là thất bại
+    chỉ vì cái file phụ này hỏng.
+    """
+    if not slack_id:
+        return "skip (khong co --slack-id)"
+    path = os.environ.get("EFFORT_LEDGER_FILE") or ""
+    if not path:
+        return "skip (khong biet duong dan)"
+    try:
+        day = (date_str or "").strip() or time.strftime("%Y-%m-%d")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        try:
+            with open(path, encoding="utf-8") as fh:
+                book = json.load(fh)
+        except Exception:
+            book = {}
+        entries = book.get("entries") or []
+        # Chỉ giữ 7 ngày gần nhất, khỏi để file phình mãi.
+        keep = sorted({e.get("date") for e in entries if e.get("date")} | {day})[-7:]
+        entries = [e for e in entries if e.get("date") in keep]
+        entries.append(dict(entry, date=day, slack_id=slack_id, at=int(time.time())))
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"entries": entries}, fh, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+        return "ok (%s, delta %s)" % (day, entry.get("delta"))
+    except Exception as ex:
+        print("khong ghi duoc so cai effort: %s" % ex, file=sys.stderr)
+        return "loi: %s" % ex
+
+
 # ------------------------------------------------------------------------ find
 if CMD == "find":
     if len(ARGV) != 1:
@@ -354,6 +405,7 @@ if CMD == "log":
     known = {
         "re-est": "v", "start": "v", "end": "v", "actual": "v",
         "status": "v", "note": "v", "force": "bool",
+        "slack-id": "v", "date": "v",
     }
     pos, f = parse_flags(ARGV, known)
     if len(pos) != 1:
@@ -410,6 +462,16 @@ if CMD == "log":
     if got is None or abs(got - act) > 0.01:
         die(11, "ghi xong nhưng đọc lại không khớp: Actual Effort trên sheet = %r, cần %s" % (cell("actual"), act))
 
+    # Giờ vừa bỏ thêm vào task này. Âm là hợp lệ: dev khai lại thấp hơn lần
+    # trước thì sổ cái phải trừ đi, không thì tổng ngày phình lên vì 1 lần sửa.
+    before = info.get("actual_before")
+    delta = round(act - (before if before is not None else 0), 2)
+
+    ledger_note = write_ledger(f.get("slack-id"), f.get("date"), {
+        "task_id": info["task_id"], "tab": tab,
+        "delta": delta, "actual": act, "status": f["status"].strip(),
+    })
+
     print(json.dumps({
         "ok": True, "task_id": info["task_id"], "tab": tab, "row": row,
         "assignee": info["assignee"],
@@ -418,6 +480,7 @@ if CMD == "log":
             "actual_effort": cell("actual"), "status": cell("status"), "note": cell("note"),
         },
         "estimate": est, "overtime": bool(over),
+        "actual_before": before, "delta": delta, "ledger": ledger_note,
     }, ensure_ascii=False))
     sys.exit(0)
 

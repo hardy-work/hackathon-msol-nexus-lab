@@ -26,12 +26,28 @@ còn lại lại.
 ## Luôn đi qua `scripts/sheet-task.sh`
 
 ```bash
-SKILL_DIR="${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/workspace/skills/gg-sheet"
+SKILL_DIR="$(openclaw config get agents.defaults.workspace 2>/dev/null)/skills/gg-sheet"
+[ -d "$SKILL_DIR" ] || SKILL_DIR="${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/workspace/skills/gg-sheet"
 
 bash $SKILL_DIR/scripts/sheet-task.sh find <TASKID>
-bash $SKILL_DIR/scripts/sheet-task.sh log  <TASKID> --re-est .. --start .. --end .. --actual .. --status .. --note ..
+bash $SKILL_DIR/scripts/sheet-task.sh log  <TASKID> --re-est .. --start .. --end .. --actual .. --status .. --note .. --slack-id <@id của dev>
 bash $SKILL_DIR/scripts/sheet-task.sh risk --task .. --assignee .. --diff .. --reason .. [--next ..] [--reporter ..]
 ```
+
+**Luôn truyền `--slack-id`** (id Slack thật của dev, dạng `U…`, bên gọi đã đưa
+sẵn). Script dùng nó để ghi một dòng vào sổ cái
+`../reminder-followup/state/effort-today.json`: giờ **vừa bỏ thêm** vào task đó
+(`actual mới − actual đang có trên sheet`), để lượt follow-up 16:30 so được với
+công đăng ký trong `Resource plan`.
+
+Vì sao phải là delta chứ không phải số trong report: `Actual Effort (h)` là số
+**cộng dồn của cả task**. `NEX-10 | 16 | 03-08-2026 | | 12 | In progress |` nghĩa
+là task đó đã tiêu 12h tính từ 03-08, không phải 12h hôm nay — cộng thẳng các
+dòng report lại là ra tổng của cả sprint.
+
+Quên `--slack-id` thì task **vẫn log đúng**, chỉ là lượt 16:30 tưởng người đó
+chưa log giờ nào. Ngược lại, sổ cái hỏng cũng **không bao giờ** làm một lần ghi
+thành công bị báo là thất bại — mọi lỗi ghi sổ đều bị nuốt, chỉ ra `stderr`.
 
 ⛔ **Không tự dựng lệnh `curl` cho Action này**, kể cả khi các Action khác trong
 `SKILL.md` có sẵn mẫu. Tab Sprint có header **2 tầng**: hai cột cùng tên
@@ -119,7 +135,7 @@ bash $SKILL_DIR/scripts/sheet-task.sh risk --task PCS-7 --assignee VinhNV \
   --diff 1 --reason "<nguyên văn lý do dev nói>" --reporter "long.vn"
 
 bash $SKILL_DIR/scripts/sheet-task.sh log PCS-7 --re-est 8 --start 03-08-2026 \
-  --end 04-08-2026 --actual 9 --status Done --note "" --force
+  --end 04-08-2026 --actual 9 --status Done --note "" --force --slack-id U0BK2KAN86B
 ```
 
 Đúng thứ tự đó. Ghi risk lỗi thì **dừng, đừng log** — task được log mà không có

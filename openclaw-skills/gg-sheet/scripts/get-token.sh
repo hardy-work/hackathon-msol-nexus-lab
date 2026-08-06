@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Mint 1 OAuth2 access token cho Service Account (scope spreadsheets).
-# Dùng: ACCESS_TOKEN=$(bash /home/sonbh/.openclaw/workspace/skills/gg-sheet/scripts/get-token.sh)
-# Cần: GOOGLE_SERVICE_ACCOUNT_KEY_FILE trỏ tới file JSON credentials của Service Account
-#      (ĐƯỜNG DẪN TUYỆT ĐỐI — cwd của Gateway không phải thư mục skill).
+# Dùng: ACCESS_TOKEN=$(bash "$SKILL_DIR/scripts/get-token.sh")
+#       (SKILL_DIR tính theo mục "Đường dẫn" trong SKILL.md — đừng gõ /home/<user>/… tay)
+# Cần: GOOGLE_SERVICE_ACCOUNT_KEY_FILE trỏ tới file JSON credentials của Service
+#      Account. Ghi TƯƠNG ĐỐI được (script tự tính từ thư mục skill, xem dưới),
+#      ghi tuyệt đối cũng được — nhận cả hai.
 #
 # Viết bằng python3 (thư viện `cryptography`), KHÔNG dùng Node. Lý do — bản Node
 # trên máy này (v14.16.0, đúng bản Gateway ghim trong PATH) dính 2 lỗi liên tiếp:

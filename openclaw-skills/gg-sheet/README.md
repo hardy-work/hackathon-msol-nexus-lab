@@ -32,7 +32,7 @@ Gateway chạy với cwd là `~/.openclaw/workspace`, **không** phải thư m�
 
 | Chỗ | Dạng đường dẫn | Vì sao |
 | --- | --- | --- |
-| `SKILL.md` | `$SKILL_DIR`, tính từ `${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/workspace/skills/gg-sheet` | Chạy được trên mọi máy/user, và đúng cả khi dùng `--profile` riêng |
+| `SKILL.md`, `cron/*.prompt.txt` | `$SKILL_DIR`, hỏi `openclaw config get agents.defaults.workspace` rồi mới rơi về `${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/workspace` | Chạy được trên mọi máy/user/profile. **Không** ghép tay `$HOME/.openclaw/workspace`: tên workspace cũng cấu hình được (server hackathon dùng `workspace-hackathon`) |
 | `scripts/get-token.sh` | tự dò thư mục của chính nó qua `readlink -f "${BASH_SOURCE[0]}"` | Không phụ thuộc cwd, không cần biến env nào |
 | `.env` → `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` | tương đối (`service-account.json`) | `get-token.sh` tự tính từ thư mục skill; ghi tuyệt đối cũng được, script nhận cả hai |
 | `override.conf` → `EnvironmentFile=` | **tuyệt đối, bắt buộc** | systemd không nở `$HOME` hay `~`. Đây là file cấu hình của từng máy, không commit — sửa tay khi deploy |
@@ -73,8 +73,25 @@ Chốt này nằm trong [`scripts/sheet-task.sh`](scripts/sheet-task.sh) (exit c
 đầy đủ: [`log-report-rules.md`](log-report-rules.md).
 
 ```bash
+# Chạy tay, đứng SẴN trong thư mục skill này — nên đường dẫn tương đối mới đúng.
+cd openclaw-skills/gg-sheet && set -a && . ./.env && set +a
 bash scripts/sheet-task.sh find AU-1          # xem task nằm tab nào, plan bao nhiêu
 ```
+
+⛔ **Đừng copy dòng trên vào SKILL.md hay prompt cron.** Bot chạy với cwd là
+workspace của Gateway, không phải thư mục repo — ở đó phải đi qua `$SKILL_DIR`
+theo bảng "Đường dẫn" bên trên. Hai ngữ cảnh khác nhau, hai dạng đường dẫn khác
+nhau, không dùng lẫn.
+
+## Test
+
+```bash
+bash openclaw-skills/tests/run.sh
+```
+
+Offline. Phần quan trọng nhất là khớp cột theo header 2 tầng — tab Sprint có 2 cột
+tên `Start Date` và 2 cột chứa chữ `Estimate`, khớp nhầm là ghi đè giờ plan của PM
+mà không exit code nào nổ ra. Xem [`tests/README.md`](../tests/README.md).
 
 ## Quy trình mỗi thao tác
 

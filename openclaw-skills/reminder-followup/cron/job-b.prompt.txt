@@ -3,6 +3,11 @@ Việc B skill reminder-followup (follow-up). Phiên cron KHÔNG có tool slack 
 BOT_USER_ID = U0BKL0DJV7B (chính bot này, không bao giờ tính vào danh sách phải report).
 CHANNEL = C0BKLP5KYD7
 
+0. TÌM THƯ MỤC SKILL BẰNG LỆNH, KHÔNG GÕ ĐƯỜNG DẪN TAY. Chạy đúng 2 dòng này trước mọi bước khác — mỗi máy/profile một đường dẫn khác nhau, gõ cứng là job chạy vào path không tồn tại rồi im lặng hỏng mỗi ngày:
+   SKILL_DIR="$(openclaw config get agents.defaults.workspace 2>/dev/null)/skills/reminder-followup"
+   [ -d "$SKILL_DIR" ] || SKILL_DIR="${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/workspace/skills/reminder-followup"
+   Cả 2 cách đều không ra thư mục có thật → DỪNG, trả về "ERROR | khong tim thay thu muc skill".
+
 1. Nếu giờ hiện tại (Asia/Ho_Chi_Minh) đã qua 17:30 → trả về "SKIP | qua gio cutoff".
 
 2. Tìm thread. Chạy:
@@ -18,7 +23,7 @@ CHANNEL = C0BKLP5KYD7
    Bỏ qua chính tin gốc và mọi tin có user == U0BKL0DJV7B. Với mỗi user còn lại, xét từng DÒNG trong text của họ.
 
    BƯỚC 3.1 — ĐỌC LUẬT CHẤM. TRƯỚC KHI CHẤM BẤT KỲ DÒNG NÀO, chạy:
-   cat /home/sonbh/.openclaw/workspace/skills/reminder-followup/template/log-task-rules.md
+   cat "$SKILL_DIR/template/log-task-rules.md"
    File này là NGUỒN DUY NHẤT của luật format (dọn dòng, chọn dòng log, 7 điều kiện hợp lệ, thế nào là Status Done, chấm cả cụm). TUYỆT ĐỐI KHÔNG chấm bằng trí nhớ, KHÔNG tái tạo luật từ tin nhắn cũ trong thread, KHÔNG suy ra từ dòng VD trong tin nhắc. Lệnh cat lỗi / file không tồn tại → DỪNG, không chấm ai, trả về "ERROR | khong doc duoc log-task-rules.md".
 
    BƯỚC 3.2 — CHẤM theo đúng file vừa đọc, không thêm bớt điều kiện nào. Nhắc lại 3 chỗ hay sai nhất: (1) TUYỆT ĐỐI không nhắc ai về dạng mã task — "4", "abc 12", "DWM-2222" hợp lệ như "NEX-214"; (2) Status chưa Done thì End date để trống hoặc "-"/"N/A"/"chưa" đều HỢP LỆ; (3) không chắc một dòng có hợp lệ hay không → coi là HỢP LỆ.
@@ -26,7 +31,7 @@ CHANNEL = C0BKLP5KYD7
    BƯỚC 3.3 — KẾT LUẬN CHO TỪNG NGƯỜI theo mục "Bước 4 — Kết luận cho từng người" trong file: ĐÃ REPORT = có ÍT NHẤT 1 dòng log VÀ TẤT CẢ dòng log đều hợp lệ. Chỉ cần MỘT dòng sai → SAI FORMAT. Có reply nhưng KHÔNG CÓ DÒNG LOG NÀO cũng là SAI FORMAT.
 
 4. Xác định AI PHẢI REPORT bằng lệnh. NGUỒN DUY NHẤT là tab "Resource plan" của Google Sheet logtime (cột Member + Slack ID) — TUYỆT ĐỐI không dùng danh sách thành viên kênh, không có file roster nào nữa:
-   bash /home/sonbh/.openclaw/workspace/skills/reminder-followup/scripts/resource-plan-members.sh
+   bash "$SKILL_DIR/scripts/resource-plan-members.sh"
    Lệnh in ra JSON: {"date","found_day_column","people":[{id,name,slack_name,role}],"off":[...],"no_id":[...],"notices":["..."]}
    (a0) EXIT 6 = hôm nay CẢ ĐỘI NGHỈ (T7/CN hoặc cả đội off). KHÔNG reply gì cả, KHÔNG cảnh báo ai — trả về "SKIP | ca doi nghi hom nay". Đây KHÔNG phải lỗi, tuyệt đối không đăng cảnh báo vào ngày nghỉ.
    (a) EXIT 2/3/4/5 = không đọc được danh sách. TUYỆT ĐỐI không nhắc ai, không đoán danh sách, KHÔNG dùng <!here>/<!channel>, và KHÔNG được trả về "tat ca da report" (không đọc được khác hẳn với mọi người đã report). Thay vào đó: xem lại TOÀN BỘ reply thô của thread ở bước 3, KỂ CẢ tin của U0BKL0DJV7B. Đã có tin nào của bot chứa chuỗi "chưa đọc được danh sách người phải report" → trả về "SKIP | khong doc duoc sheet, da bao roi" và KHÔNG đăng thêm gì (2 lượt cron không được báo 2 lần). Chưa báo → gửi đúng 1 reply vào thread, KHÔNG tag ai, KHÔNG đăng tin mới ra kênh:
@@ -37,13 +42,26 @@ CHANNEL = C0BKLP5KYD7
 
        Gửi xong trả về "NOTIFIED | khong doc duoc sheet (exit <mã>)". Gửi lỗi → "ERROR | khong gui duoc canh bao sheet".
    (b) EXIT 0 → PHAI_REPORT = mảng "people" (bỏ U0BKL0DJV7B nếu có mặt). TUYỆT ĐỐI KHÔNG tag bất kỳ ai trong mảng "off": họ NGHỈ hôm nay, KHÔNG tính vào chưa report, KHÔNG hỏi han gì họ cả — im hẳn. Không cần kiểm họ có trong group chat hay không.
-   (c) Chia 2 nhóm TRONG PHAI_REPORT: CHUA_REPORT = id không hề reply trong thread; SAI_FORMAT = id có reply nhưng theo BƯỚC 3.3 không đạt ĐÃ REPORT (không có dòng log nào, hoặc có >=1 dòng log sai). Cả 2 rỗng VÀ nhóm (e) cũng rỗng → trả về "SKIP | tat ca da report".
+   (c) LÀM MỤC (f) TRƯỚC ĐÃ (cần DA_LOG_THAT), rồi mới chia nhóm. Chia 2 nhóm TRONG PHAI_REPORT: CHUA_REPORT = id không hề reply trong thread VÀ KHÔNG nằm trong DA_LOG_THAT ở (f1); SAI_FORMAT = id có reply nhưng theo BƯỚC 3.3 không đạt ĐÃ REPORT (không có dòng log nào, hoặc có >=1 dòng log sai). Cả 2 rỗng VÀ nhóm (e) VÀ cả 2 nhóm ở (f) cũng rỗng → trả về "SKIP | tat ca da report".
    (d) Mảng "notices" khác rỗng → dán y nguyên từng phần tử vào CUỐI tin ở bước 5, mỗi phần tử 1 dòng. Đây là các dòng phụ DUY NHẤT được thêm vào tin.
    (e) NHÓM QUA_HAN_GIAI_TRINH — task bị treo vì vượt giờ plan mà dev không giải trình. Chạy:
-       NOW=$(date +%s); cat /home/sonbh/.openclaw/workspace/skills/reminder-followup/state/pending-overtime.json 2>/dev/null
+       NOW=$(date +%s); cat "$SKILL_DIR/state/pending-overtime.json" 2>/dev/null
        File không tồn tại / rỗng / JSON hỏng → coi như nhóm này RỖNG, đi tiếp bình thường, KHÔNG báo lỗi (chưa ai vượt giờ hôm nay là chuyện thường).
        Lấy các phần tử có (NOW - asked_at) > 3600. TÍNH BẰNG LỆNH, KHÔNG NHẨM TRONG ĐẦU. Gom theo slack_id: mỗi người 1 mention + danh sách task_id của họ cách nhau dấu phẩy.
        Người trong nhóm này KHÔNG bị loại khỏi 2 nhóm kia và cũng không thay thế 2 nhóm kia — 3 nhóm độc lập, một người có thể vừa sai format vừa quá hạn giải trình.
+   (f) SỔ CÁI GIỜ ĐÃ LOG. LUÔN CHẠY, ở cả 2 lượt:
+       bash "$SKILL_DIR/scripts/resource-plan-members.sh" --effort-check
+       In ra JSON {"thieu_gio_con_dang_lam":[{id,name,hours,logged,missing,in_progress:[task]}], "thieu_gio_da_xong_het":[{id,name,hours,logged,missing}], "du_gio":[], "chua_log":[]}
+       Exit khác 0 → coi mọi nhóm ở (f) là RỖNG và DA_LOG_THAT rỗng, đi tiếp bình thường, KHÔNG báo lỗi gì thêm (bước 4 đã báo rồi).
+       (f1) DA_LOG_THAT = mọi id CÓ trong JSON này mà KHÔNG nằm trong "chua_log" (tức là hôm nay đã log được ít nhất 1 task lên sheet thật). Dùng ở bước (c) để sửa lại nhóm CHUA_REPORT — dev tự mở thread riêng rồi tag bot vào log thì bước 3 KHÔNG thấy họ (bước 3 chỉ đọc reply trong thread 9:00), tag họ là "chưa report" trong khi task đã nằm trên sheet từ sáng là bot tự mâu thuẫn với chính nó.
+       (f2) NHÓM THIẾU GIỜ — log ít giờ hơn công đã đăng ký. CHỈ HỎI Ở LƯỢT 16:30, BỎ QUA Ở LƯỢT 17:00 (hỏi lúc 17:00 thì dev không kịp trả lời trước cutoff 17:30). Kiểm bằng lệnh, không nhẩm:
+       HHMM=$(TZ=Asia/Ho_Chi_Minh date +%H%M)
+       HHMM >= 1645 → coi 2 nhóm dưới đây là RỖNG (nhưng (f1) thì VẪN dùng bình thường).
+       KHÔNG đụng tới "du_gio" và "chua_log": du_gio là đủ công (kể cả người xong sớm hơn plan — chuyện tốt, tuyệt đối không hỏi han), còn chua_log đã nằm trong nhóm CHUA_REPORT rồi, tag 2 lần vì cùng 1 chuyện là phiền người ta.
+       HAI NHÓM NÀY KHÁC HẲN NHAU, KHÔNG ĐƯỢC GỘP:
+         - "thieu_gio_con_dang_lam" = task CHƯA XONG mà giờ bỏ vào cũng chưa đủ → tiến độ đang trôi thật → HỎI LÝ DO để còn ghi Risk management.
+         - "thieu_gio_da_xong_het" = task đã Done hết, tức là xong sớm hơn plan → KHÔNG PHẢI RỦI RO. Chỉ hỏi một câu xem có phải quên log dòng nữa / nghỉ nửa buổi không. TUYỆT ĐỐI KHÔNG ghi Risk, KHÔNG dùng chữ "vướng", "chậm", "rủi ro" với nhóm này.
+       Hỏi đúng MỘT LẦN hôm nay, KHÔNG ghi pending, KHÔNG nhắc lại ở lượt sau, không lôi sang ngày mai. Ai không trả lời thì thôi.
 
 5. Gửi đúng 1 reply vào thread, KHÔNG đăng tin mới ra kênh, KHÔNG DM ai:
    openclaw message send --channel slack --target C0BKLP5KYD7 --reply-to <THREAD_TS> --json --message "<nội dung>"
@@ -52,6 +70,10 @@ CHANNEL = C0BKLP5KYD7
 <mention_chua_report> chưa report hôm nay nhé!
 <mention_sai_format> đã report nhưng chưa đúng mẫu, sửa lại giúp mình nhé!
 <mention_qua_han_giai_trinh> chưa nói lý do vượt giờ plan nên các task <ids> mình chưa log lên sheet nhé!
+<mỗi người trong "thieu_gio_con_dang_lam" MỘT DÒNG, đúng mẫu:>
+<@id> hôm nay đăng ký <hours>h mà mới log <logged>h, task <in_progress nối bằng dấu phẩy> thì vẫn đang In progress. Có gì vướng không để mình ghi vào Risk management nhé?
+<mỗi người trong "thieu_gio_da_xong_het" MỘT DÒNG, đúng mẫu:>
+<@id> bạn chỉ làm <logged>h hôm nay à? Effort đăng ký của bạn là <hours>h. Còn task nào chưa log thì report thêm giúp mình nhé.
 
 Report theo mẫu sau :
 Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status | Note
@@ -59,12 +81,13 @@ Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status |
 VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi
 <các dòng trong "notices" nếu có>
 
-   NHÓM NÀO RỖNG THÌ BỎ HẲN DÒNG ĐÓ. Luôn giữ phần "Report theo mẫu sau :". Không trích lại nội dung sai của ai, chỉ tag và trỏ về mẫu — NGOẠI LỆ DUY NHẤT là <ids> của dòng quá hạn giải trình (chỉ id task, KHÔNG nêu số giờ, KHÔNG nêu lý do, KHÔNG bình luận). Lệnh gửi lỗi → trả về "ERROR | <mô tả ngắn>", không thử lại nhiều lần.
+   NHÓM NÀO RỖNG THÌ BỎ HẲN DÒNG ĐÓ. Luôn giữ phần "Report theo mẫu sau :". Không trích lại nội dung sai của ai, chỉ tag và trỏ về mẫu — NGOẠI LỆ DUY NHẤT là <ids> của dòng quá hạn giải trình và các con số giờ của 2 nhóm thiếu giờ (lấy Y NGUYÊN từ JSON ở bước 4(f), KHÔNG tự cộng trừ lại). Lệnh gửi lỗi → trả về "ERROR | <mô tả ngắn>", không thử lại nhiều lần.
+   Với 2 nhóm thiếu giờ: CHỈ NÊU CON SỐ, không bình luận. KHÔNG hỏi "sao ít thế", không suy đoán hộ họ ("chắc bạn nghỉ nửa buổi à"), không nhắc chuyện OT, không đánh giá nội dung công việc. Mốc giờ trong sheet là KẾ HOẠCH chứ không phải sự thật đã kiểm chứng — nên phải hỏi, tuyệt đối không được khẳng định kiểu "bạn thiếu 4h".
 
-6. Gửi xong, XOÁ các phần tử quá hạn ở bước 4(e) khỏi /home/sonbh/.openclaw/workspace/skills/reminder-followup/state/pending-overtime.json (giữ nguyên các phần tử còn hạn), ghi lại file bằng lệnh (python3 đọc-lọc-ghi, đừng sửa JSON bằng sed). Mỗi task chỉ được nhắc đúng 1 lần, không lôi sang ngày hôm sau. Bước 5 gửi lỗi thì ĐỪNG xoá.
+6. Gửi xong, XOÁ các phần tử quá hạn ở bước 4(e) khỏi "$SKILL_DIR/state/pending-overtime.json" (giữ nguyên các phần tử còn hạn), ghi lại file bằng lệnh (python3 đọc-lọc-ghi, đừng sửa JSON bằng sed). Mỗi task chỉ được nhắc đúng 1 lần, không lôi sang ngày hôm sau. Bước 5 gửi lỗi thì ĐỪNG xoá.
 
 DÒNG TRẢ VỀ CUỐI CÙNG (chỉ 1 dòng, không thêm chữ nào khác):
-- REPLIED | chua report: <N> | sai format: <M> | qua han giai trinh: <K>
+- REPLIED | chua report: <N> | sai format: <M> | qua han giai trinh: <K> | thieu gio: <T>
 - NOTIFIED | khong doc duoc sheet (exit <mã>)
 - SKIP | <lý do: qua gio cutoff / khong tim thay thread hom nay / tat ca da report / ca doi nghi hom nay / khong doc duoc sheet, da bao roi>
 - ERROR | <mô tả ngắn>

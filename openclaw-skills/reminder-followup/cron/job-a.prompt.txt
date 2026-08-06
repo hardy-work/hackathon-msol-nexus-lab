@@ -1,7 +1,12 @@
 Việc A skill reminder-followup: đăng tin nhắc report vào kênh, TAG ĐÍCH DANH từng người trong danh sách.
 
+0. TÌM THƯ MỤC SKILL BẰNG LỆNH, KHÔNG GÕ ĐƯỜNG DẪN TAY. Chạy đúng 2 dòng này trước mọi bước khác — mỗi máy/profile một đường dẫn khác nhau, gõ cứng là job chạy vào path không tồn tại rồi im lặng hỏng mỗi ngày:
+   SKILL_DIR="$(openclaw config get agents.defaults.workspace 2>/dev/null)/skills/reminder-followup"
+   [ -d "$SKILL_DIR" ] || SKILL_DIR="${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/workspace/skills/reminder-followup"
+   Cả 2 cách đều không ra thư mục có thật → DỪNG, xuất ra: ERROR | khong tim thay thu muc skill
+
 1. Lấy chuỗi mention bằng tool Bash, GHI NHỚ CẢ EXIT CODE:
-   bash /home/sonbh/.openclaw/workspace/skills/reminder-followup/scripts/resource-plan-members.sh --mentions
+   bash "$SKILL_DIR/scripts/resource-plan-members.sh" --mentions
    DÒNG 1 của output = chuỗi mention "<@U...> <@U...> ...", lấy từ tab "Resource plan" của Google Sheet logtime (cột Member + Slack ID), ĐÃ TỰ LOẠI những người NGHỈ hôm nay (ô công trống/0/P/nghỉ). TUYỆT ĐỐI không tự gõ lại id, không tự nhớ danh sách từ tin nhắc cũ, không tự thêm ai vào, KHÔNG BAO GIỜ dùng <!here> hay <!channel>.
    CÁC DÒNG SAU (nếu có, dạng "(...)") = dòng phụ, dán y nguyên vào CUỐI tin nhắc, mỗi dòng 1 dòng. Không có dòng nào thì thôi. Đây là 2 dòng phụ DUY NHẤT được thêm vào tin — ngoài chúng ra không chế thêm câu nào.
 

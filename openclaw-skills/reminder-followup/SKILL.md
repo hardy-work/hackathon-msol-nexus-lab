@@ -117,6 +117,7 @@ Sheet logtime khai trong `.env`:
 | `LOGTIME_SHEET_LINK` | Link đầy đủ của Google Sheet logtime (fallback: `GOOGLE_SHEETS_LINK`) |
 | `LOGTIME_SHEET_TAB` | Tên tab, mặc định `Resource plan` — chỉ khai khi tab tên khác |
 | `GOOGLE_SHEETS_API_KEY` | API key đã bật Google Sheets API (chỉ cần quyền đọc) |
+| `EFFORT_TOLERANCE_H` | Dung sai khi so giờ, mặc định `1` — thiếu dưới ngần này thì im, khỏi hỏi ai vì `7,5` với `8` |
 
 Trong tab đó phải có một bảng với các cột header **`Member`**, **`Slack ID`**,
 `Slack name`, `Role`, kèm khối công *"Thời gian làm việc mỗi ngày"* (mỗi ngày 1
@@ -144,18 +145,25 @@ bash {baseDir}/scripts/resource-plan-members.sh
 
 # Chuỗi mention của riêng người phải report hôm nay: "<@U09QRTUHX24> <@U0APQSSGKTM> ..."
 bash {baseDir}/scripts/resource-plan-members.sh --mentions
+
+# Ai hôm nay log thiếu giờ so với công đăng ký (xem mục "Log thiếu giờ …")
+bash {baseDir}/scripts/resource-plan-members.sh --effort-check
 ```
 
 ```json
 {
   "date": "05-08-2026",
   "found_day_column": true,
-  "people": [{ "id": "U09QRTUHX24", "name": "Bùi Hồng Sơn", "slack_name": "MH_SonBH", "role": "BE" }],
+  "people": [{ "id": "U09QRTUHX24", "name": "Bùi Hồng Sơn", "slack_name": "MH_SonBH", "role": "BE", "hours": 8 }],
   "off": [],
   "no_id": [],
   "bad_id": []
 }
 ```
+
+`hours` = số giờ công **đăng ký cho hôm nay**, lấy nguyên con số trong ô (`8` =
+đủ công, `4` = nghỉ nửa buổi). `null` = sheet chưa có cột cho hôm nay hoặc ô ghi
+chữ lạ — **đừng lấy 8 làm mặc định**.
 
 - `people` — **phải report hôm nay**. Chỉ tag đúng nhóm này.
 - `off` — nghỉ hôm nay. **Tuyệt đối không tag, không nhắc, không nhắn gì.**
@@ -250,6 +258,30 @@ Mất file này = mọi task đang treo coi như chưa từng bị hỏi: dev tr
 không khớp được vào đâu, và Job B không nhắc ai quá hạn. Không nghiêm trọng bằng
 mất dữ liệu sheet, nhưng đừng xoá tay giữa ngày.
 
+### `state/effort-today.json` — sổ cái giờ đã log
+
+File thứ ba. **Skill này chỉ ĐỌC** — người ghi là `gg-sheet/scripts/sheet-task.sh`
+sau mỗi lần log thành công (nó là chỗ duy nhất biết `delta` = giờ vừa bỏ thêm
+vào, vì phải so với giá trị đang có trên sheet). File nằm bên này vì đây là nơi
+dùng nó; hai skill là thư mục anh em trong workspace nên script bên kia tính
+đường dẫn bằng `../reminder-followup/state/...`, không cần env nào.
+
+```json
+{ "entries": [
+  { "date": "2026-08-06", "slack_id": "U...", "task_id": "NEX-1",
+    "delta": 3, "actual": 8, "status": "Done", "at": 1754... }
+] }
+```
+
+Tự dọn, chỉ giữ 7 ngày gần nhất. Mất file = lượt 16:30 coi như chưa ai log giờ
+nào → không ai bị hỏi thiếu giờ. **Không** chặn việc log lên sheet, và cũng
+không làm sai nhóm `CHUA_REPORT` (nhóm đó vẫn tính tươi từ thread).
+
+Sổ cái này còn là câu trả lời cho *"dev tự mở thread riêng rồi tag bot vào log
+thì Job B có thấy không"*: Job B chấm nhóm `CHUA_REPORT` bằng reply trong thread
+9:00, nên report ở thread khác sẽ **không** được thấy. Ai có mặt trong sổ cái là
+đã log thật, dùng nó mà trừ ra.
+
 ## Luật kiểm format — reply thế nào thì tính là đã report
 
 Reply vào thread **không** mặc nhiên là đã report. Người chỉ nói chuyện công
@@ -293,8 +325,10 @@ theo `gg-sheet/log-report-rules.md`. Câu trả lời cuối cùng cho dev (log 
 hỏi lý do task chậm / mã task không có trong sheet) lấy mẫu trong chính file đó.
 
 Chuyển sang thì đưa đủ: **từng dòng report** đã chấm hợp lệ, `<@id>` và tên
-Slack của dev. Việc còn lại — tìm dòng theo `TaskID`, ghi cột nào, so giờ plan —
-là của `gg-sheet`.
+Slack của dev. `<@id>` là bắt buộc, không phải để xưng hô: `gg-sheet` truyền nó
+vào `--slack-id` để ghi sổ cái giờ đã log (xem "Log thiếu giờ so với công đăng
+ký"). Việc còn lại — tìm dòng theo `TaskID`, ghi cột nào, so giờ plan — là của
+`gg-sheet`.
 
 **3. Có ≥1 dòng log sai** → chỉ ra **đúng dòng nào sai và sai điều gì**, trích
 nguyên văn dòng đó, kèm bản sửa gợi ý. Mỗi dòng sai một gạch đầu dòng:
@@ -314,6 +348,10 @@ tin nhắn. Sửa rồi report lại thì mới ghi.
 
 **4. Dev đang giải trình task chậm** → đây **không** phải dòng report, đừng đem
 đi chấm format. Xem mục "Task chậm hơn plan — hạn 1 tiếng" ngay dưới.
+
+**5. Dev đang trả lời câu hỏi thiếu giờ** (bot vừa hỏi "hôm nay đăng ký 8h mà mới
+log 5h…") → cũng không phải dòng report. Xem mục "Log thiếu giờ so với công đăng
+ký". Nhận ra bằng ngữ cảnh y như case 4.
 
 Nhận ra bằng **ngữ cảnh hội thoại**: tin gần nhất của chính bot trong thread/kênh
 này có hỏi lý do một task chậm, và người đang nhắn chính là người bị hỏi. Câu trả
@@ -419,6 +457,80 @@ pending) → lấy timestamp tin hỏi của bot trong thread; không lấy đư
 
 Ai im luôn thì Job B 16:30 quét pending quá hạn và tag một lần — xem mục
 "Tin nhắc lại (Job B)".
+
+## Log thiếu giờ so với công đăng ký — hỏi, không chặn
+
+Ngoài chuyện *report có đúng mẫu không*, còn một câu hỏi nữa: hôm nay người đó
+đã log **đủ số giờ đã đăng ký** chưa. Mốc nằm sẵn trong `Resource plan`, khối
+"Thời gian làm việc mỗi ngày" — **chính là ô mà script đang đọc để biết ai nghỉ**,
+chỉ khác là giờ giữ lại con số (`hours`) thay vì chỉ lấy có/không.
+
+Nhờ vậy **nghỉ nửa buổi không cần luật riêng**: PM sửa ô hôm đó thành `4` thì mốc
+tự thành 4, log 4h là khớp, bot im.
+
+### Giờ hôm nay là DELTA, không phải số trong report
+
+`Actual Effort (h)` là số **cộng dồn của cả task**, không phải giờ làm hôm nay.
+`NEX-10 | 16 | 03-08-2026 | | 12 | In progress |` nghĩa là task đó đã tiêu 12h
+tính từ 03-08 — cộng thẳng các dòng report lại là sai số ngay từ người đầu tiên.
+
+`gg-sheet` Action 4 tính hộ: `delta = actual mới − actual đang có trên sheet`,
+rồi ghi một dòng vào sổ cái `state/effort-today.json`. Skill này chỉ đọc sổ đó.
+Delta âm (dev khai lại thấp hơn) là hợp lệ và làm tổng ngày **giảm**.
+
+### Rẽ nhánh theo Status, không rẽ theo số giờ
+
+Thiếu giờ chỉ là **triệu chứng**. Cùng triệu chứng, hai bệnh khác hẳn:
+
+| Tình huống | Nghĩa | Làm gì |
+|---|---|---|
+| Còn ≥1 task **In progress** | Task chưa xong mà giờ bỏ vào cũng chưa đủ → tiến độ đang trôi thật | Hỏi lý do → ghi `Risk management` |
+| Mọi task đều **Done** | Xong sớm hơn plan | **Không risk.** Hỏi nhẹ một câu, hết |
+
+⛔ **Không gộp hai nhóm.** Gộp là biến "làm nhanh hơn plan" thành rủi ro dự án —
+est 8h làm 5h rồi Done là chuyện tốt, hỏi han kiểu vướng mắc ở đó là phạt người
+làm tốt. Và người **đủ giờ** (kể cả 3h task này + 5h task kia = 8h) thì tuyệt đối
+im, không một chữ nào.
+
+### Ai bị bỏ qua
+
+- `du_gio` — đủ công, im.
+- `chua_log` — chưa log gì cả, họ **đã** nằm trong nhóm `CHUA_REPORT`. Tag thêm
+  lần nữa vì cùng một chuyện là phiền người ta hai lần trong cùng một tin.
+- `hours` là `null` (sheet chưa có cột cho hôm nay, hoặc ô ghi chữ lạ) — **không
+  lấy 8 làm mặc định**. Đoán mốc rồi đi hỏi người ta là nhắc oan.
+
+### Chỉ hỏi ở lượt 16:30
+
+Hạn cutoff là 17:30. Hỏi ở lượt 17:00 thì dev còn 30 phút, hỏi cũng như không.
+Hỏi **đúng một lần**, không ghi pending, không nhắc lại, không lôi sang mai — ai
+không trả lời thì thôi, PM tự thấy trên sheet.
+
+Khác hẳn exit 9 (task vượt giờ plan): ở đó task **chưa được ghi** nên phải đuổi
+cho bằng được, có bộ đếm 1 tiếng. Ở đây **task đã ghi xong xuôi rồi**, câu hỏi
+chỉ để bổ sung thông tin — không có gì bị treo, nên không cần đồng hồ.
+
+### Dev trả lời
+
+Nhận ra bằng **ngữ cảnh**: tin gần nhất của bot có hỏi một trong hai câu trên, và
+người đang nhắn chính là người bị hỏi.
+
+- Nhóm **In progress** trả lời lý do → `gg-sheet`:
+  `sheet-task.sh risk --task <task đang In progress> --assignee .. --diff <missing> --reason "<nguyên văn>"`.
+  Đúng **1** task đang dở → gán thẳng, không hỏi lại. Từ **2** trở lên → hỏi task
+  nào, **không gán bừa** (giống luật ở mục "Dev trả lời lý do" phía trên).
+- Nhóm **Done** trả lời gì cũng **không ghi gì cả**. "Em nghỉ nửa buổi" → nghỉ
+  phép không phải rủi ro dự án; ô công là dữ liệu plan của PM, cùng hạng với khối
+  `PLAN` bên `Sprint 1`, skill này **chỉ đọc**. Cùng lắm nhắc PM sửa ô.
+- Họ report bổ sung dòng còn thiếu → xử như report bình thường, sổ cái tự cộng
+  thêm, không nhắc lại chuyện thiếu giờ nữa.
+
+### Con số thì nêu, còn lại thì đừng
+
+Mốc giờ trong sheet là **kế hoạch**, không phải sự thật đã kiểm chứng — nên luôn
+**hỏi**, không bao giờ khẳng định kiểu "bạn thiếu 4h". Không hỏi "sao ít thế",
+không đoán hộ ("chắc bạn nghỉ nửa buổi à"), không nhắc chuyện OT, không đánh giá
+nội dung công việc.
 
 ## Format tin nhắc chuẩn (BẮT BUỘC, không được diễn giải lại)
 
@@ -755,4 +867,7 @@ mới nói** — mục này không phải cửa sau để nhảy vào thread khi
 | Job B không tìm thấy thread tin nhắc hôm nay | Dừng, không tự đăng tin nhắc mới ra kênh |
 | Sheet có user id đã rời workspace | Vẫn mention theo id (Slack tự hiển thị inactive) — sửa bằng cách xoá dòng đó khỏi sheet |
 | Không chắc một dòng có hợp lệ hay không | Coi là **hợp lệ** (không nhắc) — thà bỏ sót còn hơn báo sai format cho người đã report tử tế |
+| `resource-plan-members.sh --effort-check` lỗi / sổ cái hỏng | Coi 2 nhóm thiếu giờ là rỗng, chạy tiếp bình thường. **Không** báo thêm lỗi, **không** vì thế mà bỏ luôn tin nhắc |
+| Sheet chưa có cột công cho hôm nay (`hours` = `null`) | **Không lấy 8 làm mặc định.** Bỏ qua người đó ở phần so giờ — đoán mốc rồi đi hỏi là nhắc oan |
+| Dev log đủ giờ nhưng report ở thread riêng của họ | Sổ cái vẫn ghi nhận → không tính vào `CHUA_REPORT`. Không nhắc, không đòi họ report lại vào thread 9:00 |
 | Có người thắc mắc "tôi report rồi mà vẫn bị nhắc" | Trả lời là dòng report chưa đủ 7 field `Id task \| Re-estimate (h) \| Start date \| End date \| Actual Effort (h) \| Status \| Note`, hoặc ngày chưa đúng `DD-MM-YYYY`, hoặc Status Done mà thiếu End date — và nói rõ **chỉ cần 1 dòng sai là bị nhắc**, dù các dòng khác đã đúng. Chỉ nói lại mẫu, không phán nội dung công việc |

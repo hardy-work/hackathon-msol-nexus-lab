@@ -29,7 +29,9 @@ Dòng report hợp lệ không dừng ở lời xác nhận nữa: skill này ch
 | Dòng report đúng mẫu chưa | `reminder-followup` |
 | Ghi vào cột nào, tab nào, quyền ghi | `gg-sheet` |
 | So giờ thực tế với giờ plan | `gg-sheet` |
+| Tính `delta` giờ vừa log + ghi sổ cái | `gg-sheet` |
 | **Đồng hồ đếm 1 tiếng chờ giải trình** | `reminder-followup` |
+| So tổng giờ trong ngày với công đăng ký | `reminder-followup` |
 
 **Task chậm hơn plan** (giờ thực tế > `Estimate (h)` trong sheet): `gg-sheet`
 chưa ghi gì mà hỏi lý do trước. Đây không phải từ chối log — có lý do là ghi
@@ -45,6 +47,37 @@ Danh sách task đang chờ giải trình nằm ở `state/pending-overtime.json
 commit). Mất file này thì các task đang treo coi như chưa từng được hỏi.
 
 Skill `gg-sheet` phải được cài cạnh skill này thì luồng log mới chạy.
+
+### Log thiếu giờ so với công đăng ký
+
+Lượt 16:30 còn hỏi thêm một chuyện: hôm nay người đó đã log **đủ số giờ đã đăng
+ký** chưa. Mốc là ô công trong `Resource plan` — chính ô đang dùng để biết ai
+nghỉ, chỉ khác là giữ lại con số (`8` đủ công, `4` nghỉ nửa buổi) thay vì chỉ
+lấy có/không. Nhờ vậy **nghỉ nửa buổi không cần luật riêng**.
+
+Giờ trong ngày phải tính bằng **delta** (`actual mới − actual đang có trên
+sheet`), vì `Actual Effort (h)` là số cộng dồn của cả task chứ không phải giờ làm
+hôm nay. `gg-sheet` ghi delta vào `state/effort-today.json`, skill này đọc.
+
+Thiếu giờ thì **rẽ nhánh theo Status**, không rẽ theo số giờ:
+
+| Tình huống | Làm gì |
+| --- | --- |
+| Còn task **In progress** | Hỏi lý do → ghi `Risk management` |
+| Mọi task đều **Done** | Xong sớm hơn plan → **không risk**, chỉ hỏi nhẹ một câu |
+
+Gộp hai nhánh này là biến "làm nhanh hơn plan" thành rủi ro dự án. Est 8h làm 3h
+rồi nhảy task khác 5h thì tổng vẫn 8h → **đủ công, im hẳn**; đó cũng là lý do
+phải cộng tổng cả ngày chứ không xét từng task.
+
+Hỏi **đúng một lần** ở lượt 16:30 (lượt 17:00 thì dev không kịp trả lời trước
+cutoff 17:30), không ghi pending, không nhắc lại. Khác exit 9: ở đó task **chưa
+được ghi** nên phải đuổi cho bằng được; ở đây task đã ghi xong rồi, câu hỏi chỉ
+để bổ sung thông tin.
+
+Sổ cái này còn trả lời được câu *"dev tự mở thread riêng rồi tag bot vào log thì
+có bị nhắc oan không"*: Job B chấm "chưa report" bằng reply trong thread 9:00 nên
+sẽ không thấy họ — ai có mặt trong sổ cái là đã log thật, được trừ ra.
 
 ## Setup
 
@@ -228,3 +261,18 @@ create` với giá trị lấy từ `.env`. Kiểm tra lại bằng `openclaw cr
 - State file (`state/<ngày>.json`) là file cục bộ trên máy chạy Gateway —
   không đồng bộ nếu bạn chạy Gateway trên nhiều máy cùng lúc (xem cảnh báo ở
   README gốc repo về việc chỉ nên chạy 1 Gateway tại 1 thời điểm).
+- Sổ cái `state/effort-today.json` chỉ ghi khi log đi qua `--slack-id`. PM sửa
+  tay số giờ thẳng trên sheet thì sổ cái không biết → lượt 16:30 vẫn tưởng
+  thiếu giờ.
+- Report bù ngày hôm trước: delta khi đó gộp cả 2 ngày vào hôm nay, nên tổng có
+  thể **vượt** công 1 ngày. Hiện chưa cảnh báo chiều vượt (tab `Overtime` chưa
+  được dùng), nên chưa hại — nhưng đừng thêm cảnh báo OT trước khi xử chỗ này.
+
+## Test
+
+```bash
+bash openclaw-skills/tests/run.sh
+```
+
+Offline, không cần mạng/API key, không đụng sheet thật. Bao phần dò cột ngày,
+đọc công đăng ký, và chia nhóm thiếu giờ — xem [`tests/README.md`](../tests/README.md).

@@ -57,12 +57,18 @@ Khi PM nói chung chung "thêm/sửa/xóa task ..." mà không chỉ rõ đang t
 > một lần rồi dùng lại cho mọi lệnh:
 >
 > ```bash
-> SKILL_DIR="${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/workspace/skills/gg-sheet"
+> SKILL_DIR="$(openclaw config get agents.defaults.workspace 2>/dev/null)/skills/gg-sheet"
+> [ -d "$SKILL_DIR" ] || SKILL_DIR="${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/workspace/skills/gg-sheet"
 > ```
 >
-> Đây là symlink trỏ về repo, sửa bên nào cũng như nhau. `OPENCLAW_STATE_DIR` lo
-> luôn trường hợp chạy profile riêng (`--profile hackathon` → state dir là
-> `~/.openclaw-hackathon`), không có biến đó thì rơi về `~/.openclaw`.
+> Đây là symlink trỏ về repo, sửa bên nào cũng như nhau.
+>
+> ⚠️ **Phải hỏi `openclaw config` trước, đừng chỉ ghép `$HOME/.openclaw/workspace`.**
+> Không chỉ state dir đổi theo profile (`--profile hackathon` → `~/.openclaw-hackathon`),
+> mà **tên thư mục workspace cũng là giá trị cấu hình** (`agents.defaults.workspace`)
+> — server hackathon để là `workspace-hackathon`, không phải `workspace`. Công
+> thức chỉ dựa vào `OPENCLAW_STATE_DIR` trông có vẻ portable nhưng vẫn ra sai
+> đường dẫn ở đó. Dòng 2 chỉ là lưới đỡ khi `openclaw config get` không chạy được.
 
 Đọc config hiện tại:
 

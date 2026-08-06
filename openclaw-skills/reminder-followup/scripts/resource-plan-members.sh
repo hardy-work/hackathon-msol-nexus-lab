@@ -17,8 +17,15 @@
 #             SLACK_BOT_TOKEN (tuỳ chọn — không có thì tự đọc channels.slack.botToken
 #             trong openclaw.json; không lấy được nữa thì BỎ QUA bước đối chiếu,
 #             giữ nguyên hành vi cũ chứ không loại oan ai)
-# Tham số   : không có   -> JSON {date, found_day_column, people[], off[], no_id[], bad_id[]}
-#             --mentions -> một dòng "<@U...> <@U...>" của riêng people[], dán thẳng vào Slack
+#             EFFORT_TOLERANCE_H (mặc định 1 — thiếu dưới ngần này giờ thì bỏ qua,
+#             khỏi hỏi ai vì 7,5 với 8)
+# Tham số   : không có       -> JSON {date, found_day_column, people[], off[], no_id[], bad_id[]}
+#             --mentions     -> một dòng "<@U...> <@U...>" của riêng people[], dán thẳng vào Slack
+#             --effort-check -> JSON chia nhóm ai hôm nay log thiếu giờ so với công đăng ký
+#
+# Ô công của hôm nay là một CON SỐ (8 = ngày đủ công, 4 = nghỉ nửa buổi), không
+# phải cờ có/không. `hours` giữ nguyên con số đó để --effort-check còn so được;
+# PM sửa ô thành 4 là mốc tự thành 4, không cần luật riêng cho nghỉ nửa buổi.
 #
 # Exit code:
 #   0  ok, có ít nhất 1 người phải report hôm nay
@@ -32,9 +39,15 @@ set -uo pipefail
 
 MODE="${1:-json}"
 case "$MODE" in
-  json | --mentions) ;;
-  *) echo "tham số không hợp lệ: $MODE (chỉ nhận --mentions hoặc bỏ trống)" >&2; exit 2 ;;
+  json | --mentions | --effort-check) ;;
+  *) echo "tham số không hợp lệ: $MODE (chỉ nhận --mentions, --effort-check, hoặc bỏ trống)" >&2; exit 2 ;;
 esac
+
+# Sổ cái giờ đã log hôm nay. gg-sheet/scripts/sheet-task.sh ghi vào đây sau mỗi
+# lần log thành công (nó tính đường dẫn y hệt, qua thư mục skill anh em), script
+# này chỉ đọc. Tự dò thư mục của chính mình -> không phụ thuộc cwd, không cần env.
+SKILL_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+LEDGER="${EFFORT_LEDGER_FILE:-$SKILL_DIR/state/effort-today.json}"
 
 TAB="${LOGTIME_SHEET_TAB:-Resource plan}"
 LINK="${LOGTIME_SHEET_LINK:-${GOOGLE_SHEETS_LINK:-}}"
@@ -62,13 +75,19 @@ import os, urllib.parse
 print(urllib.parse.quote(os.environ["TAB"] + "!A1:CZ300", safe=""))
 ')
 
-RESP=$(curl -sS --max-time 30 \
-  "https://sheets.googleapis.com/v4/spreadsheets/${FILE_ID}/values/${RANGE_ENC}?key=${GOOGLE_SHEETS_API_KEY}") || {
-  echo "gọi Google Sheets API lỗi (curl)" >&2
-  exit 3
-}
+if [ -n "${MOCK_SHEET_RESPONSE_FILE:-}" ]; then
+  # Chỗ cắm cho test offline: đưa sẵn payload của Sheets API, khỏi cần mạng/API
+  # key. CHỈ đọc file, không đổi hành vi gì khác. Cron không bao giờ set biến này.
+  RESP=$(cat "$MOCK_SHEET_RESPONSE_FILE") || { echo "không đọc được MOCK_SHEET_RESPONSE_FILE" >&2; exit 3; }
+else
+  RESP=$(curl -sS --max-time 30 \
+    "https://sheets.googleapis.com/v4/spreadsheets/${FILE_ID}/values/${RANGE_ENC}?key=${GOOGLE_SHEETS_API_KEY}") || {
+    echo "gọi Google Sheets API lỗi (curl)" >&2
+    exit 3
+  }
+fi
 
-printf '%s' "$RESP" | TAB="$TAB" MODE="$MODE" python3 -c '
+printf '%s' "$RESP" | TAB="$TAB" MODE="$MODE" LEDGER="$LEDGER" python3 -c '
 import json, os, re, sys, urllib.error, urllib.parse, urllib.request
 from datetime import datetime
 
@@ -189,6 +208,15 @@ found_day_column = today_col is not None
 OFF_WORDS = {"", "-", "--", "0", "0.0", "0,0", "x", "p", "off", "nghỉ", "nghi", "nghỉ phép", "nghi phep"}
 
 
+def to_hours(cell):
+    """Ô công -> số giờ đăng ký hôm nay. Không đọc được thì None."""
+    t = norm(cell).replace(",", ".")
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+
 def is_off(cell):
     t = norm(cell)
     if t in OFF_WORDS:
@@ -225,6 +253,10 @@ for row in rows[head_i + 1 :]:
         "name": name or cell(c_slack_name) or uid,
         "slack_name": cell(c_slack_name),
         "role": cell(c_role),
+        # Công đăng ký hôm nay, giữ nguyên con số trong ô. None = chưa có cột
+        # cho hôm nay, hoặc ô ghi chữ lạ -> --effort-check bỏ qua người này chứ
+        # không lấy 8 làm mặc định (đoán mốc rồi đi hỏi người ta là nhắc oan).
+        "hours": to_hours(cell(today_col)) if found_day_column else None,
     }
     if found_day_column and is_off(cell(today_col)):
         off.append(person)
@@ -313,6 +345,94 @@ if no_id:
     notices.append(
         "(Chưa có Id Slack nên mình không tag được: %s)" % ", ".join(no_id)
     )
+
+if os.environ.get("MODE") == "--effort-check":
+    # --- Ai hôm nay log ÍT GIỜ HƠN công đã đăng ký.
+    #
+    # Chia 2 nhóm vì cùng một triệu chứng nhưng khác hẳn hậu quả:
+    #   - còn task In progress -> task CHƯA XONG mà giờ bỏ vào cũng chưa đủ:
+    #     tiến độ đang trôi thật -> hỏi lý do rồi ghi Risk management.
+    #   - mọi task đều Done     -> xong sớm hơn plan, chuyện tốt. KHÔNG ghi risk,
+    #     chỉ hỏi một câu xem có phải quên log dòng nữa / nghỉ nửa buổi không.
+    # Trộn 2 nhóm này làm một là biến "làm nhanh hơn plan" thành rủi ro dự án.
+    DONE_WORDS = {
+        "done", "completed", "finished", "xong",
+        "hoàn thành", "hoan thanh", "hoàn tất", "hoan tat",
+    }
+
+    def is_done(s):
+        # Cùng bộ chữ với template/log-task-rules.md mục "Thế nào là Status Done".
+        # Sửa một bên thì phải sửa bên kia — đây là 2 bản dùng cho 2 việc khác
+        # nhau (bên kia chấm format, bên này hỏi tiến độ) nên không gộp được.
+        t = re.sub(r"[^0-9a-zà-ỹ\s]", "", norm(s)).strip()
+        t = re.sub(r"^đã\s+", "", t).strip()
+        return t in DONE_WORDS
+
+    try:
+        tol = float(os.environ.get("EFFORT_TOLERANCE_H") or 1)
+    except ValueError:
+        tol = 1.0
+
+    today_key = now.strftime("%Y-%m-%d")
+    logged = {}
+    try:
+        with open(os.environ["LEDGER"], encoding="utf-8") as fh:
+            for e in (json.load(fh).get("entries") or []):
+                if e.get("date") != today_key:
+                    continue
+                b = logged.setdefault(e.get("slack_id"), {"h": 0.0, "open": [], "n": 0})
+                b["h"] += float(e.get("delta") or 0)
+                b["n"] += 1
+                if not is_done(e.get("status") or ""):
+                    tid = e.get("task_id")
+                    if tid and tid not in b["open"]:
+                        b["open"].append(tid)
+    except FileNotFoundError:
+        pass          # chưa ai log hôm nay -> mọi người vào chua_log, không phải lỗi
+    except Exception as ex:
+        print("sổ cái effort hỏng (%s), bỏ qua bước so giờ" % ex, file=sys.stderr)
+
+    dang_lam, da_xong, du_gio, chua_log = [], [], [], []
+    for p in people:
+        h = p.get("hours")
+        b = logged.get(p["id"])
+        if b is None or not b["n"]:
+            # Chưa log gì cả -> họ đã nằm trong nhóm CHUA_REPORT của Job B rồi.
+            # Tag thêm lần nữa vì cùng một chuyện là phiền người ta 2 lần.
+            chua_log.append(p["id"])
+            continue
+        if h is None or h <= 0:
+            du_gio.append(p["id"])     # không có mốc để so -> im, đừng đoán
+            continue
+        missing = round(h - b["h"], 2)
+        if missing <= tol:
+            du_gio.append(p["id"])
+            continue
+        item = {
+            "id": p["id"], "name": p["name"],
+            "hours": h, "logged": round(b["h"], 2), "missing": missing,
+        }
+        if b["open"]:
+            item["in_progress"] = b["open"]
+            dang_lam.append(item)
+        else:
+            da_xong.append(item)
+
+    json.dump(
+        {
+            "date": now.strftime("%d-%m-%Y"),
+            "tolerance_h": tol,
+            "thieu_gio_con_dang_lam": dang_lam,
+            "thieu_gio_da_xong_het": da_xong,
+            "du_gio": du_gio,
+            "chua_log": chua_log,
+        },
+        sys.stdout,
+        ensure_ascii=False,
+        indent=2,
+    )
+    print()
+    sys.exit(0 if people else 6)
 
 if os.environ.get("MODE") == "--mentions":
     # Dòng 1 = chuỗi mention. Các dòng sau (nếu có) = dòng phụ dán vào CUỐI tin.
