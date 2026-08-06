@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -70,7 +71,13 @@ def run(proposal_id: str, *, base: str = "main", run_all: bool = True,
             # run_all.sh is intentionally executed only inside the isolated
             # worktree.  It rebuilds derived/ from scratch and is never allowed
             # to delete or rebuild the canonical root directly.
-            subprocess.run(["bash", "scripts/run_all.sh"], cwd=target, check=True)
+            run_all_env = os.environ.copy()
+            # Keep the interpreter selected by the host runner.  Otherwise a
+            # launchd service may fall back to macOS system Python even though
+            # the runner itself is using the project virtualenv.
+            run_all_env.setdefault("PROJECT_KNOWLEDGE_PYTHON", sys.executable)
+            subprocess.run(["bash", "scripts/run_all.sh"], cwd=target,
+                           env=run_all_env, check=True)
     except Exception as exc:
         proposal = ingest_proposal.load(proposal_id, root)
         proposal["status"] = "failed"

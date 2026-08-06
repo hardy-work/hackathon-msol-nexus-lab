@@ -78,12 +78,15 @@ cho host runner:
 ```bash
 export PROJECT_KNOWLEDGE_REPO=/Users/mor_minhhieu/repos/hackathon-msol-nexus-lab
 export PROJECT_KNOWLEDGE_CLAUDE_BIN=/opt/homebrew/bin/claude
-python3 /Users/mor_minhhieu/repos/hackathon-msol-nexus-lab/openclaw-skills/project-knowledge/scripts/ingest_runner.py run <proposal_id>
+export PROJECT_KNOWLEDGE_PYTHON=/Users/mor_minhhieu/.openclaw/workspace-hackathon/skills/project-knowledge/.venv/bin/python
+$PROJECT_KNOWLEDGE_PYTHON /Users/mor_minhhieu/repos/hackathon-msol-nexus-lab/openclaw-skills/project-knowledge/scripts/ingest_runner.py run <proposal_id>
 ```
 
 `PROJECT_KNOWLEDGE_STATE_DIR` vẫn trỏ tới state directory dùng chung của
-Gateway; repo chính chỉ là nơi lấy code và tạo isolated worktree. Runner tự
-động dừng ở `ready_to_publish`, không tự merge vào corpus chính.
+Gateway; repo chính chỉ là nơi lấy code và tạo isolated worktree. `run_all.sh`
+kiểm tra `openpyxl` trước khi chọn Python để tránh rơi về system Python thiếu
+dependency. Runner tự động dừng ở `ready_to_publish`, không tự merge vào corpus
+chính.
 
 Runner tự tạo review artifact local nếu NexusBot chưa tạo trước, sau đó tạo
 isolated worktree, register source, chạy extractor, lint, Gate 3b, DB/graph/RAG
