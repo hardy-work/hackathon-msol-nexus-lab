@@ -85,6 +85,58 @@ def skill_root(worktree: Path) -> Path:
     return nested if nested.is_dir() else worktree
 
 
+def changed_wiki_pages(worktree: Path, skill: Path) -> list[str]:
+    """Return changed wiki pages in an isolated repository worktree.
+
+    A new ingest must review the pages it writes, not re-review the whole
+    corpus. The latter is both wasteful and unsafe for source/index pages
+    whose raw inputs can exceed the review model context. ``worktree`` is
+    required to be a Git worktree here; direct skill-root fixtures run with
+    ``review=False`` and should not silently skip Gate 3b.
+    """
+    try:
+        skill_rel = skill.relative_to(worktree).as_posix()
+    except ValueError as exc:
+        raise RuntimeError(
+            "Gate 3b cần isolated Git worktree để xác định các trang wiki thay đổi"
+        ) from exc
+    if not (worktree / ".git").exists():
+        raise RuntimeError(
+            "Gate 3b cần isolated Git worktree có .git; không chạy review trên "
+            "workspace runtime trực tiếp"
+        )
+
+    result = subprocess.run(
+        [git_executable(), "status", "--short", "--untracked-files=all"],
+        cwd=worktree, capture_output=True, text=True, check=True,
+    )
+    prefix = f"{skill_rel}/wiki/"
+    pages: set[str] = set()
+    for line in result.stdout.splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:].strip()
+        if " -> " in path:  # rename status: review the destination path
+            path = path.rsplit(" -> ", 1)[1]
+        if not path.startswith(prefix) or not path.endswith(".md"):
+            continue
+        relative = path[len(skill_rel) + 1:]
+        if relative in {"wiki/index.md", "wiki/log.md"}:
+            continue
+        if (worktree / path).is_file():
+            pages.add(relative)
+    return sorted(pages)
+
+
+def review_changed_pages(worktree: Path, skill: Path, scripts: Path, env=None) -> None:
+    """Run Gate 3b only for wiki pages written by this ingest."""
+    pages = changed_wiki_pages(worktree, skill)
+    if not pages:
+        raise RuntimeError("ingest không tạo hoặc thay đổi trang wiki nào để review")
+    for page in pages:
+        run([sys.executable, str(scripts / "review.py"), "--page", page], skill, env)
+
+
 def execute(worktree: Path, doc_id: str, version: int, review: bool) -> None:
     skill = skill_root(worktree)
     doc = by_version(doc_id, version, skill)
@@ -169,8 +221,11 @@ def execute(worktree: Path, doc_id: str, version: int, review: bool) -> None:
     run([sys.executable, str(scripts / "lint.py")], skill, env)
     if review:
         command = [sys.executable, str(scripts / "review.py")]
-        command += ["--plan", str(plan_path.relative_to(skill))] if plan_path else ["--all"]
-        run(command, skill, env)
+        if plan_path:
+            command += ["--plan", str(plan_path.relative_to(skill))]
+            run(command, skill, env)
+        else:
+            review_changed_pages(worktree, skill, scripts, env)
     run([sys.executable, str(scripts / "build_db.py")], skill, env)
     run([sys.executable, str(scripts / "build_graph.py")], skill, env)
     run([sys.executable, str(scripts / "build_rag_indexes.py")], skill, env)

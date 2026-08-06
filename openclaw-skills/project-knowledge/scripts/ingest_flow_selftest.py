@@ -10,6 +10,7 @@ from __future__ import annotations
 import shutil
 import os
 import json
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -25,10 +26,41 @@ import ingest_flow  # noqa: E402
 import intake  # noqa: E402
 
 
+def assert_changed_wiki_pages_are_scoped(temp_root: Path) -> None:
+    """Initial ingest review must exclude unchanged index/source pages."""
+    repo = temp_root / "review-repo"
+    skill = repo / "openclaw-skills/project-knowledge"
+    (skill / "wiki/entities").mkdir(parents=True)
+    (skill / "wiki/sources").mkdir(parents=True)
+    (skill / "wiki/index.md").write_text("index\n", encoding="utf-8")
+    (skill / "wiki/log.md").write_text("log\n", encoding="utf-8")
+    (skill / "wiki/sources/old.md").write_text("old\n", encoding="utf-8")
+    (repo / "README.md").write_text("fixture\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run([
+        "git", "-C", str(repo), "-c", "user.name=fixture",
+        "-c", "user.email=fixture@example.invalid", "commit", "-qm", "base",
+    ], check=True)
+
+    (skill / "wiki/sources/old.md").write_text("updated\n", encoding="utf-8")
+    (skill / "wiki/entities/new.md").write_text("new\n", encoding="utf-8")
+    (skill / "wiki/sources/incoming.md").write_text("incoming\n", encoding="utf-8")
+    (skill / "wiki/index.md").write_text("updated index\n", encoding="utf-8")
+    (repo / "not-wiki.md").write_text("ignore\n", encoding="utf-8")
+
+    assert ingest_flow.changed_wiki_pages(repo, skill) == [
+        "wiki/entities/new.md",
+        "wiki/sources/incoming.md",
+        "wiki/sources/old.md",
+    ]
+
+
 def main() -> int:
     os.environ.setdefault("PROJECT_KNOWLEDGE_EMBEDDING_BACKEND", "hash")
     with tempfile.TemporaryDirectory(prefix="pk-ingest-flow-") as temp:
         temp_root = Path(temp)
+        assert_changed_wiki_pages_are_scoped(temp_root)
         staging = temp_root / "project-knowledge"
 
         def ignore(_path: str, names: list[str]) -> set[str]:
