@@ -77,7 +77,7 @@ Mấy task này mình chưa log lên sheet được vì chưa có lý do vượt
 • <@id> — **<ids của chính người đó, nối bằng dấu phẩy, MỖI id bọc trong 1 cặp 2 dấu sao>**
 
 <mỗi người trong "thieu_gio_con_dang_lam" MỘT DÒNG, đúng mẫu:>
-<@id> hôm nay đăng ký **<hours>h** mà mới log **<logged>h**, task **<in_progress nối bằng dấu phẩy>** thì vẫn đang **In progress**. Có gì vướng không để mình ghi vào Risk management nhé?
+<@id> hôm nay đăng ký **<hours>h** mà mới log **<logged>h**, task **<in_progress nối bằng dấu phẩy, MỖI id bọc trong 1 cặp 2 dấu sao>** thì vẫn đang **In progress**. Có gì vướng không để mình ghi vào Risk management nhé?
 
 <mỗi người trong "thieu_gio_da_xong_het" MỘT DÒNG, đúng mẫu:>
 <@id> bạn chỉ làm **<logged>h** hôm nay à? Effort đăng ký của bạn là **<hours>h**. Còn task nào chưa log thì report thêm giúp mình nhé.
