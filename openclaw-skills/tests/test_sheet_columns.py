@@ -130,10 +130,43 @@ def test_ledger(ns):
         check("chi giu <= 7 ngay", len({e["date"] for e in rows}) <= 7, True)
 
 
+# ------------------------------------------------------- cột tab Risk management
+def test_risk_columns(ns):
+    """PM chèn cột 'Task' vào giữa -> ghi theo vị trí là lệch hết sang phải."""
+    print("resolve_risk_columns")
+    norm, resolve = ns["norm"], ns["resolve_risk_columns"]
+
+    # Layout MỚI (có cột Task ở F), đúng như sheet hiện tại.
+    new = [norm(c) for c in ["ID", "Date Detected", "Description", "Priority",
+                             "Related Assignee", "Task", "Next Action", "Status", "Notes"]]
+    col = resolve(new)
+    check("layout moi: next action -> G", col["next"], 6)
+    check("layout moi: status -> H", col["status"], 7)
+    check("layout moi: notes -> I", col["notes"], 8)
+    check("layout moi: task -> F", col["task"], 5)
+
+    # Layout CŨ (không có cột Task) vẫn phải chạy đúng, không lệch.
+    old = [norm(c) for c in ["ID", "Date Detected", "Description", "Priority",
+                             "Related Assignee", "Next Action", "Status", "Notes"]]
+    col = resolve(old)
+    check("layout cu: next action -> F", col["next"], 5)
+    check("layout cu: status -> G", col["status"], 6)
+    check("layout cu: khong co cot task", "task" in col, False)
+
+    # 'Task' KHÔNG được cướp chỗ của 'Related Assignee' và ngược lại.
+    check("layout moi: assignee -> E", resolve(new)["assignee"], 4)
+
+    # Chèn thêm cột lạ ở đầu: mọi thứ dịch phải, vẫn phải khớp đúng.
+    shifted = [norm("STT")] + new
+    col = resolve(shifted)
+    check("chen cot la o dau: status dich phai", col["status"], 8)
+
+
 def main():
     ns = load_pure_functions()
     test_columns(ns)
     test_numbers(ns)
+    test_risk_columns(ns)
     test_ledger(ns)
     print()
     if FAILED:

@@ -145,6 +145,13 @@ sau khi đã có lý do và đã ghi risk xong; không bao giờ dùng để "ch
 Log lại **đúng số dev đã report lúc đầu**, không hỏi lại số liệu, không lấy số
 mới trong câu trả lời lý do.
 
+Dòng risk cũng được **khớp cột theo tên header**, không theo vị trí — PM chèn
+thêm cột vào giữa tab `Risk management` (đã xảy ra một lần: cột `Task` xen giữa
+`Related Assignee` và `Next Action`) thì mọi ô sau đó lệch sang phải mà không
+exit code nào nổ ra. Có cột `Task` riêng thì `Related Assignee` chỉ ghi tên
+người; không có thì mới gộp `Tên/TaskID`. Output JSON có `columns` để đối chiếu
+xem script đã hiểu header thế nào.
+
 `--reason` giữ **nguyên văn lý do dev nói**, không tóm tắt theo ý mình, không
 sửa câu chữ. Script tự sinh `R-xx` kế tiếp, tự điền ngày, tự chọn Priority
 (chênh ≥ 4h → `High`, dưới → `Medium`), tự đặt `Status = Open`.
