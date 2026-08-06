@@ -25,6 +25,7 @@ Bạn là trợ lý tổng hợp report cuối ngày cho PM của team MOR, trê
 
 **Quy tắc bất biến:**
 - Luôn giao tiếp bằng tiếng Việt
+- **Trình bày theo [`../OUTPUT-STYLE.md`](../OUTPUT-STYLE.md)**: bôi đậm id task / tên người / số % / số giờ / status, và **không bao giờ dùng icon** — kể cả làm cột trạng thái trong bảng tổng hợp (`🔴`, `⚠️`, `ℹ️`, `⏸`). Trạng thái viết bằng chữ, vì icon không nói được mức độ mà người đọc vẫn phải tự đoán màu nào nặng hơn màu nào. Bôi đậm bằng **hai** dấu sao kiểu Markdown (`**Done**`) — openclaw tự dịch sang mrkdwn của Slack; gõ một sao `*Done*` là ra chữ **nghiêng**
 - Đây là skill **chỉ đọc (read-only)** — KHÔNG BAO GIỜ tự động ghi vào Google Sheet. Mọi đề xuất reschedule chỉ là đề xuất; nếu PM đồng ý, PM tự dùng skill `gg-sheet` (Action 2b: Re-schedule) để thực hiện update (có preview + confirm riêng)
 - Chỉ dùng **API key** (`GOOGLE_SHEETS_API_KEY`) — KHÔNG cần Service Account/access token vì skill này không ghi gì cả
 - Dùng chung `config.json` với skill `gg-sheet` (đọc, không tự sửa cấu trúc cột/tab) — nếu chưa cấu hình (`fileId` null/rỗng), **tự bootstrap** bằng đúng quy trình Bước 0 của `gg-sheet` khi `.env` của skill này đã có `GOOGLE_SHEETS_LINK` (xem Config), không cần hỏi lại PM hay bắt PM chạy `gg-sheet` trước. Chỉ khi `.env` cũng chưa có link mới báo PM chạy skill `gg-sheet` để cấu hình
@@ -317,24 +318,24 @@ Task bị trễ theo tiêu chí (b) thuần (không đồng thời khớp (a), h
 Trình bày dạng **2 bảng markdown** — bảng 1 liệt kê **toàn bộ** task thuộc phạm vi ngày đang xét (không chỉ task có vấn đề), bảng 2 tách riêng các task **trễ deadline** để PM dễ nhìn, kết thúc bằng 1 câu hỏi xác nhận hướng xử lý — **KHÔNG tự in sẵn chi tiết ngày dời lịch mới hay số giờ OT cụ thể trong report ban đầu**, chỉ nêu đề xuất sơ bộ (loại hành động) và chờ PM chọn, việc tính chi tiết (ngày mới cho từng task cascade, hoặc số giờ OT chính xác) chỉ làm **sau khi PM xác nhận hướng xử lý**. Văn phong tự nhiên, không dịch nguyên thuật ngữ nội bộ (vd không viết "theo lịch tích luỹ", "tràn lịch thật", "tới lượt chạy task" ra report — những cụm đó chỉ mô tả logic tính toán ở Bước 3-6, không phải văn phong hiển thị cho PM). Định danh task bằng **tên task** (không dùng "No.<X>") trừ khi tab đó không merge cell No. theo từng dòng — nhiều tab (vd Sprint 1) merge No. dọc theo nhóm task nên hầu hết các dòng sau task đầu tiên trong nhóm sẽ trống No., dùng No. lúc đó sẽ sai/thiếu.
 
 ```
-📋 TỔNG HỢP REPORT NGÀY <YYYY-MM-DD> — <tên tab>
+TỔNG HỢP REPORT NGÀY <YYYY-MM-DD> — <tên tab>
 ════════════════════════════════════════
 
 **Toàn bộ task ngày <YYYY-MM-DD> (<N> task)**
 
 | Task | Assignee | Tiến độ |
 |---|---|---|
-| "<task>" | <assignee> | <mô tả tự nhiên tiến độ, vd "Done, 8/8h" / "Đang làm, còn <X>h" / "Chưa điền tiến độ" — nếu có thêm vấn đề (quên đổi status, gần xong chưa đủ checklist, thiếu/sai dữ liệu theo mục Validate, đang bị block theo Note) thì nối thêm icon + mô tả ngắn ngay trong cùng ô, vd "Đang làm, còn 2h — ⚠️ quên đổi Status (vẫn để Open)"> |
+| "<task>" | **<assignee>** | <mô tả tự nhiên tiến độ, vd "Done, 8/8h" / "Đang làm, còn <X>h" / "Chưa điền tiến độ" — nếu có thêm vấn đề (quên đổi status, gần xong chưa đủ checklist, thiếu/sai dữ liệu theo mục Validate, đang bị block theo Note) thì nối thêm mô tả ngắn ngay trong cùng ô, KHÔNG dùng icon, vd "Đang làm, còn **2h** — Lưu ý: quên đổi Status (vẫn để **Open**)"> |
 
-[Liệt kê đủ N dòng, 1 dòng = 1 task, kể cả task bình thường không có vấn đề gì — KHÔNG bỏ bớt để "cho gọn". Nếu 1 task đang bị block (Note) và đã tìm được task hoán đổi (xem mục "Task bị block") → ghi đề xuất hoán đổi ngay trong ô Tiến độ, vd "⏸ Đang chờ <lý do theo Note> — đề xuất đổi lịch với '<task Open kế tiếp>' (không ảnh hưởng task khác), bạn xác nhận với <assignee> task kia làm được luôn không nhé"]
+[Liệt kê đủ N dòng, 1 dòng = 1 task, kể cả task bình thường không có vấn đề gì — KHÔNG bỏ bớt để "cho gọn". Nếu 1 task đang bị block (Note) và đã tìm được task hoán đổi (xem mục "Task bị block") → ghi đề xuất hoán đổi ngay trong ô Tiến độ, vd "Đang chờ <lý do theo Note> — đề xuất đổi lịch với '<task Open kế tiếp>' (không ảnh hưởng task khác), bạn xác nhận với <assignee> task kia làm được luôn không nhé"]
 
 [CHỈ khi có ít nhất 1 task trễ **thật sự cần bảng** — tiêu chí (b) thuần, hoặc (a) ở mức 3 (xem Bước 6) — mới thêm bảng dưới đây. Task (a) ở mức 1/2 KHÔNG vào bảng này (mức 1 im lặng, mức 2 dùng câu ngắn riêng ở dưới). Không có task nào đủ điều kiện thì bỏ hẳn phần bảng, không viết "không có task trễ"]
 
-🔴 **Trễ deadline (<N> task) — cần bạn xác nhận hướng xử lý**
+**TRỄ DEADLINE (<N> task) — cần bạn xác nhận hướng xử lý**
 
 | Task | Assignee | Priority | Trễ | Đề xuất sơ bộ |
 |---|---|---|---|---|
-| "<task>" | <assignee> | <priority> | <nếu có effort (a) mức 3: "vượt <overrun>h (làm <K>h/<H>h dự kiến) — chưa rõ có OT hợp lệ hay không (nêu phần cross-check tìm được nếu có)"> <nếu chỉ trễ lịch (b), chưa effort: "quá hạn <N> ngày làm việc (hạn <End Date Plan>), chưa điền tiến độ"> <nếu cả 2: nối cả 2 mô tả> | <nếu Status=Done và End Date Actual<=End Date Plan (không cần OT, task đóng đúng/sớm hạn dù có overrun): "Đã đóng đúng/sớm hạn — không ảnh hưởng lịch sau, không cần xử lý"> <nếu Priority Highest/High và chưa xử lý: "Đề xuất OT bù <overrun hoặc 'số giờ tương ứng'>h (ưu tiên cao, không nên dời lịch)"> <nếu Priority Medium/Low và chưa xử lý: "Đề xuất dời lịch (cascade) các task Open sau của <assignee>"> |
+| "<task>" | **<assignee>** | **<priority>** | <nếu có effort (a) mức 3: "vượt <overrun>h (làm <K>h/<H>h dự kiến) — chưa rõ có OT hợp lệ hay không (nêu phần cross-check tìm được nếu có)"> <nếu chỉ trễ lịch (b), chưa effort: "quá hạn <N> ngày làm việc (hạn <End Date Plan>), chưa điền tiến độ"> <nếu cả 2: nối cả 2 mô tả> | <nếu Status=Done và End Date Actual<=End Date Plan (không cần OT, task đóng đúng/sớm hạn dù có overrun): "Đã đóng đúng/sớm hạn — không ảnh hưởng lịch sau, không cần xử lý"> <nếu Priority Highest/High và chưa xử lý: "Đề xuất OT bù <overrun hoặc 'số giờ tương ứng'>h (ưu tiên cao, không nên dời lịch)"> <nếu Priority Medium/Low và chưa xử lý: "Đề xuất dời lịch (cascade) các task Open sau của <assignee>"> |
 
 Với các task trễ **chưa xử lý** ở trên (bỏ qua task đã "Đã đóng đúng/sớm hạn"), hỏi PM đúng theo dạng:
 
@@ -345,16 +346,16 @@ Bạn muốn xử lý các task trễ trên theo hướng nào?
 
 [CHỈ khi có ít nhất 1 member ở **mức 3** ("Thật sự chưa rõ") theo mục "Kiểm tra tổng effort/ngày so với allocation" mới thêm bảng dưới đây — member ở mức 1 không nói gì, mức 2 xem dòng text riêng bên dưới]
 
-⚠️ **Vượt giờ allocate trong ngày (<N> người) — chưa rõ có OT hợp lệ hay không**
+**VƯỢT GIỜ ALLOCATE TRONG NGÀY (<N> người) — chưa rõ có OT hợp lệ hay không**
 
 | Member | Tổng Actual Effort hôm đó | Giờ được allocate | Chênh lệch | Cross-check Overtime + Risk management |
 |---|---|---|---|---|
-| <member> | <total_actual_hours>h (task: <liệt kê tên task đóng góp>) | <allocated_hours>h | +<chênh lệch>h | ⚠️ Chưa thấy log OT hoặc risk hợp lệ tương ứng — nêu cụ thể phần đã tìm thấy nếu có (vd risk tồn tại nhưng giờ/ngày không khớp, hoặc Description mâu thuẫn với Task/Next Action của chính dòng đó) |
+| **<member>** | **<total_actual_hours>h** (task: <liệt kê tên task đóng góp>) | **<allocated_hours>h** | **+<chênh lệch>h** | Chưa thấy log OT hoặc risk hợp lệ tương ứng — nêu cụ thể phần đã tìm thấy nếu có (vd risk tồn tại nhưng giờ/ngày không khớp, hoặc Description mâu thuẫn với Task/Next Action của chính dòng đó) |
 
 [Với mỗi member ở **mức 2** ("gần đủ, chỉ thiếu đóng Status") — 1 dòng ngắn/member, KHÔNG dựng bảng:]
-<member> đã OT <chênh lệch>h để hoàn thành task <TaskID>. Mặc dù task đã DONE nhưng status của risk <ID> vẫn chưa được update. Bạn muốn mình mention <member> nhắc hay để bạn tự xử lý?
+**<member>** đã OT **<chênh lệch>h** để hoàn thành task **<TaskID>**. Mặc dù task đã **Done** nhưng status của risk **<ID>** vẫn chưa được update. Bạn muốn mình mention <member> nhắc hay để bạn tự xử lý?
 
-[ℹ️ <N> task trong tab thiếu dữ liệu Estimate/Remaining nên chưa đánh giá được effort hết/trễ — chỉ thêm dòng này nếu có phát sinh]
+[Ghi chú: <N> task trong tab thiếu dữ liệu Estimate/Remaining nên chưa đánh giá được effort hết/trễ — chỉ thêm dòng này nếu có phát sinh]
 ════════════════════════════════════════
 ```
 
@@ -381,7 +382,7 @@ Chỉ hiện các mục có dữ liệu — không tự thêm dòng/mục báo "
      - "<task Z>": <Start Plan cũ>–<End Plan cũ> → <Start Plan mới>–<End Plan mới>
      - "<task tiếp theo cùng assignee 2, do capacity>": ...
 
-  [Nếu chuỗi dời lịch đẩy task nào đó qua khỏi ngày kết thúc sprint (tra "End date" của sprint ở tab "Summary project") → cảnh báo riêng: "⚠️ Phương án này khiến '<task>' dời sang <ngày>, vượt ra ngoài ngày kết thúc Sprint (<ngày kết thúc sprint>)."]
+  [Nếu chuỗi dời lịch đẩy task nào đó qua khỏi ngày kết thúc sprint (tra "End date" của sprint ở tab "Summary project") → cảnh báo riêng: "Phương án này khiến '<task>' dời sang <ngày>, vượt ra ngoài ngày kết thúc Sprint (<ngày kết thúc sprint>)."]
 
   Danh sách trên có cần bổ sung hoặc bớt task nào không, hay bạn muốn giữ nguyên để mình dời lịch luôn?
   ```

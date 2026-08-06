@@ -38,7 +38,7 @@ CHANNEL = C0BKLP5KYD7
        openclaw message send --channel slack --target C0BKLP5KYD7 --reply-to <THREAD_TS> --json --message "<nội dung>"
        Nội dung đúng nguyên văn:
 
-⚠️ Mình chưa đọc được danh sách người phải report từ Google Sheet logtime (tab Resource plan) nên chưa nhắc được ai. Nhờ PM kiểm tra lại link/quyền chia sẻ của sheet giúp mình nhé.
+Mình chưa đọc được danh sách người phải report từ Google Sheet logtime (tab Resource plan) nên chưa nhắc được ai. Nhờ PM kiểm tra lại link/quyền chia sẻ của sheet giúp mình nhé.
 
        Gửi xong trả về "NOTIFIED | khong doc duoc sheet (exit <mã>)". Gửi lỗi → "ERROR | khong gui duoc canh bao sheet".
    (b) EXIT 0 → PHAI_REPORT = mảng "people" (bỏ U0BKL0DJV7B nếu có mặt). TUYỆT ĐỐI KHÔNG tag bất kỳ ai trong mảng "off": họ NGHỈ hôm nay, KHÔNG tính vào chưa report, KHÔNG hỏi han gì họ cả — im hẳn. Không cần kiểm họ có trong group chat hay không.
@@ -67,20 +67,20 @@ CHANNEL = C0BKLP5KYD7
    openclaw message send --channel slack --target C0BKLP5KYD7 --reply-to <THREAD_TS> --json --message "<nội dung>"
    Nội dung đúng nguyên văn, mỗi <@Uxxxx> cách nhau 1 dấu cách, id lấy từ JSON ở bước 4 (KHÔNG gõ tên người thay cho mention):
 
-Nhắc nhẹ mọi người trước khi hết ngày nhé 🙌
+Nhắc nhẹ mọi người trước khi hết ngày nhé
 
 • Chưa report hôm nay: <mention_chua_report>
 • Report chưa đúng mẫu, sửa lại giúp mình nhé: <mention_sai_format>
 
 Mấy task này mình chưa log lên sheet được vì chưa có lý do vượt giờ plan:
 <mỗi người trong nhóm quá hạn giải trình MỘT DÒNG, đúng mẫu:>
-• <@id> — <ids của chính người đó, nối bằng dấu phẩy>
+• <@id> — **<ids của chính người đó, nối bằng dấu phẩy, MỖI id bọc trong 1 cặp 2 dấu sao>**
 
 <mỗi người trong "thieu_gio_con_dang_lam" MỘT DÒNG, đúng mẫu:>
-<@id> hôm nay đăng ký <hours>h mà mới log <logged>h, task <in_progress nối bằng dấu phẩy> thì vẫn đang In progress. Có gì vướng không để mình ghi vào Risk management nhé?
+<@id> hôm nay đăng ký **<hours>h** mà mới log **<logged>h**, task **<in_progress nối bằng dấu phẩy>** thì vẫn đang **In progress**. Có gì vướng không để mình ghi vào Risk management nhé?
 
 <mỗi người trong "thieu_gio_da_xong_het" MỘT DÒNG, đúng mẫu:>
-<@id> bạn chỉ làm <logged>h hôm nay à? Effort đăng ký của bạn là <hours>h. Còn task nào chưa log thì report thêm giúp mình nhé.
+<@id> bạn chỉ làm **<logged>h** hôm nay à? Effort đăng ký của bạn là **<hours>h**. Còn task nào chưa log thì report thêm giúp mình nhé.
 
 Report theo mẫu sau :
 Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status | Note
@@ -88,6 +88,7 @@ Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status |
 VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi
 <các dòng trong "notices" nếu có>
 
+   TRÌNH BÀY: bôi đậm bằng HAI dấu sao kiểu Markdown (**Done**). openclaw tự dịch sang mrkdwn của Slack. GÕ MỘT SAO (*Done*) LÀ RA CHỮ NGHIÊNG, KHÔNG PHẢI ĐẬM — đã thử thật trên Slack ngày 06-08-2026. Bôi đậm đúng 5 loại: id task, tên người, số %, số giờ, status. Mention <@Uxxx> ĐỂ NGUYÊN, không bọc sao, bọc là hỏng chip tên người. TUYỆT ĐỐI KHÔNG DÙNG ICON/EMOJI trong bất kỳ dòng nào, kể cả dòng báo lỗi.
    NHÓM NÀO RỖNG THÌ BỎ HẲN DÒNG ĐÓ, KỂ CẢ DÒNG TIÊU ĐỀ VÀ DÒNG TRỐNG ĐI KÈM: không nhóm nào quá hạn giải trình thì bỏ luôn câu "Mấy task này mình chưa log lên sheet được…", đừng để tiêu đề đứng trơ không có ai bên dưới. Không được gộp 2 dấu • của 2 nhóm khác nhau thành một dòng. Không bao giờ có 2 dòng trống liền nhau. Luôn giữ phần "Report theo mẫu sau :". Không trích lại nội dung sai của ai, chỉ tag và trỏ về mẫu — NGOẠI LỆ DUY NHẤT là <ids> của dòng quá hạn giải trình và các con số giờ của 2 nhóm thiếu giờ (lấy Y NGUYÊN từ JSON ở bước 4(f), KHÔNG tự cộng trừ lại). Lệnh gửi lỗi → trả về "ERROR | <mô tả ngắn>", không thử lại nhiều lần.
    Với 2 nhóm thiếu giờ: CHỈ NÊU CON SỐ, không bình luận. KHÔNG hỏi "sao ít thế", không suy đoán hộ họ ("chắc bạn nghỉ nửa buổi à"), không nhắc chuyện OT, không đánh giá nội dung công việc. Mốc giờ trong sheet là KẾ HOẠCH chứ không phải sự thật đã kiểm chứng — nên phải hỏi, tuyệt đối không được khẳng định kiểu "bạn thiếu 4h".
 
