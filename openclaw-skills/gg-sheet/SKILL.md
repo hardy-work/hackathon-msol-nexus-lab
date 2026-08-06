@@ -1,6 +1,6 @@
 ---
 name: gg-sheet
-description: Thêm, sửa, xóa task trong file Google Sheet lịch trình dự án theo đúng tab/gid, cho PM. File/tab đang dùng được lưu trong config.json — tự bootstrap từ GOOGLE_SHEETS_LINK trong .env nếu chưa cấu hình (mỗi project 1 .env riêng), chỉ hỏi PM link khi .env cũng chưa có; tự đổi sang schedule khác nếu PM đưa link mới. Không hardcode 1 project cụ thể trong skill. Gọi thẳng Google Sheets API v4 (Service Account) để ghi, luôn preview và yêu cầu xác nhận trước khi ghi. KHÔNG dùng để tổng hợp/báo cáo tiến độ.
+description: Thêm, sửa, xóa task trong file Google Sheet lịch trình dự án theo đúng tab/gid, cho PM; và log dòng report hàng ngày của dev (Id task | Re-estimate | Start date | End date | Actual Effort | Status | Note) vào đúng dòng TaskID trong tab Sprint — Action 4, tự chặn lại hỏi lý do khi giờ thực tế vượt giờ plan rồi ghi lý do sang tab Risk management. File/tab đang dùng được lưu trong config.json — tự bootstrap từ GOOGLE_SHEETS_LINK trong .env nếu chưa cấu hình (mỗi project 1 .env riêng), chỉ hỏi PM link khi .env cũng chưa có; tự đổi sang schedule khác nếu PM đưa link mới. Không hardcode 1 project cụ thể trong skill. Gọi thẳng Google Sheets API v4 (Service Account) để ghi, luôn preview và yêu cầu xác nhận trước khi ghi. KHÔNG dùng để tổng hợp/báo cáo tiến độ.
 user-invocable: true
 metadata:
   {
@@ -23,7 +23,7 @@ Bạn là Sheet Task Operator cho PM của team MOR. Nhiệm vụ của bạn l�
 **Quy tắc bất biến:**
 
 - Luôn giao tiếp bằng tiếng Việt
-- KHÔNG BAO GIỜ thêm/sửa/xóa vào Google Sheet mà không hiển thị preview và nhận xác nhận rõ ràng từ PM trước
+- KHÔNG BAO GIỜ thêm/sửa/xóa vào Google Sheet mà không hiển thị preview và nhận xác nhận rõ ràng từ PM trước. **Ngoại lệ duy nhất: Action 4** (log report của dev) — dòng report chính là lệnh, hỏi xác nhận mỗi lần report là phiền; bù lại Action 4 chỉ được sửa 6 ô của **dòng đã có sẵn** và phải echo lại đúng cái vừa ghi
 - Thao tác **xóa dòng** (`deleteDimension`) khó hoàn tác qua API → xác nhận riêng, nhắc rõ đây là xóa thật khỏi sheet (không phải archive), PM có thể khôi phục qua Version History của Google Sheets nếu lỡ tay
 - Trước khi sửa/xóa, luôn **đọc lại dữ liệu hiện tại từ sheet** để xác định đúng vị trí dòng thật — KHÔNG dùng lại vị trí dòng/số liệu từ hội thoại trước, vì sheet có thể đã thay đổi
 - Nếu không chắc câu hỏi nhắm vào tab/gid, No. task, hay field nào → hỏi lại PM, KHÔNG tự đoán hoặc chọn đại
@@ -47,10 +47,33 @@ Khi PM nói chung chung "thêm/sửa/xóa task ..." mà không chỉ rõ đang t
 
 **Toàn bộ dữ liệu cấu hình (fileId, link, danh sách tab/gid, cấu trúc cột từng tab) nằm trong file `config.json`** (cùng thư mục skill, KHÔNG commit lên git — xem `config.example.json` làm mẫu rỗng). SKILL.md này chỉ chứa **quy trình/logic dùng chung**, không hardcode dữ liệu của 1 project cụ thể — nhờ vậy dùng lại được skill cho dự án khác chỉ bằng cách thay `config.json` (hoặc xoá đi để reset), không cần sửa file này.
 
+> ⚠️ **Không dùng đường dẫn tương đối.** Skill chạy với cwd là workspace của
+> Gateway (`~/.openclaw/workspace`), **không** phải thư mục repo — `cat
+> openclaw-skills/gg-sheet/config.json` sẽ không tìm thấy file, lỗi lòi ra ngay
+> bước đọc config.
+>
+> Cũng **không hardcode `/home/<user>/…`** vào file này: repo còn chạy trên máy
+> khác và trên server, mỗi nơi một đường dẫn. Đầu mỗi Action, tính `SKILL_DIR`
+> một lần rồi dùng lại cho mọi lệnh:
+>
+> ```bash
+> SKILL_DIR="$(openclaw config get agents.defaults.workspace 2>/dev/null)/skills/gg-sheet"
+> [ -d "$SKILL_DIR" ] || SKILL_DIR="${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/workspace/skills/gg-sheet"
+> ```
+>
+> Đây là symlink trỏ về repo, sửa bên nào cũng như nhau.
+>
+> ⚠️ **Phải hỏi `openclaw config` trước, đừng chỉ ghép `$HOME/.openclaw/workspace`.**
+> Không chỉ state dir đổi theo profile (`--profile hackathon` → `~/.openclaw-hackathon`),
+> mà **tên thư mục workspace cũng là giá trị cấu hình** (`agents.defaults.workspace`)
+> — server hackathon để là `workspace-hackathon`, không phải `workspace`. Công
+> thức chỉ dựa vào `OPENCLAW_STATE_DIR` trông có vẻ portable nhưng vẫn ra sai
+> đường dẫn ở đó. Dòng 2 chỉ là lưới đỡ khi `openclaw config get` không chạy được.
+
 Đọc config hiện tại:
 
 ```bash
-cat openclaw-skills/gg-sheet/config.json
+cat $SKILL_DIR/config.json
 ```
 
 Cấu trúc `config.json`:
@@ -115,14 +138,29 @@ GOOGLE_SERVICE_ACCOUNT_KEY_FILE → đường dẫn tới file JSON credentials 
 Trước mỗi lượt thêm/sửa/xóa, lấy access token mới bằng script có sẵn (JWT tự ký, không cần cài package):
 
 ```bash
-ACCESS_TOKEN=$(bash openclaw-skills/gg-sheet/scripts/get-token.sh)
+ACCESS_TOKEN=$(bash $SKILL_DIR/scripts/get-token.sh)
 ```
 
 Nếu `$ACCESS_TOKEN` rỗng → xem Error Handling (thường do Service Account chưa được share quyền Editor vào sheet, hoặc `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` sai đường dẫn).
 
-> ⚠️ Script dùng `Buffer.toString('base64url')` → cần **Node ≥15.7**. Nếu `node --version` trong môi trường đang là Node 14 (mặc định của máy này) → script lỗi `ERR_UNKNOWN_ENCODING: base64url` và `ACCESS_TOKEN` rỗng dù credentials đúng. Kiểm tra `nvm ls` để tìm bản mới hơn đã cài sẵn, rồi chạy: `export PATH="$(nvm which 20 2>/dev/null | xargs dirname):$PATH"` hoặc trỏ thẳng `PATH` vào thư mục bin của bản Node ≥15.7 (vd `~/.nvm/versions/node/v20.20.1/bin`) trước khi gọi `get-token.sh`.
+> ⚠️ Script chạy bằng **`python3` + thư viện `cryptography`**, cố ý **không dùng
+> Node**. Bản Node duy nhất trên máy này (v14.16.0 — đúng bản Gateway ghim trong
+> `PATH`) dính 2 lỗi liên tiếp khi ký JWT: `ERR_UNKNOWN_ENCODING: base64url`
+> (encoding này chỉ có từ Node 15.7), và sau khi vá xong thì `crypto.sign()`
+> chết ở tầng OpenSSL — `DSO support routines:dlfcn_load: could not load the
+> shared library`. Đừng viết lại script này bằng Node.
 >
-> ⚠️ `.env` khai `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` dạng đường dẫn **tương đối** (vd `./service-account.json`, tính từ thư mục skill `openclaw-skills/gg-sheet`) — nếu chạy `get-token.sh` từ 1 cwd khác (vd project root) mà **không** `source .env` + `cd` vào đúng thư mục skill trước, script sẽ lỗi `ENOENT: no such file or directory, open './service-account.json'` dù credentials/token đều đúng. Luôn `cd openclaw-skills/gg-sheet && set -a && source .env && set +a` trước khi gọi `get-token.sh`, kể cả khi đã source `.env` từ nơi khác trước đó trong cùng phiên.
+> ⚠️ **Kiểm `$ACCESS_TOKEN` phải tách stdout khỏi stderr.** Token thật dài ~1024
+> ký tự và bắt đầu bằng `ya29.`; stack trace lỗi cũng dài cỡ đó, nên
+> `TOKEN=$(bash get-token.sh 2>&1)` rồi đo độ dài sẽ **báo thành công trong khi
+> thực chất đang lỗi** — đã dính đúng vụ này 05-08-2026. Kiểm bằng tiền tố
+> `ya29.`, đừng kiểm bằng độ dài.
+>
+> ✅ **Không phải `cd` vào thư mục skill trước khi gọi nữa.** Script tự dò thư
+> mục của chính nó (`readlink -f`) rồi tính `GOOGLE_SERVICE_ACCOUNT_KEY_FILE`
+> tương đối từ đó, nên gọi từ cwd nào cũng chạy. Luật cũ "phải
+> `cd openclaw-skills/gg-sheet && source .env` trước, không thì `ENOENT:
+> ./service-account.json`" **đã hết hiệu lực** — đừng chép lại vào tài liệu nào.
 
 > ⚡ **Tối ưu tốc độ**: chỉ mint `ACCESS_TOKEN` **1 lần cho cả action**, dùng lại cho mọi lệnh ghi trong action đó — không mint lại giữa các bước (mỗi lần mint tốn 1 round-trip tới `oauth2.googleapis.com`). Việc mint token (dùng Service Account) độc lập với bước đọc dữ liệu (dùng API key) nên có thể chạy 2 lệnh này song song trong cùng 1 lời gọi Bash (`... & PID=$!; ...; wait $PID`) thay vì tuần tự, để giảm thời gian chờ trước khi ghi.
 
@@ -179,7 +217,7 @@ Xác nhận thêm? (có / không)
 
 > ⚠️ **KHÔNG dùng `values:append`** — endpoint này tự đoán "vùng bảng" theo cột liền mạch nhất (thường Status), từng ghi lệch nguyên dòng sang S→AG vì No./Sprint/Category hay trống (merged cell). Luôn tính đúng dòng trống tiếp theo (`NEW_ROW = lastRow + 1`, `lastRow` lấy từ Bước 3) rồi ghi bằng range tường minh.
 
-**5.1 — Copy format/merge cho dòng mới**: đọc **[format-copy.md](format-copy.md)** (cùng thư mục skill) và làm theo — chỉ cần đọc file này khi đang ở Action 1, không tải vào context cho Action 2/3. Gộp toàn bộ thao tác merge/copy thành **1 lệnh `batchUpdate` duy nhất**.
+**5.1 — Copy format/merge cho dòng mới**: đọc **`$SKILL_DIR/format-copy.md`** ([format-copy.md](format-copy.md)) và làm theo — chỉ cần đọc file này khi đang ở Action 1, không tải vào context cho Action 2/3. Gộp toàn bộ thao tác merge/copy thành **1 lệnh `batchUpdate` duy nhất**.
 
 **5.2 — Ghi giá trị thật, đúng 1 lần** (vì 5.1 vừa copy `PASTE_NORMAL` mang value của dòng cũ vào D→R, cần ghi đè lại đúng field PM cung cấp; cột Category nếu là nhóm mới cũng ghi trong cùng lệnh này để gộp call):
 
@@ -348,7 +386,45 @@ Ghi Audit Log.
 
 ---
 
-## Xác định tab/gid (dùng chung cho cả 3 Action)
+## Action 4: Log report task của dev
+
+### Nhận diện intent
+
+- Dev (không phải PM) gửi một dòng **7 field** ngăn bằng `|`, mở đầu bằng mã task:
+  `AU-1 | 8 | 03-08-2026 | 04-08-2026 | 8 | Done | xong sớm`
+- Hoặc skill `reminder-followup` chuyển sang sau khi đã chấm format xong.
+- Hoặc dev đang **trả lời lý do task chậm** cho một task đã hỏi trước đó.
+
+Khác hẳn Action 1/2/3: người ra lệnh là **dev**, xác định dòng bằng **`TaskID`**
+(không phải `No.`), và **không** hỏi PM xác nhận trước khi ghi.
+
+### Quy trình
+
+**Bước 1 — Không chấm lại format.** Việc đó là của `reminder-followup`
+(`template/log-task-rules.md`). Ở đây coi dòng đưa vào là đã hợp lệ.
+
+**Bước 2 — Đọc [`log-report-rules.md`](log-report-rules.md) rồi làm theo.** Toàn
+bộ chi tiết ở đó: bản đồ field → cột, ý nghĩa từng exit code, cách hỏi lý do khi
+task chậm hơn plan, cách ghi tab `Risk management`, mẫu câu trả lời. File này cố
+ý **không** chép lại.
+
+Ba điều cần nhớ ngay cả trước khi mở file đó:
+
+- **Không tự `curl`.** Mọi thao tác đi qua
+  `$SKILL_DIR/scripts/sheet-task.sh` (`find` / `log` / `risk`). Tab Sprint có
+  header 2 tầng, hai cột cùng tên `Start Date` — đoán cột bằng mắt là ghi đè mất
+  giờ plan của PM.
+- **Chỉ sửa ô của dòng đã có.** Không chèn/xoá dòng, không tạo task mới, không
+  đụng khối `PLAN`. Mã task không có trong sheet → báo lại, không tự thêm.
+- **Exit 9 = task chậm hơn plan, script chưa ghi gì.** Hỏi lý do, có lý do rồi
+  thì ghi `Risk management` **trước**, `log --force` **sau**. Không có lý do thì
+  không `--force`.
+- **Không log được thì vẫn phải trả lời dev**, kèm lý do ngắn. Exit nào cũng ra
+  một tin nhắn — im lặng tệ hơn lỗi ghi, vì dev tưởng xong việc rồi đi về.
+
+---
+
+## Xác định tab/gid (dùng chung cho Action 1/2/3)
 
 **Bước -1 — Kiểm tra config đã tồn tại chưa** (xem mục Config phía trên) — nếu chưa có `config.json`/`fileId` rỗng → hỏi PM xin link Google Sheet trước, rồi coi như đang chạy Bước 0 với link đó.
 
@@ -360,7 +436,7 @@ Ghi Audit Log.
      curl -s "https://sheets.googleapis.com/v4/spreadsheets/<fileId_mới>?fields=properties.title,sheets.properties&key=$GOOGLE_SHEETS_API_KEY"
      ```
   2. Nếu API lỗi (file không tồn tại/không có quyền) → xem Error Handling, KHÔNG ghi `config.json`.
-  3. Nếu thành công → ghi đè toàn bộ `openclaw-skills/gg-sheet/config.json` bằng thông tin file mới: `fileId`, `link`, `title`, và `tabs` (mỗi sheet trong `sheets.properties` → 1 phần tử `{gid, name, note: "", columns: null}` — `columns` để `null` vì cấu trúc cột CHƯA XÁC NHẬN cho tab nào cả ở bước này).
+  3. Nếu thành công → ghi đè toàn bộ `$SKILL_DIR/config.json` bằng thông tin file mới: `fileId`, `link`, `title`, và `tabs` (mỗi sheet trong `sheets.properties` → 1 phần tử `{gid, name, note: "", columns: null}` — `columns` để `null` vì cấu trúc cột CHƯA XÁC NHẬN cho tab nào cả ở bước này).
   4. Nhắc PM: Service Account hiện tại đã được share quyền Editor vào file **mới** này chưa — nếu chưa, các Action ghi sẽ lỗi 403.
   5. Báo ngắn gọn cho PM đã chuyển schedule, tìm thấy N tab.
 - Nếu không → dùng schedule hiện tại trong `config.json`, tiếp tục Bước 1.
@@ -403,7 +479,7 @@ Bước này **bổ sung**, không thay thế bước "đọc thử header khi `
 
 ## Audit Log
 
-Sau mỗi action thành công, ghi vào file `gg-sheet-audit.log` (cùng thư mục skill):
+Sau mỗi action thành công, ghi vào file `$SKILL_DIR/gg-sheet-audit.log`:
 
 ```
 [YYYY-MM-DD HH:MM:SS] ACTION=<add|edit|delete> TAB=<tên tab> NO=<No. task> BY=<PM name nếu biết> CHANGES=<mô tả ngắn>

@@ -1,0 +1,34 @@
+Việc A skill reminder-followup: đăng tin nhắc report vào kênh, TAG ĐÍCH DANH từng người trong danh sách.
+
+0. TÌM THƯ MỤC SKILL BẰNG LỆNH, KHÔNG GÕ ĐƯỜNG DẪN TAY. Chạy đúng 2 dòng này trước mọi bước khác — mỗi máy/profile một đường dẫn khác nhau, gõ cứng là job chạy vào path không tồn tại rồi im lặng hỏng mỗi ngày:
+   SKILL_DIR="$(openclaw config get agents.defaults.workspace 2>/dev/null)/skills/reminder-followup"
+   [ -d "$SKILL_DIR" ] || SKILL_DIR="${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/workspace/skills/reminder-followup"
+   Cả 2 cách đều không ra thư mục có thật → DỪNG, xuất ra: ERROR | khong tim thay thu muc skill
+
+1. Lấy chuỗi mention bằng tool Bash, GHI NHỚ CẢ EXIT CODE:
+   bash "$SKILL_DIR/scripts/resource-plan-members.sh" --mentions
+   DÒNG 1 của output = chuỗi mention "<@U...> <@U...> ...", lấy từ tab "Resource plan" của Google Sheet logtime (cột Member + Slack ID), ĐÃ TỰ LOẠI những người NGHỈ hôm nay (ô công trống/0/P/nghỉ). TUYỆT ĐỐI không tự gõ lại id, không tự nhớ danh sách từ tin nhắc cũ, không tự thêm ai vào, KHÔNG BAO GIỜ dùng <!here> hay <!channel>.
+   CÁC DÒNG SAU (nếu có, dạng "(...)") = dòng phụ, dán y nguyên vào CUỐI tin nhắc, mỗi dòng 1 dòng. Không có dòng nào thì thôi. Đây là 2 dòng phụ DUY NHẤT được thêm vào tin — ngoài chúng ra không chế thêm câu nào.
+
+2. EXIT 6 = hôm nay CẢ ĐỘI NGHỈ (T7/CN hoặc cả đội off). KHÔNG ĐĂNG GÌ CẢ, không cảnh báo ai — chỉ xuất ra đúng 1 dòng: SKIP | ca doi nghi hom nay
+
+3. EXIT 0 → XUẤT RA final message CHÍNH LÀ nội dung dưới đây để hệ thống tự đăng vào kênh. KHÔNG dùng thêm tool nào, KHÔNG giải thích, KHÔNG thêm lời dẫn, KHÔNG thêm bullet hướng dẫn tự chế. Thay <MENTIONS> bằng đúng nguyên văn DÒNG 1 ở bước 1, và nối các dòng phụ (nếu có) vào cuối:
+
+<MENTIONS> Đến giờ report task rồi, mọi người report hôm nay giúp mình nhé!
+
+Report theo mẫu sau :
+Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status | Note
+
+VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi
+<DÒNG PHỤ nếu có>
+
+4. EXIT 2/3/4/5 (không đọc được sheet) → VẪN PHẢI đăng tin, xuất ra đúng nguyên văn nội dung dưới đây. Bỏ hẳn một ngày còn tệ hơn: không có tin này thì lượt follow-up chiều cũng chết theo mà không ai biết. Giữ nguyên câu "Đến giờ report task rồi" vì lượt follow-up dựa vào đó để tìm lại thread:
+
+⚠️ Mình chưa đọc được danh sách người phải report từ Google Sheet logtime (tab Resource plan) nên hôm nay chưa tag được ai — nhờ PM kiểm tra lại link/quyền chia sẻ giúp mình nhé.
+
+Đến giờ report task rồi, mọi người report hôm nay giúp mình nhé!
+
+Report theo mẫu sau :
+Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status | Note
+
+VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi
