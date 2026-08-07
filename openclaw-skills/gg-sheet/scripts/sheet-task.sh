@@ -24,7 +24,10 @@
 #                              --actual X --status S [--note N] [--force] \
 #                              [--slack-id U...] [--date YYYY-MM-DD]
 #       -> ghi 6 ô khối Actual + Status + Note của ĐÚNG dòng task đó.
-#          Actual Effort > Estimate mà không có --force -> exit 9, KHÔNG ghi gì.
+#          Actual Effort > Estimate HOẶC Re-estimate > Estimate mà không có
+#          --force -> exit 9, KHÔNG ghi gì.
+#          Status = Done mà Actual Effort != Re-estimate (Remaining sẽ khác 0)
+#          mà không có --force -> exit 12, KHÔNG ghi gì.
 #          Có --slack-id thì ghi thêm 1 dòng vào sổ cái effort-today.json (giờ
 #          vừa bỏ thêm vào = actual mới - actual đang có trên sheet) để lượt
 #          follow-up 16:30 so được với công đăng ký. Không có thì bỏ qua im lặng.
@@ -40,9 +43,12 @@
 #   4  không tìm thấy cột bắt buộc trong tab (header đổi cấu trúc)
 #   7  không có task id đó trong sheet
 #   8  task id xuất hiện ở nhiều tab -> phải hỏi lại, không tự chọn
-#   9  QUÁ GIỜ: Actual Effort > Estimate, chưa ghi gì cả (in JSON chi tiết ra stdout)
+#   9  QUÁ GIỜ: Actual Effort > Estimate hoặc Re-estimate > Estimate, chưa ghi
+#      gì cả (in JSON chi tiết ra stdout)
 #  10  lấy access token thất bại (ghi)
 #  11  ghi lên sheet lỗi / verify lại thấy không khớp
+#  12  Status = Done nhưng Actual Effort != Re-estimate, chưa ghi gì cả (in
+#      JSON chi tiết ra stdout)
 set -uo pipefail
 
 SKILL_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
@@ -448,15 +454,48 @@ if CMD == "log":
     if act is None:
         die(2, "Actual Effort không phải số: %r" % f["actual"])
 
-    over = est is not None and act > est
+    re_est_val = to_number(f["re-est"])
+    if re_est_val is None:
+        die(2, "Re-estimate không phải số: %r" % f["re-est"])
+
+    # Actual vượt Estimate = đã thực sự tốn nhiều giờ hơn kế hoạch. Re-estimate
+    # vượt Estimate = dev tự nhận định tổng effort sẽ vượt kế hoạch, dù Actual
+    # (số giờ đã làm tới lúc report) chưa chắc đã vượt — vẫn là tín hiệu sớm cần
+    # hỏi lý do, không chờ tới lúc Actual thực sự vượt mới hỏi.
+    over_actual = est is not None and act > est
+    over_re_est = est is not None and re_est_val > est
+    over = over_actual or over_re_est
     if over and not f.get("force"):
         print(json.dumps({
             "error": "overtime",
             "task_id": info["task_id"], "tab": info["tab"], "row": info["row"],
             "assignee": info["assignee"], "task": info["task"], "sub_task": info["sub_task"],
-            "estimate": est, "actual": act, "diff": round(act - est, 2),
+            "estimate": est, "actual": act, "re_estimate": re_est_val,
+            "over_actual": over_actual, "over_re_estimate": over_re_est,
+            "diff": round(max(act - est, re_est_val - est), 2),
         }, ensure_ascii=False))
         sys.exit(9)
+
+    # Status = Done ngụ ý Remaining = Re-estimate - Actual phải bằng 0 (Progress
+    # 100%) — dev report Done nhưng Actual còn thấp hơn Re-estimate là dữ liệu tự
+    # mâu thuẫn (task "xong" mà vẫn còn giờ chưa log), khác hẳn case "quá giờ" ở
+    # trên. Không tự đoán số nào đúng (Actual thiếu, hay Re-estimate còn thừa) —
+    # chặn lại hỏi dev.
+    status_val = f["status"].strip()
+    done_mismatch = (
+        status_val.lower() == "done"
+        and re_est_val is not None
+        and abs(act - re_est_val) > 0.01
+    )
+    if done_mismatch and not f.get("force"):
+        print(json.dumps({
+            "error": "done_mismatch",
+            "task_id": info["task_id"], "tab": info["tab"], "row": info["row"],
+            "assignee": info["assignee"], "task": info["task"], "sub_task": info["sub_task"],
+            "actual": act, "re_estimate": re_est_val,
+            "diff": round(re_est_val - act, 2),
+        }, ensure_ascii=False))
+        sys.exit(12)
 
     end_raw = (f.get("end") or "").strip()
     end_val = "" if norm(end_raw) in EMPTY_END else end_raw

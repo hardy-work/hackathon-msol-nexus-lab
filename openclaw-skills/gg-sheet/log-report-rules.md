@@ -76,6 +76,46 @@ Khối `PLAN` (`Estimate (h)`, `Start Date`, `End Date`) là **của PM, chỉ �
 Action này **chỉ sửa ô của dòng đã có sẵn** — không chèn dòng, không xoá dòng,
 không tạo task mới. Id task không có trong sheet thì báo lại, không tự thêm.
 
+## Kiểm tra allocation trước khi log (sau `find`, trước `log`)
+
+Ngoài cảnh báo "chậm hơn plan" (exit 9, so với `Estimate` của chính task), phải
+cross-check thêm ở cấp **member/ngày**: 1 task không vượt estimate riêng vẫn có
+thể là **chưa log đủ** so với tổng giờ dev thực sự được allocate vào dự án hôm
+đó.
+
+**Bước**: xác định "ngày cần xét" = `Start date` dev vừa report (không phải
+ngày hôm nay theo hệ thống, trừ khi trùng). Đọc allocation của đúng assignee,
+đúng ngày đó từ tab `Resource plan`, khối "Thời gian làm việc mỗi ngày" (cột U
+trở đi) → `allocated_hours`. Cộng `Actual Effort (h)` của **mọi** task khác của
+cùng assignee có `Start Date Actual`/`End Date Actual` trùng ngày đó (đọc qua
+`find` từng task liên quan nếu cần, hoặc quét nhanh tab Sprint) + số giờ vừa
+log → `total_logged`.
+
+- `total_logged == allocated_hours` → khớp, không cần nói gì thêm.
+- `total_logged < allocated_hours` (còn thiếu giờ) → **không chặn việc log**
+  task đang report (số dev đưa vẫn ghi đúng như vậy). Sau khi log xong, hỏi lại
+  dev: "Bạn được allocate `<allocated_hours>`h hôm đó nhưng tổng mới log
+  `<total_logged>`h, còn `<chênh lệch>`h chưa rõ — đang làm task khác chưa
+  log, hay có lý do khác (nghỉ/việc ngoài dự án...)?" Không tự đoán lý do,
+  không tự sửa gì cho tới khi dev trả lời.
+  - Dev trả lời **có task khác chưa log** → chỉ nhắc dev report nốt task đó,
+    không tự bịa dòng report hộ.
+  - Dev trả lời **có lý do khác** (nghỉ đột xuất...) → cập nhật lại đúng ô
+    allocation ngày đó của dev trong `Resource plan` cho khớp thực tế, và ghi
+    1 dòng vào `Risk management` nêu lý do (cùng format với mục "Task chậm hơn
+    plan" bên dưới — `--diff` = số giờ chênh lệch, `--reason` = nguyên văn lý
+    do dev nói).
+  - Dev chưa trả lời/chưa rõ → để nguyên, không sửa Resource plan hay Risk,
+    chờ dev xác nhận ở lượt sau.
+- `total_logged > allocated_hours` (log nhiều hơn allocate) → cross-check với
+  tab `Overtime` đúng ngày/đúng người trước khi hỏi gì — có OT khớp số giờ
+  chênh lệch thì không phải bất thường, không cần hỏi. Không khớp → hỏi dev
+  y hệt nhánh thiếu giờ ở trên.
+
+Đây là cross-check **sau khi task đã log xong** (không giữ delta giữa `find`
+và `log`) — mục đích là bắt các trường hợp dev quên report 1 phần công việc
+trong ngày, không phải để chặn report của task đang xử lý.
+
 ## Đọc exit code, đừng đọc chữ trong output
 
 | Exit | Nghĩa | Làm gì |
@@ -84,6 +124,7 @@ không tạo task mới. Id task không có trong sheet thì báo lại, không 
 | `7` | Không có id đó trong sheet | Báo dev mã task sai, **không** tự tạo task |
 | `8` | Id trùng ở nhiều tab | Hỏi tab nào, **không tự chọn** |
 | `9` | **Chậm hơn plan** — chưa ghi gì | Sang mục dưới |
+| `12` | **Status = Done nhưng Actual ≠ Re-estimate** — chưa ghi gì | Sang mục "Status Done nhưng effort chưa khớp" |
 | `2` | Thiếu env / sai tham số | Cấu hình hỏng — báo dev là bot đang lỗi cấu hình, nhờ báo PM |
 | `3` | Đọc sheet lỗi | Mạng hoặc API key — báo "chưa đọc được sheet" |
 | `4` | Sheet đổi cấu trúc cột | Báo PM: tab thiếu cột bắt buộc, không tự đoán cột khác |
@@ -110,23 +151,40 @@ chạy lại là ghi đè lung tung). Chạy lại đúng một lần rồi thô
 ## Task chậm hơn plan (exit 9) — hỏi lý do rồi vẫn log
 
 Chậm = `Actual Effort (h)` dev report **lớn hơn** `Estimate (h)` (khối `PLAN`)
-của chính task đó. Mốc so là **giờ plan trong sheet**, không phải `Re-estimate`
-dev tự khai — dev khai lại bằng đúng số giờ đã làm là thoát cảnh báo, thành ra
-không cảnh báo được ai.
+của chính task đó, **hoặc** `Re-estimate (h)` dev report cũng **lớn hơn**
+`Estimate (h)`. Mốc so luôn là **giờ plan trong sheet** (`Estimate (h)`) — so
+cả 2 field dev tự khai (`Actual Effort`, `Re-estimate`) với đúng mốc đó, không
+so 2 field dev khai với nhau.
 
-Exit 9 in ra JSON có `estimate`, `actual`, `diff`, `assignee`, `tab`, `row`, và
-**chưa ghi ô nào cả**.
+Lý do phải xét cả `Re-estimate`, không chỉ `Actual Effort`: dev có thể chưa hề
+vượt giờ đã làm (`Actual Effort` vẫn ≤ plan, task đang chạy dở) nhưng đã tự
+nhận định tổng effort cần để xong task sẽ vượt kế hoạch (`Re-estimate` >
+`Estimate`) — vd plan **8h**, dev mới làm **8h** (chưa vượt) nhưng báo
+`Re-estimate` **10h** vì thấy việc phát sinh nhiều hơn dự tính. Đây vẫn là tín
+hiệu trễ tiến độ cần hỏi lý do ngay, không đợi tới lúc `Actual Effort` thực sự
+vượt mới hỏi — hỏi muộn thì risk vào sheet cũng muộn theo.
 
-Đây **không phải là từ chối log** — chỉ là hoãn lại để lấy lý do. Hỏi:
+Exit 9 in ra JSON có `estimate`, `actual`, `re_estimate`, `over_actual`,
+`over_re_estimate`, `diff` (= chênh lệch lớn nhất trong 2 phía), `assignee`,
+`tab`, `row`, và **chưa ghi ô nào cả**.
+
+Đây **không phải là từ chối log** — chỉ là hoãn lại để lấy lý do. Hỏi, tuỳ
+field nào vượt:
 
 ```
 <@U0BK2KAN86B> mình thấy task **PCS-7** đang bị chậm so với plan: plan **8h** mà thực tế **9h**, vượt **1h**.
 Lý do là gì để mình log vào tab Risk management rồi log task luôn nhé?
 ```
 
-Chỉ nêu **con số**: plan bao nhiêu, thực tế bao nhiêu, chênh bao nhiêu. **Không**
-bình luận làm nhanh hay chậm, không hỏi sao lâu thế, không gợi ý chia nhỏ task,
-không nhắc chuyện OT. Việc của skill là ghi số, không phải đánh giá người.
+```
+<@U0DoNT01> mình thấy task **NEX-57** có dấu hiệu trễ so với plan: plan **8h**, bạn báo đã làm **8h** nhưng re-estimate tổng effort là **10h** (vượt **2h** so với plan).
+Lý do là gì để mình log vào tab Risk management rồi log task luôn nhé?
+```
+
+Chỉ nêu **con số**: plan bao nhiêu, thực tế/re-estimate bao nhiêu, chênh bao
+nhiêu. **Không** bình luận làm nhanh hay chậm, không hỏi sao lâu thế, không gợi
+ý chia nhỏ task, không nhắc chuyện OT. Việc của skill là ghi số, không phải
+đánh giá người.
 
 ### Dev trả lời lý do → ghi Risk trước, log task sau
 
@@ -167,6 +225,42 @@ Xong thì báo lại, nêu cả mã risk:
 Hạn chờ **không** thuộc Action này — Action này không có bộ đếm giờ và không
 theo dõi hội thoại. Bên gọi (`reminder-followup`) giữ hạn 1 tiếng và tự nhắc
 người quá hạn. Ở đây chỉ cần nhớ: **chưa có lý do thì chưa `--force`**.
+
+## Status Done nhưng effort chưa khớp (exit 12) — hỏi số nào đúng rồi log lại
+
+Khác hẳn exit 9 (task chưa xong, chỉ là vượt giờ) — đây là dev báo task **đã
+xong** (`Status: Done`) nhưng `Actual Effort` lại **khác** `Re-estimate` mà
+chính dev vừa report. Vì `Remaining(h)` = `Re-estimate − Actual` là công thức
+tự tính trên sheet, Done mà 2 số này lệch nhau nghĩa là `Remaining` sẽ khác 0
+và `Progress` khác 100% — mâu thuẫn ngay trong chính dòng report, không phải
+suy luận từ dữ liệu cũ.
+
+Exit 12 in ra JSON có `actual`, `re_estimate`, `diff` (= `re_estimate − actual`,
+có thể âm nếu `actual` > `re_estimate`), `assignee`, `tab`, `row`, **chưa ghi ô
+nào cả** — giống hệt exit 9 ở chỗ đây là hoãn để hỏi lại, không phải từ chối.
+
+**Không tự đoán số nào sai** — có 2 khả năng, chỉ dev biết:
+- `Actual Effort` dev báo thiếu (mới log 1 phần dù đã làm xong) → dev cần báo
+  lại đúng tổng giờ đã dùng cho `Actual Effort`.
+- `Re-estimate` dev báo bị cũ/thừa (task xong sớm hơn dự tính lúc đầu) →
+  `Re-estimate` cần sửa lại cho khớp đúng `Actual Effort` (vì tại thời điểm
+  Done, tổng effort thật = đúng số giờ đã làm).
+
+Hỏi:
+
+```
+<@U0LongVN01> mình thấy task **NEX-59** bạn báo **Done** nhưng Actual Effort (**4h**) khác re-estimate (**8h**) — task đã dùng đúng **4h** để xong (re-estimate cũ **8h** giờ thừa), hay còn **4h** chưa log vào Actual Effort?
+```
+
+Dev trả lời rồi thì **log lại cả dòng với số đã sửa đúng** (không dùng `--force`
+để giữ nguyên số cũ sai — sửa đúng 1 trong 2 field theo câu trả lời rồi gửi lại
+lệnh `log` bình thường, lúc đó `actual == re_estimate` nên qua thẳng, không cần
+`--force`). Chỉ dùng `--force` nếu dev xác nhận **cả 2 số đều đúng như đã báo**
+dù có vẻ mâu thuẫn (trường hợp hiếm, project có quy ước Remaining khác 0 vẫn
+được đánh Done) — không tự ý `--force` thay dev.
+
+Case này **không** cần ghi `Risk management` — đây là sửa lỗi số liệu tự báo
+của chính dev, không phải giải trình lý do vượt giờ với PM.
 
 ## Không hỏi xác nhận, nhưng phải echo cái vừa ghi
 

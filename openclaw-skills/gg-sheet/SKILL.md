@@ -420,8 +420,15 @@ Ba điều cần nhớ ngay cả trước khi mở file đó:
 - **Exit 9 = task chậm hơn plan, script chưa ghi gì.** Hỏi lý do, có lý do rồi
   thì ghi `Risk management` **trước**, `log --force` **sau**. Không có lý do thì
   không `--force`.
+- **Exit 12 = Status Done nhưng Actual Effort ≠ Re-estimate, script chưa ghi
+  gì.** Hỏi dev số nào đúng rồi log lại với số đã sửa (không phải `--force`,
+  không phải ghi Risk — đây là sửa lỗi số liệu, xem log-report-rules.md).
 - **Không log được thì vẫn phải trả lời dev**, kèm lý do ngắn. Exit nào cũng ra
   một tin nhắn — im lặng tệ hơn lỗi ghi, vì dev tưởng xong việc rồi đi về.
+- **Sau khi log xong, so tổng actual đã log trong ngày với giờ allocate của dev
+  đó** (tab `Resource plan`) — thiếu/thừa giờ chưa rõ lý do thì hỏi lại dev,
+  không tự đoán. Xem mục "Kiểm tra allocation trước khi log" ở
+  `log-report-rules.md`.
 
 ---
 
