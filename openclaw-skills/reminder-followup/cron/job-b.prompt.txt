@@ -10,7 +10,11 @@ CHANNEL = C0BKLP5KYD7
 
 1. Nếu giờ hiện tại (Asia/Ho_Chi_Minh) đã qua 17:30 → trả về "SKIP | qua gio cutoff".
 
-2. Tìm thread. Chạy:
+2. Tìm thread. ĐỌC STATE TRƯỚC, quét lịch sử chỉ là lưới đỡ:
+   TODAY=$(TZ=Asia/Ho_Chi_Minh date +%F)
+   cat "$SKILL_DIR/state/$TODAY.json" 2>/dev/null
+   Đọc được và có "reminderThreadTs" khác rỗng → THREAD_TS = giá trị đó, ĐI THẲNG SANG BƯỚC 3, khỏi quét lịch sử. File tên theo ngày hôm nay nên không có chuyện lấy nhầm thread hôm qua.
+   File không có / rỗng / JSON hỏng / thiếu khoá → KHÔNG báo lỗi, rơi xuống nhánh quét lịch sử dưới đây (Job A ghi state lỗi, hoặc tin do người khác đăng tay):
    openclaw message read --channel slack --target C0BKLP5KYD7 --limit 60 --json
    Trong payload.messages, lọc các tin có user == U0BKL0DJV7B VÀ text chứa "Đến giờ report task rồi". Với mỗi tin ứng viên, KIỂM TRA NGÀY BẰNG LỆNH, TUYỆT ĐỐI KHÔNG NHẨM TRONG ĐẦU:
      TODAY=$(TZ=Asia/Ho_Chi_Minh date +%F)

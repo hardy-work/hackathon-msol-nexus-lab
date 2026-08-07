@@ -3,15 +3,15 @@
 Áp cho **mọi chữ bot gửi ra cho người dùng**: tin Slack, reply trong thread, báo
 lỗi, bảng tổng hợp report.
 
-**Đang áp cho 3 skill:** [`reminder-followup`](reminder-followup/SKILL.md),
+**Đang áp cho 4 skill:** [`reminder-followup`](reminder-followup/SKILL.md),
 [`gg-sheet`](gg-sheet/SKILL.md),
-[`gg-sheet-daily-report`](gg-sheet-daily-report/SKILL.md) — tức là toàn bộ luồng
-report hàng ngày qua Google Sheet.
+[`gg-sheet-daily-report`](gg-sheet-daily-report/SKILL.md),
+[`jira-daily-report`](jira-daily-report/SKILL.md) — toàn bộ luồng report hàng
+ngày, cả nhánh Sheet lẫn nhánh Jira.
 
-Các skill khác (`jira-daily-report`, `jira-task-editor`, `slack-evidence-sheet`,
-`meeting-notetaker`, `project-knowledge`) **cố ý chưa áp** — không phải quên.
-Thêm skill mới vào luồng report thì áp luật này và ghi tên nó vào danh sách
-trên.
+Các skill khác (`jira-task-editor`, `slack-evidence-sheet`, `meeting-notetaker`,
+`project-knowledge`) **cố ý chưa áp** — không phải quên. Thêm skill mới vào
+luồng report thì áp luật này và ghi tên nó vào danh sách trên.
 
 ## 1. Bôi đậm các giá trị dữ liệu
 

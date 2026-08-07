@@ -587,6 +587,17 @@ VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi
   một dòng trống. Sáu cái `@tên` dính liền đầu câu làm câu nhắc bị đẩy khuất
   sang phải, đọc trên mobile là mất hẳn. Đừng gộp lại thành một dòng.
 
+> ⚠️ **Tin này KHÔNG được gõ tay — nó nằm trong code.** Nguồn thật là
+> `scripts/resource-plan-members.sh --reminder-message`; khối trên chỉ là bản
+> chép để đọc cho dễ. **Sửa template thì sửa trong script**, rồi chạy
+> `tests/run.sh` (có assertion so nguyên văn) và apply lại prompt cron.
+>
+> Vì sao: trước đây Job A cầm template trong prompt rồi tự gõ lại vào
+> `--message`. Model gõ lại thì template trôi dần — nuốt dòng trống, mất dấu
+> cách trong `Report theo mẫu sau :`, tự thêm câu cho thân thiện — và không có
+> gì bắt được. Giờ Job A chỉ `MSG="$(... --reminder-message)"` rồi chuyển tiếp,
+> nên sai template là **bất khả thi** chứ không còn là chuyện dặn dò.
+
 Câu `Đến giờ report task rồi` là **mốc nhận diện** Job B dùng để tìm lại
 thread — đổi câu này thì phải đổi cả bước 2 của Job B.
 
@@ -666,29 +677,52 @@ giờ/phút nếu khác, vd 09:30 → `30 9 * * *`):**
 openclaw cron create "0 9 * * *" \
   "Việc A skill reminder-followup: lấy mention list từ Google Sheet rồi đăng tin nhắc report tag từng người." \
   --name reminder-followup-0900 --tz "$REMINDER_TIMEZONE" \
-  --session isolated --announce \
+  --session isolated \
   --channel slack --to "channel:$SLACK_REPORT_CHANNEL_ID"
+# cron create mặc định bật announce -> PHẢI TẮT, không thì dòng trạng thái
+# bị đăng ra kênh thành tin rác (giống hệt Job B)
+openclaw cron edit <id vừa tạo> --no-deliver
 ```
-`--announce` bắt buộc — thiếu nó, cron chạy xong vẫn không tự đẩy kết quả ra
-Slack (`delivered: false` dù `status: ok`).
+
+> ⚠️ **Job A tự gửi tin bằng lệnh, KHÔNG dùng `--announce`** — và đây là chỗ đã
+> hỏng thật, đừng đổi ngược lại.
+>
+> Bản cũ dùng `--announce`, tức là **final message chính là tin đăng lên kênh**.
+> Job A lại không có dòng trạng thái nào, nên model — vốn quen phải báo cáo kết
+> quả chạy — không có chỗ báo và nhét thẳng vào đầu tin. Ngày 06-08-2026 tin
+> nhắc 9:00 mở đầu bằng
+> `Exit 0, mentions retrieved, no extra lines. Posting the reminder message.`
+> trước mặt cả team, dù prompt đã có sẵn câu "KHÔNG thêm lời dẫn".
+>
+> Sửa bằng cách dặn kỹ hơn là vá triệu chứng. Cách chặn thật là **tách hai
+> đường** như Job B vẫn làm từ đầu: nội dung tin là **tham số của lệnh gửi**,
+> còn tường thuật đi vào **dòng trạng thái** — muốn lọt ra Slack cũng không có
+> đường nào.
+>
+> Kèm theo: `--no-deliver` là **bắt buộc**. Quên nó thì dòng `POSTED | da tag:
+> 6 nguoi` bị announce ra kênh, tin rác kiểu khác nhưng vẫn là tin rác.
 
 Chạy:
 
 1. `bash {baseDir}/scripts/resource-plan-members.sh --mentions` → chuỗi mention.
-2. Exit 0 → xuất ra final message **đúng nguyên văn template "Tin mở thread"**,
-   thay `<mention_tat_ca>` bằng chuỗi ở bước 1 (không tự diễn giải lại, không
-   thêm lời dẫn) — `--announce` lo việc đăng vào kênh, nên job này không cần gọi
-   tool Slack.
-3. **Exit 6 (cả đội nghỉ hôm nay) → không đăng gì cả**, kết thúc bằng
+2. Exit 0 → dựng nội dung theo **template "Tin mở thread"**, thay
+   `<mention_tat_ca>` bằng chuỗi ở bước 1 (không tự diễn giải lại, không thêm
+   lời dẫn), rồi gửi bằng `openclaw message send` — **không** `--reply-to`, đây
+   là tin mở thread.
+3. **Exit 6 (cả đội nghỉ hôm nay) → không gửi gì cả**, kết thúc bằng
    `SKIP | ca doi nghi hom nay`. Đây là cách T7/CN không có tin nhắc rác.
-4. Exit 2/3/4/5 → **vẫn phải đăng tin nhắc**, nhưng theo template "Không đọc
+4. Exit 2/3/4/5 → **vẫn phải gửi tin nhắc**, nhưng theo template "Không đọc
    được sheet" ở mục dưới. Im lặng bỏ hẳn một ngày còn tệ hơn: thread không tồn
    tại thì Job B cũng chết theo mà không ai biết.
+5. Gửi xong, ghi `ts` trả về vào `state/<YYYY-MM-DD>.json`.
 
-Job A không tự ghi được `reminderThreadTs` (nó không cầm `ts` của tin do
-announce đăng) — đó là lý do bước 2 của Job B luôn có nhánh quét history để tìm
-lại thread. Nếu sau này Job A chuyển sang tự `chat.postMessage`, hãy lưu `ts`
-trả về vào state để Job B khỏi phải quét.
+Gửi lỗi thì thử lại **đúng một lần** rồi trả `ERROR` — đây là hỏng nặng hơn mọi
+lỗi khác của skill: không có tin nhắc thì cả ngày hôm đó không ai report, và
+Job B chiều cũng không có thread để nhắc.
+
+Ghi state lỗi thì **không** coi là thất bại — tin đã lên kênh rồi, mà Job B vẫn
+giữ nhánh quét lịch sử làm lưới đỡ. Đây là lý do câu `Đến giờ report task rồi`
+vẫn phải giữ nguyên trong tin: nó là mốc để quét lại khi state mất.
 
 **Job B — follow-up. Đúng 2 lượt/ngày: `FOLLOWUP_CRON_1` (mặc định 16:30) và
 `FOLLOWUP_CRON_2` (mặc định 17:00), đều trước `FOLLOWUP_CUTOFF_TIME`=17:30.**
@@ -742,9 +776,15 @@ Kết quả nằm trong `payload.messages`, là raw Slack API (có `user`, `ts`,
 `text`, `thread_ts`).
 
 1. Quá `FOLLOWUP_CUTOFF_TIME` (theo `REMINDER_TIMEZONE`) → dừng.
-2. Xác định thread: đọc history kênh, lọc tin có `user` == user id của bot và
-   `text` chứa `Đến giờ report task rồi`. **Lọc theo ngày phải làm bằng lệnh,
-   không nhẩm** — model rất dễ đọc nhầm epoch và bám vào thread hôm qua:
+2. Xác định thread. **Đọc `state/<YYYY-MM-DD>.json` trước** — Job A đã ghi
+   `reminderThreadTs` ngay sau khi gửi. Có giá trị thì dùng luôn, khỏi đọc
+   history: file đặt tên theo ngày nên không có cửa lấy nhầm thread hôm qua.
+
+   Không có state (Job A ghi lỗi, hoặc tin do người đăng tay) → **rơi xuống
+   nhánh quét history**, không báo lỗi: đọc history kênh, lọc tin có `user` ==
+   user id của bot và `text` chứa `Đến giờ report task rồi`. **Lọc theo ngày
+   phải làm bằng lệnh, không nhẩm** — model rất dễ đọc nhầm epoch và bám vào
+   thread hôm qua:
 
    ```bash
    TODAY=$(TZ=Asia/Ho_Chi_Minh date +%F)
