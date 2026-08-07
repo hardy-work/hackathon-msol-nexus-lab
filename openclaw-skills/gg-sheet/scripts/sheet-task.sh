@@ -450,7 +450,7 @@ MONTHS_EN = {
 }
 
 
-def ledger_logged_today(slack_id, date_key):
+def ledger_logged_today(slack_id, date_key, current_task_id=None, current_task_live_before=None):
     """Tổng giờ member đã log HÔM NAY, cộng dồn qua MỌI task họ report trong
     ngày — đọc sổ cái effort-today.json (cùng file reminder-followup dùng cho
     lượt follow-up 16:30), KHÔNG quét lại 'Actual Effort' trên sheet Sprint.
@@ -470,7 +470,17 @@ def ledger_logged_today(slack_id, date_key):
     đầu report) và `actual` của lần log GẦN NHẤT — chênh lệch 2 mốc này luôn
     đúng bằng đúng giờ đã thay đổi thật trong ngày cho task đó, bất kể ở giữa
     có bị reset bao nhiêu lần. Entry cũ thiếu field `actual` (ghi trước khi
-    field này tồn tại) thì fallback về cộng thô `delta` như cũ."""
+    field này tồn tại) thì fallback về cộng thô `delta` như cũ.
+
+    Vẫn còn 1 khoảng trống: nếu sheet bị reset SAU lần log gần nhất trong
+    ledger (chưa có lần log nào sau đó để "thấy" việc reset) thì lịch sử ledger
+    của đúng task đang log lúc này (`current_task_id`) đã stale — không cách
+    nào biết được nếu chỉ nhìn ledger. Vì vậy bên gọi phải truyền thêm
+    `current_task_id` + `current_task_live_before` (giá trị Actual Effort đọc
+    SỐNG từ sheet ngay trước khi ghi lần này, tức `before` ở cmd log) — nếu nó
+    lệch với `actual` của entry gần nhất trong ledger cho đúng task đó, coi
+    lịch sử ledger của RIÊNG task đó là không đáng tin (bỏ qua hoàn toàn, không
+    cộng vào), vì sheet đã đổi ngoài kiểm soát của ledger kể từ lần log đó."""
     path = os.environ.get("EFFORT_LEDGER_FILE") or ""
     if not path or not slack_id:
         return 0.0, []
@@ -485,6 +495,14 @@ def ledger_logged_today(slack_id, date_key):
             per_task.setdefault(e.get("task_id"), []).append(e)
     total = 0.0
     for task_id, es in per_task.items():
+        if task_id == current_task_id:
+            last_known_actual = es[-1].get("actual")
+            live_before = 0.0 if current_task_live_before is None else float(current_task_live_before)
+            if last_known_actual is not None and abs(float(last_known_actual) - live_before) > 0.01:
+                # Sheet đã đổi ngoài script kể từ lần log gần nhất cho đúng
+                # task này (reset tay, sửa tay...) -> lịch sử ledger của task
+                # này không còn phản ánh đúng sheet, bỏ hẳn, không cộng.
+                continue
         first, last = es[0], es[-1]
         first_actual, last_actual = first.get("actual"), last.get("actual")
         if first_actual is None or last_actual is None:
@@ -616,7 +634,9 @@ if CMD == "log":
     slack_id = f.get("slack-id")
     if slack_id and target_date is not None and not f.get("force"):
         ledger_date = (f.get("date") or "").strip() or time.strftime("%Y-%m-%d")
-        logged_before_this, other_tasks = ledger_logged_today(slack_id, ledger_date)
+        logged_before_this, other_tasks = ledger_logged_today(
+            slack_id, ledger_date, current_task_id=info["task_id"], current_task_live_before=before,
+        )
         total_logged_today = round(logged_before_this + delta, 2)
         allocated, _reason = read_resource_plan_allocation(slack_id, target_date)
         if allocated is not None and abs(total_logged_today - allocated) > 0.01:
