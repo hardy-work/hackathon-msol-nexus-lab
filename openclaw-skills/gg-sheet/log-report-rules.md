@@ -97,12 +97,21 @@ tới cộng nhiều task. Script dùng sổ cái `effort-today.json` (cùng fil
 ghi trong ngày cho task đó — chỉ lấy chênh lệch giữa `actual` của lần log
 **đầu tiên** (trừ ngược delta ra baseline đầu ngày) và `actual` của lần log
 **gần nhất**. Cách này tự đúng kể cả khi ai đó reset thẳng ô `Actual Effort`
-trên sheet (không qua `log`) giữa 2 lần report cùng task cùng ngày — cộng thô
-delta trong trường hợp đó sẽ phồng lên gấp đôi dù sheet thật chỉ còn giá trị
-mới nhất (bug thật đã gặp: log 8h, ai đó reset về 0, log lại 4h → cộng thô ra
-12h dù sheet chỉ có 4h). Nhược điểm: fix này chỉ tự đúng cho các lần log **từ
-lúc fix được deploy trở đi** — sổ cái đã bị phồng từ trước đó (do bug cũ) thì
-vẫn sai cho tới khi bị ghi đè bởi 1 lần log mới, không tự lùi sửa lịch sử cũ.
+trên sheet (không qua `log`) **giữa 2 lần report** cùng task cùng ngày — cộng
+thô delta trong trường hợp đó sẽ phồng lên gấp đôi dù sheet thật chỉ còn giá
+trị mới nhất (bug thật đã gặp: log 8h, ai đó reset về 0, log lại 4h → cộng thô
+ra 12h dù sheet chỉ có 4h).
+
+Còn 1 khoảng trống riêng: reset xảy ra **SAU lần log gần nhất** (chưa có lần
+log nào sau đó để ledger "thấy" việc reset) thì không cách nào biết được nếu
+chỉ nhìn lịch sử ledger. Vì vậy `cmd log` còn tự đối chiếu thêm: so `actual`
+của entry gần nhất trong ledger cho **đúng task đang log lúc này** với giá trị
+Actual Effort đọc **sống** từ sheet ngay trước khi ghi (`before`) — lệch thì
+coi lịch sử ledger của riêng task đó không còn đáng tin, bỏ hẳn (không cộng),
+chỉ giữ lại đóng góp của các task KHÁC trong ngày. Nhờ đối chiếu ở đúng lần
+log tiếp theo, ledger **tự sửa lùi được** cả những lần bị phồng từ trước khi
+fix này deploy — không cần dọn tay, miễn lần log kế tiếp cho đúng task đó có
+kèm `--slack-id`.
 
 Chỉ chạy khi có `--slack-id` (Sprint dùng nickname như `VinhNV`, khác hẳn
 tên/Slack name ở tab `Resource plan` — không có Slack ID thì không khớp được

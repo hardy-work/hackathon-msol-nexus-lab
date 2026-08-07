@@ -171,6 +171,26 @@ def test_ledger_reset_drift(ns):
         total4, _ = ledger_logged_today("U4", "2026-08-07")
         check("entry cu thieu 'actual' -> fallback cong tho", total4, 3)
 
+        # Reset xay ra SAU lan log cuoi cung trong ledger (khac voi case tren,
+        # noi reset nam GIUA 2 lan log da ghi) -> ledger khong the tu biet vi
+        # khong co lan log nao sau do de "thay". Ben goi phai tu doi chieu
+        # bang cach truyen current_task_id + current_task_live_before (doc
+        # song tu sheet ngay truoc lan ghi nay) -> lech voi 'actual' cuoi cung
+        # trong ledger thi bo hoan toan lich su cua RIENG task do.
+        write_ledger("U5", "2026-08-07", {"task_id": "NEX-55", "delta": 8, "actual": 8, "status": "Done"})
+        write_ledger("U5", "2026-08-07", {"task_id": "NEX-60", "delta": 3, "actual": 3, "status": "In progress"})
+        # Sheet thuc te NEX-55 da bi reset thang ve rong (None) SAU khi ledger
+        # ghi actual=8 o tren -> live_before = None luc goi lan nay.
+        total5, tasks5 = ledger_logged_today(
+            "U5", "2026-08-07", current_task_id="NEX-55", current_task_live_before=None)
+        check("reset SAU lan log cuoi -> bo lich su NEX-55, chi con NEX-60 (3)", total5, 3)
+        check("reset SAU lan log cuoi -> van liet ke du 2 task_id", sorted(tasks5), ["NEX-55", "NEX-60"])
+
+        # Doi chieu khop (khong bi reset sau do) -> giu nguyen lich su nhu cu.
+        total6, _ = ledger_logged_today(
+            "U5", "2026-08-07", current_task_id="NEX-55", current_task_live_before=8)
+        check("doi chieu khop (khong reset) -> giu nguyen 8+3=11", total6, 11)
+
 
 # ------------------------------------------------------- cột tab Risk management
 def test_risk_columns(ns):
