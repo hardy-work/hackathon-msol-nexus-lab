@@ -31,11 +31,12 @@
 #          Có --slack-id thì ghi thêm 1 dòng vào sổ cái effort-today.json (giờ
 #          vừa bỏ thêm vào = actual mới - actual đang có trên sheet) để lượt
 #          follow-up 16:30 so được với công đăng ký. Không có thì bỏ qua im lặng.
-#          Có --slack-id thì SAU KHI ghi xong (không chặn) còn cross-check tổng
-#          Actual Effort trong ngày của assignee (mọi task, không riêng task
-#          này) với giờ allocate trong tab "Resource plan" — lệch thì JSON kết
-#          quả có thêm field allocation_check {date, allocated_hours,
-#          total_logged_hours, gap}. Không lệch thì không có field này.
+#          Có --slack-id (và parse được ngày từ --start) thì TRƯỚC KHI ghi còn
+#          cộng dồn (qua sổ cái, không phải quét lại Actual Effort trên sheet —
+#          số đó cộng dồn cả task, không phải giờ-hôm-nay) tổng giờ member đã
+#          log hôm đó qua MỌI task, cộng thêm giờ task này -> so với giờ
+#          allocate trong tab "Resource plan". Lệch mà không có --force -> exit
+#          13, KHÔNG ghi gì.
 #
 #   sheet-task.sh risk --task <TASKID> --assignee <A> --diff <h> --reason <text> \
 #                      [--next <hành động>] [--reporter <slack name>]
@@ -54,6 +55,8 @@
 #  11  ghi lên sheet lỗi / verify lại thấy không khớp
 #  12  Status = Done nhưng Actual Effort != Re-estimate, chưa ghi gì cả (in
 #      JSON chi tiết ra stdout)
+#  13  Tổng giờ member đã log hôm đó (mọi task, qua sổ cái) lệch giờ allocate
+#      trong Resource plan, chưa ghi gì cả (in JSON chi tiết ra stdout)
 set -uo pipefail
 
 SKILL_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
@@ -447,27 +450,33 @@ MONTHS_EN = {
 }
 
 
-def same_day_other_actual(tab, col, assignee, target_date, exclude_row):
-    """Tổng Actual Effort của MỌI task khác (cùng tab, cùng assignee) có Start
-    Date Actual == target_date — dùng để cộng dồn với task vừa log ra tổng giờ
-    thực đã report trong ngày, không phải chỉ của 1 task."""
-    a_i, s_i, e_i = col["assignee"], col["start"], col["actual"]
-    last = max(a_i, s_i, e_i)
-    vr = batch_get(["%s!A1:%s2000" % (tab, col_letter(last))])[0]
+def ledger_logged_today(slack_id, date_key):
+    """Tổng giờ member đã log HÔM NAY, cộng dồn qua MỌI task họ report trong
+    ngày — đọc sổ cái effort-today.json (cùng file reminder-followup dùng cho
+    lượt follow-up 16:30), KHÔNG quét lại 'Actual Effort' trên sheet Sprint.
+
+    Lý do bắt buộc phải qua sổ cái: 'Actual Effort (h)' trên sheet là số CỘNG
+    DỒN của riêng từng task tính từ ngày task đó bắt đầu, không phải 'số giờ
+    làm hôm nay' — 1 task chạy nhiều ngày mà cộng thẳng cột đó vào là tính sai
+    ngay cả với 1 task, chưa nói tới cộng nhiều task. Sổ cái lưu đúng `delta`
+    (giờ MỚI thêm vào ở mỗi lần log, tính sẵn ở write_ledger) nên cộng delta
+    theo đúng slack_id + ngày là ra đúng tổng giờ thực đã report hôm đó, dù
+    member report bao nhiêu task."""
+    path = os.environ.get("EFFORT_LEDGER_FILE") or ""
+    if not path or not slack_id:
+        return 0.0, []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            book = json.load(fh)
+    except Exception:
+        return 0.0, []
     total = 0.0
-    for idx, row in enumerate(vr.get("values", []), start=1):
-        if idx == exclude_row:
-            continue
-        a = row[a_i] if a_i < len(row) else ""
-        if norm(a) != norm(assignee):
-            continue
-        d = parse_ddmmyyyy(row[s_i] if s_i < len(row) else "")
-        if d != target_date:
-            continue
-        eff = to_number(row[e_i] if e_i < len(row) else "")
-        if eff is not None:
-            total += eff
-    return total
+    tasks = []
+    for e in book.get("entries") or []:
+        if e.get("slack_id") == slack_id and e.get("date") == date_key:
+            total += float(e.get("delta") or 0)
+            tasks.append(e.get("task_id"))
+    return round(total, 2), tasks
 
 
 def read_resource_plan_allocation(slack_id, target_date):
@@ -575,6 +584,40 @@ if CMD == "log":
         }, ensure_ascii=False))
         sys.exit(12)
 
+    # Giờ MỚI thêm vào task này ở lần log này — không phải "Actual Effort" thô
+    # (số đó cộng dồn cả task, có thể đã tích luỹ từ nhiều ngày trước). Dùng
+    # delta này (không phải act) để cộng vào tổng-giờ-hôm-nay của member.
+    before = info.get("actual_before")
+    delta = round(act - (before if before is not None else 0), 2)
+
+    # Chặn TRƯỚC khi ghi nếu tổng giờ member đã log hôm nay (mọi task, qua sổ
+    # cái effort-today.json — xem ledger_logged_today) + giờ task này cộng vào
+    # không khớp giờ được allocate trong Resource plan. Chỉ chạy được khi có
+    # --slack-id (khớp đúng dòng member ở Resource plan qua Slack ID, không
+    # qua tên/nickname) và parse được ngày từ --start; thiếu 1 trong 2 thì bỏ
+    # qua im lặng, không suy đoán.
+    target_date = parse_ddmmyyyy(f["start"])
+    slack_id = f.get("slack-id")
+    if slack_id and target_date is not None and not f.get("force"):
+        ledger_date = (f.get("date") or "").strip() or time.strftime("%Y-%m-%d")
+        logged_before_this, other_tasks = ledger_logged_today(slack_id, ledger_date)
+        total_logged_today = round(logged_before_this + delta, 2)
+        allocated, _reason = read_resource_plan_allocation(slack_id, target_date)
+        if allocated is not None and abs(total_logged_today - allocated) > 0.01:
+            print(json.dumps({
+                "error": "allocation_mismatch",
+                "task_id": info["task_id"], "tab": info["tab"], "row": info["row"],
+                "assignee": info["assignee"], "task": info["task"], "sub_task": info["sub_task"],
+                "date": target_date.isoformat(),
+                "this_task_delta": delta,
+                "other_tasks_logged_today": other_tasks,
+                "logged_before_this_hours": logged_before_this,
+                "total_logged_today_hours": total_logged_today,
+                "allocated_hours": allocated,
+                "gap": round(allocated - total_logged_today, 2),
+            }, ensure_ascii=False))
+            sys.exit(13)
+
     end_raw = (f.get("end") or "").strip()
     end_val = "" if norm(end_raw) in EMPTY_END else end_raw
 
@@ -605,36 +648,12 @@ if CMD == "log":
     if got is None or abs(got - act) > 0.01:
         die(11, "ghi xong nhưng đọc lại không khớp: Actual Effort trên sheet = %r, cần %s" % (cell("actual"), act))
 
-    # Giờ vừa bỏ thêm vào task này. Âm là hợp lệ: dev khai lại thấp hơn lần
-    # trước thì sổ cái phải trừ đi, không thì tổng ngày phình lên vì 1 lần sửa.
-    before = info.get("actual_before")
-    delta = round(act - (before if before is not None else 0), 2)
-
     ledger_note = write_ledger(f.get("slack-id"), f.get("date"), {
         "task_id": info["task_id"], "tab": tab,
         "delta": delta, "actual": act, "status": f["status"].strip(),
     })
 
-    # Cross-check allocation: KHÔNG chặn log (dữ liệu dev report đã ghi xong ở
-    # trên rồi) — chỉ đính kèm cảnh báo nếu tổng actual trong ngày (mọi task của
-    # assignee, không riêng task này) lệch với giờ được allocate trong Resource
-    # plan. Cần --slack-id để khớp đúng dòng member (Sprint dùng nickname, khác
-    # tên/Slack name ở Resource plan) — thiếu thì bỏ qua im lặng, không suy đoán.
-    allocation_check = None
-    target_date = parse_ddmmyyyy(f["start"])
-    if f.get("slack-id") and target_date is not None:
-        other_total = same_day_other_actual(tab, col, info["assignee"], target_date, row)
-        total_logged = round(other_total + act, 2)
-        allocated, reason = read_resource_plan_allocation(f["slack-id"], target_date)
-        if allocated is not None and abs(total_logged - allocated) > 0.01:
-            allocation_check = {
-                "date": target_date.isoformat(),
-                "allocated_hours": allocated,
-                "total_logged_hours": total_logged,
-                "gap": round(allocated - total_logged, 2),
-            }
-
-    result = {
+    print(json.dumps({
         "ok": True, "task_id": info["task_id"], "tab": tab, "row": row,
         "assignee": info["assignee"],
         "written": {
@@ -643,10 +662,7 @@ if CMD == "log":
         },
         "estimate": est, "overtime": bool(over),
         "actual_before": before, "delta": delta, "ledger": ledger_note,
-    }
-    if allocation_check is not None:
-        result["allocation_check"] = allocation_check
-    print(json.dumps(result, ensure_ascii=False))
+    }, ensure_ascii=False))
     sys.exit(0)
 
 # ------------------------------------------------------------------------ risk
