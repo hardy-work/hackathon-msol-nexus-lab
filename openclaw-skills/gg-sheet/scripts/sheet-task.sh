@@ -458,10 +458,19 @@ def ledger_logged_today(slack_id, date_key):
     Lý do bắt buộc phải qua sổ cái: 'Actual Effort (h)' trên sheet là số CỘNG
     DỒN của riêng từng task tính từ ngày task đó bắt đầu, không phải 'số giờ
     làm hôm nay' — 1 task chạy nhiều ngày mà cộng thẳng cột đó vào là tính sai
-    ngay cả với 1 task, chưa nói tới cộng nhiều task. Sổ cái lưu đúng `delta`
-    (giờ MỚI thêm vào ở mỗi lần log, tính sẵn ở write_ledger) nên cộng delta
-    theo đúng slack_id + ngày là ra đúng tổng giờ thực đã report hôm đó, dù
-    member report bao nhiêu task."""
+    ngay cả với 1 task, chưa nói tới cộng nhiều task.
+
+    Với MỖI task, KHÔNG cộng thô mọi `delta` đã ghi trong ngày — nếu ai đó
+    reset thẳng ô Actual Effort trên sheet (không qua `log`) rồi report lại,
+    delta của lần report sau được tính từ giá trị đã bị reset (đúng tại lúc
+    đó), nhưng sổ cái vẫn còn delta CŨ từ trước khi reset -> cộng thô 2 delta
+    lại là phồng lên gấp đôi dù sheet thật chỉ còn giá trị mới. Thay vào đó,
+    lấy đúng 2 mốc: `actual` của lần log ĐẦU TIÊN hôm nay cho task đó (trừ đi
+    delta của chính lần đó ra `baseline` = giá trị trước khi ngày hôm nay bắt
+    đầu report) và `actual` của lần log GẦN NHẤT — chênh lệch 2 mốc này luôn
+    đúng bằng đúng giờ đã thay đổi thật trong ngày cho task đó, bất kể ở giữa
+    có bị reset bao nhiêu lần. Entry cũ thiếu field `actual` (ghi trước khi
+    field này tồn tại) thì fallback về cộng thô `delta` như cũ."""
     path = os.environ.get("EFFORT_LEDGER_FILE") or ""
     if not path or not slack_id:
         return 0.0, []
@@ -470,13 +479,20 @@ def ledger_logged_today(slack_id, date_key):
             book = json.load(fh)
     except Exception:
         return 0.0, []
-    total = 0.0
-    tasks = []
+    per_task = {}
     for e in book.get("entries") or []:
         if e.get("slack_id") == slack_id and e.get("date") == date_key:
-            total += float(e.get("delta") or 0)
-            tasks.append(e.get("task_id"))
-    return round(total, 2), tasks
+            per_task.setdefault(e.get("task_id"), []).append(e)
+    total = 0.0
+    for task_id, es in per_task.items():
+        first, last = es[0], es[-1]
+        first_actual, last_actual = first.get("actual"), last.get("actual")
+        if first_actual is None or last_actual is None:
+            total += sum(float(e.get("delta") or 0) for e in es)
+        else:
+            baseline = float(first_actual) - float(first.get("delta") or 0)
+            total += float(last_actual) - baseline
+    return round(total, 2), list(per_task.keys())
 
 
 def read_resource_plan_allocation(slack_id, target_date):

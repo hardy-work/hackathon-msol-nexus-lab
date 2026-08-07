@@ -90,8 +90,19 @@ dồn của cả task tính từ ngày task bắt đầu**, không phải "giờ
 task chạy nhiều ngày mà cộng thẳng số đó vào là sai ngay từ 1 task, chưa nói
 tới cộng nhiều task. Script dùng sổ cái `effort-today.json` (cùng file
 `reminder-followup` dùng cho lượt follow-up 16:30) — sổ cái này lưu đúng
-**delta** (giờ mới thêm ở mỗi lần log) theo `slack_id` + ngày, cộng delta lại
-là ra đúng tổng giờ thực đã report hôm đó dù member report bao nhiêu task.
+**delta** (giờ mới thêm ở mỗi lần log) theo `slack_id` + ngày.
+
+**1 task được log nhiều lần trong ngày (kể cả bị reset giữa chừng) vẫn phải ra
+đúng số:** với mỗi task, `ledger_logged_today` KHÔNG cộng thô mọi `delta` đã
+ghi trong ngày cho task đó — chỉ lấy chênh lệch giữa `actual` của lần log
+**đầu tiên** (trừ ngược delta ra baseline đầu ngày) và `actual` của lần log
+**gần nhất**. Cách này tự đúng kể cả khi ai đó reset thẳng ô `Actual Effort`
+trên sheet (không qua `log`) giữa 2 lần report cùng task cùng ngày — cộng thô
+delta trong trường hợp đó sẽ phồng lên gấp đôi dù sheet thật chỉ còn giá trị
+mới nhất (bug thật đã gặp: log 8h, ai đó reset về 0, log lại 4h → cộng thô ra
+12h dù sheet chỉ có 4h). Nhược điểm: fix này chỉ tự đúng cho các lần log **từ
+lúc fix được deploy trở đi** — sổ cái đã bị phồng từ trước đó (do bug cũ) thì
+vẫn sai cho tới khi bị ghi đè bởi 1 lần log mới, không tự lùi sửa lịch sử cũ.
 
 Chỉ chạy khi có `--slack-id` (Sprint dùng nickname như `VinhNV`, khác hẳn
 tên/Slack name ở tab `Resource plan` — không có Slack ID thì không khớp được
