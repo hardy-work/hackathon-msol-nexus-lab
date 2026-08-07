@@ -426,15 +426,18 @@ Ba điều cần nhớ ngay cả trước khi mở file đó:
 - **Không log được thì vẫn phải trả lời dev**, kèm lý do ngắn. Exit nào cũng ra
   một tin nhắn — im lặng tệ hơn lỗi ghi, vì dev tưởng xong việc rồi đi về.
 - **Luôn truyền `--slack-id`.** Ngoài sổ cái effort-today.json, đây cũng là
-  điều kiện để script tự chặn khi tổng giờ dev đã report **hôm đó qua mọi
-  task** (cộng theo sổ cái, không phải quét lại Actual Effort trên sheet) lệch
+  điều kiện để script tự cross-check tổng giờ dev đã report **hôm đó qua mọi
+  task** (cộng theo sổ cái, không phải quét lại Actual Effort trên sheet) với
   giờ allocate (`Resource plan`) — thiếu `--slack-id` thì bỏ qua im lặng,
   không cross-check được.
-- **Exit 13 = tổng giờ hôm đó lệch allocate, script chưa ghi gì.** Luôn hỏi
-  lại dev trước, không tự kết luận (kể cả khi task vừa log là `Done`). Dev xác
-  nhận có lý do hợp lệ → log lại **y hệt số cũ** kèm `--force`. Không xác nhận
-  được → dev phải sửa số rồi log lại **không** `--force`. Xem mục "Kiểm tra
-  allocation" ở `log-report-rules.md`.
+- **Exit 13 = tổng giờ hôm đó NHIỀU HƠN allocate, script chưa ghi gì.** Chỉ
+  chặn chiều này (bất thường bất kể giờ nào trong ngày) — luôn hỏi lại dev
+  trước, không tự kết luận (kể cả khi task vừa log là `Done`). Dev xác nhận có
+  lý do hợp lệ → log lại **y hệt số cũ** kèm `--force`. Không xác nhận được →
+  dev phải sửa số rồi log lại **không** `--force`.
+- **Log ÍT HƠN allocate KHÔNG bị chặn** (bình thường giữa ngày làm việc) — ghi
+  bình thường, JSON kết quả thành công có thêm field `allocation_note`, không
+  cần hỏi dev ngay. Xem mục "Kiểm tra allocation" ở `log-report-rules.md`.
 
 ---
 

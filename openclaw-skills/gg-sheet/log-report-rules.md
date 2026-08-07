@@ -76,14 +76,28 @@ Khối `PLAN` (`Estimate (h)`, `Start Date`, `End Date`) là **của PM, chỉ �
 Action này **chỉ sửa ô của dòng đã có sẵn** — không chèn dòng, không xoá dòng,
 không tạo task mới. Id task không có trong sheet thì báo lại, không tự thêm.
 
-## Kiểm tra allocation (exit 13) — hỏi trước, log sau
+## Kiểm tra allocation (exit 13 CHỈ khi log nhiều hơn allocate)
 
 Ngoài cảnh báo "chậm hơn plan" (exit 9, so với `Estimate` của **chính task
-đó**), script còn chặn ở cấp **member/ngày**: 1 task không vượt estimate riêng
-vẫn có thể nằm trong 1 ngày mà tổng giờ member đã report (cộng **mọi** task họ
-làm hôm đó, không chỉ task đang log) lệch với giờ họ thực sự được allocate vào
-dự án. Member có thể làm nhiều task trong 1 ngày — phải cộng dồn đúng theo
-đúng người, đúng ngày, không phải chỉ nhìn 1 task.
+đó**), script còn cross-check ở cấp **member/ngày**: 1 task không vượt estimate
+riêng vẫn có thể nằm trong 1 ngày mà tổng giờ member đã report (cộng **mọi**
+task họ làm hôm đó, không chỉ task đang log) lệch với giờ họ thực sự được
+allocate vào dự án. Member có thể làm nhiều task trong 1 ngày — phải cộng dồn
+đúng theo đúng người, đúng ngày, không phải chỉ nhìn 1 task.
+
+**Chỉ CHẶN khi log NHIỀU HƠN allocate — log ÍT HƠN allocate KHÔNG chặn.** 2
+chiều lệch không đối xứng về mức độ bất thường:
+- **Log nhiều hơn allocate** (`total_logged_today_hours > allocated_hours`) —
+  bất thường **bất kể giờ nào trong ngày**, vì không thể làm nhiều hơn giờ
+  thực có. Đây mới là case cần chặn hỏi trước.
+- **Log ít hơn allocate** (`total_logged_today_hours < allocated_hours`) — là
+  trạng thái **bình thường trong phần lớn ngày làm việc** (10h sáng thì ai
+  cũng chưa log đủ 8h cả, member có thể còn đang làm dở, chưa tới lúc report
+  hết). Chặn hẳn không cho log ở đây là quá tay — "có thực sự thiếu giờ" chỉ
+  nên đánh giá vào **cuối ngày**, việc đó `reminder-followup` (`--effort-check`,
+  lượt 16:30) đã làm rồi, không lặp lại logic đó ở Action này. Vì vậy nhánh
+  này **không chặn** — log bình thường, chỉ đính kèm `allocation_note` vào kết
+  quả để tiện theo dõi, không cần hỏi lại dev ngay lúc đó.
 
 **Vì sao không quét lại cột `Actual Effort` trên sheet:** cột đó là số **cộng
 dồn của cả task tính từ ngày task bắt đầu**, không phải "giờ làm hôm nay" — 1
@@ -118,51 +132,59 @@ tên/Slack name ở tab `Resource plan` — không có Slack ID thì không kh�
 đúng dòng member, script **bỏ qua im lặng**, không suy đoán) và parse được
 ngày từ `--start`. "Ngày cần xét" = đúng `--start` vừa report.
 
-**Chặn TRƯỚC khi ghi** (khác `allocation_check` bản cũ — bản đó chỉ đính kèm
-cảnh báo sau khi đã ghi, giờ đổi hẳn sang chặn như exit 9/12). Không lệch thì
-ghi bình thường, không nói gì thêm. Lệch (`|gap| > 0.01h`) và không có
-`--force` → chưa ghi ô nào cả, in JSON ra stdout, exit **13**:
+### Log NHIỀU hơn allocate (`gap < 0`) — chặn TRƯỚC khi ghi, exit 13
+
+Chưa ghi ô nào cả, in JSON ra stdout:
 
 ```json
 {"error": "allocation_mismatch", "task_id": "NEX-59", "assignee": "LongVN",
- "date": "2026-08-07", "this_task_delta": 4.0, "other_tasks_logged_today": [],
- "logged_before_this_hours": 0.0, "total_logged_today_hours": 4.0,
- "allocated_hours": 8.0, "gap": 4.0}
+ "date": "2026-08-07", "this_task_delta": 12.0, "other_tasks_logged_today": [],
+ "logged_before_this_hours": 0.0, "total_logged_today_hours": 12.0,
+ "allocated_hours": 8.0, "gap": -4.0}
 ```
-
-`gap` dương = **thiếu giờ** (`allocated_hours > total_logged_today_hours`), âm
-= **log nhiều hơn allocate**. `other_tasks_logged_today` là các `task_id`
-khác member đã report trong ngày (rỗng = đây là lần report đầu tiên của họ hôm
-đó).
 
 **Luôn hỏi lại dev, không có ngoại lệ nào cho `Status` của task vừa log** —
 xem cảnh báo ở mục "Task chậm hơn plan" phía dưới, áp dụng y hệt ở đây: "task
-này Done" không giải thích được vì sao **tổng cả ngày** chưa khớp allocate,
-không được tự kết luận "chỉ là xong sớm hơn dự kiến" thay dev.
+này Done" không giải thích được vì sao **tổng cả ngày** vượt allocate, không
+được tự kết luận "chỉ là xong sớm hơn dự kiến" thay dev.
 
 ```
-<@U0LongVN01> mình thấy task **NEX-59** bạn report **4h**, nhưng tổng giờ hôm nay (07/08) mới có **4h** trong khi bạn được allocate **8h** — bạn đang làm task khác chưa log, hay có lý do khác (nghỉ/việc ngoài dự án...)?
+<@U0LongVN01> mình thấy task **NEX-59** bạn report **12h**, tổng giờ hôm nay (07/08) đã lên **12h** trong khi bạn chỉ được allocate **8h** — bạn OT, hay có lý do khác cần mình biết?
 ```
 
 Dev trả lời rồi, đi đúng 1 trong 2 hướng — **không có hướng thứ 3**:
 
-- **Xác nhận có lý do hợp lệ** (vd "tôi làm nhiều task, đây chỉ là effort cho
-  task này thôi", hoặc có lý do khác như nghỉ/việc ngoài dự án) → tiến hành
-  report: gọi lại đúng lệnh `log` **y hệt các giá trị ban đầu** kèm `--force`.
-  Không tự đổi số. Nếu lý do là nghỉ/việc ngoài dự án (không phải "còn task
-  khác chưa log") → sau khi force-log xong, cập nhật thêm đúng ô allocation
-  ngày đó của dev trong `Resource plan` cho khớp thực tế.
+- **Xác nhận có lý do hợp lệ** (vd OT, hoặc lý do khác) → tiến hành report:
+  gọi lại đúng lệnh `log` **y hệt các giá trị ban đầu** kèm `--force`. Không
+  tự đổi số.
 - **Không xác nhận được / có vẻ là nhầm lẫn** → dev **bắt buộc phải điều
   chỉnh lại số** rồi mới được report — hỏi dev con số đúng, gọi lại `log` với
   `--actual`/`--re-est` đã sửa (**không** dùng `--force`, vì đây là số mới
   chưa từng bị chặn, không phải xin bỏ qua cảnh báo cũ). Nếu số mới vẫn lệch
   allocate thì lại exit 13 lần nữa, hỏi tiếp — không tự ý `--force` để né.
 
-Case này **không** ghi `Risk management` trừ khi dev xác nhận lý do là
-nghỉ/việc ngoài dự án (khi đó ghi kèm theo update `Resource plan`, cùng format
-mục "Task chậm hơn plan" — `--diff` = `|gap|`, `--reason` = nguyên văn lý do
-dev nói). Trường hợp dev xác nhận "làm task khác chưa log" thì chỉ nhắc dev
-report nốt task đó, không ghi Risk, không tự bịa dòng report hộ.
+Case này **không** ghi `Risk management` trừ khi dev xác nhận lý do OT/khác
+(khi đó ghi kèm theo, cùng format mục "Task chậm hơn plan" — `--diff` =
+`|gap|`, `--reason` = nguyên văn lý do dev nói).
+
+### Log ÍT hơn allocate (`gap > 0`) — KHÔNG chặn, chỉ đính `allocation_note`
+
+`log` vẫn ghi bình thường (exit 0), JSON kết quả thành công có thêm field
+`allocation_note` (cùng shape với payload exit 13 ở trên, chỉ khác không có
+`"error"`):
+
+```json
+"allocation_note": {"task_id": "NEX-55", "assignee": "SơnBH",
+ "date": "2026-08-07", "this_task_delta": 4.0, "other_tasks_logged_today": [],
+ "logged_before_this_hours": 0.0, "total_logged_today_hours": 4.0,
+ "allocated_hours": 8.0, "gap": 4.0}
+```
+
+**Không cần hỏi dev ngay lúc này** — chỉ echo lại như 1 thông tin phụ nếu
+muốn, KHÔNG chặn, KHÔNG bắt dev giải trình. Nếu tới cuối ngày (16:30) tổng vẫn
+thiếu thật thì `reminder-followup --effort-check` đã có logic riêng để hỏi
+(phân biệt "còn task đang làm" = hỏi lý do thật sự, "Done hết rồi mà vẫn thiếu"
+= chỉ nhắc nhẹ) — không lặp lại việc phân loại đó ở Action 4.
 
 ## Đọc exit code, đừng đọc chữ trong output
 
@@ -173,7 +195,7 @@ report nốt task đó, không ghi Risk, không tự bịa dòng report hộ.
 | `8` | Id trùng ở nhiều tab | Hỏi tab nào, **không tự chọn** |
 | `9` | **Chậm hơn plan** — chưa ghi gì | Sang mục dưới |
 | `12` | **Status = Done nhưng Actual ≠ Re-estimate** — chưa ghi gì | Sang mục "Status Done nhưng effort chưa khớp" |
-| `13` | **Tổng giờ hôm đó lệch allocate** — chưa ghi gì | Sang mục "Kiểm tra allocation" |
+| `13` | **Tổng giờ hôm đó NHIỀU HƠN allocate** — chưa ghi gì | Sang mục "Kiểm tra allocation" (log ít hơn allocate không dùng exit này — xem `allocation_note`) |
 | `2` | Thiếu env / sai tham số | Cấu hình hỏng — báo dev là bot đang lỗi cấu hình, nhờ báo PM |
 | `3` | Đọc sheet lỗi | Mạng hoặc API key — báo "chưa đọc được sheet" |
 | `4` | Sheet đổi cấu trúc cột | Báo PM: tab thiếu cột bắt buộc, không tự đoán cột khác |

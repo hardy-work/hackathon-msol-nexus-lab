@@ -35,8 +35,10 @@
 #          cộng dồn (qua sổ cái, không phải quét lại Actual Effort trên sheet —
 #          số đó cộng dồn cả task, không phải giờ-hôm-nay) tổng giờ member đã
 #          log hôm đó qua MỌI task, cộng thêm giờ task này -> so với giờ
-#          allocate trong tab "Resource plan". Lệch mà không có --force -> exit
-#          13, KHÔNG ghi gì.
+#          allocate trong tab "Resource plan". LOG NHIỀU HƠN allocate mà không
+#          có --force -> exit 13, KHÔNG ghi gì (bất thường bất kể giờ nào trong
+#          ngày). LOG ÍT HƠN allocate KHÔNG bị chặn (bình thường giữa ngày) —
+#          ghi bình thường, JSON kết quả có thêm field allocation_note.
 #
 #   sheet-task.sh risk --task <TASKID> --assignee <A> --diff <h> --reason <text> \
 #                      [--next <hành động>] [--reporter <slack name>]
@@ -55,8 +57,9 @@
 #  11  ghi lên sheet lỗi / verify lại thấy không khớp
 #  12  Status = Done nhưng Actual Effort != Re-estimate, chưa ghi gì cả (in
 #      JSON chi tiết ra stdout)
-#  13  Tổng giờ member đã log hôm đó (mọi task, qua sổ cái) lệch giờ allocate
-#      trong Resource plan, chưa ghi gì cả (in JSON chi tiết ra stdout)
+#  13  Tổng giờ member đã log hôm đó (mọi task, qua sổ cái) NHIỀU HƠN giờ
+#      allocate trong Resource plan, chưa ghi gì cả (in JSON chi tiết ra
+#      stdout). Log ÍT HƠN allocate không dùng exit này — xem allocation_note.
 set -uo pipefail
 
 SKILL_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
@@ -624,12 +627,16 @@ if CMD == "log":
     before = info.get("actual_before")
     delta = round(act - (before if before is not None else 0), 2)
 
-    # Chặn TRƯỚC khi ghi nếu tổng giờ member đã log hôm nay (mọi task, qua sổ
-    # cái effort-today.json — xem ledger_logged_today) + giờ task này cộng vào
-    # không khớp giờ được allocate trong Resource plan. Chỉ chạy được khi có
-    # --slack-id (khớp đúng dòng member ở Resource plan qua Slack ID, không
-    # qua tên/nickname) và parse được ngày từ --start; thiếu 1 trong 2 thì bỏ
-    # qua im lặng, không suy đoán.
+    # Chỉ CHẶN khi log NHIỀU hơn allocate (gap âm) — bất thường bất kể giờ nào
+    # trong ngày, vì không thể làm nhiều hơn giờ thực có. Log ÍT hơn allocate
+    # (gap dương) là trạng thái BÌNH THƯỜNG trong phần lớn ngày làm việc (chưa
+    # ai log đủ 8h lúc 10h sáng cả) — KHÔNG chặn, chỉ đính kèm ghi chú vào
+    # response sau khi ghi thành công; hỏi "có thực sự thiếu giờ" là việc của
+    # lượt cuối ngày (reminder-followup --effort-check, 16:30), không lặp lại
+    # ở đây. Chỉ chạy được khi có --slack-id (khớp đúng dòng member ở Resource
+    # plan qua Slack ID, không qua tên/nickname) và parse được ngày từ --start;
+    # thiếu 1 trong 2 thì bỏ qua im lặng, không suy đoán.
+    allocation_note = None
     target_date = parse_ddmmyyyy(f["start"])
     slack_id = f.get("slack-id")
     if slack_id and target_date is not None and not f.get("force"):
@@ -639,9 +646,9 @@ if CMD == "log":
         )
         total_logged_today = round(logged_before_this + delta, 2)
         allocated, _reason = read_resource_plan_allocation(slack_id, target_date)
-        if allocated is not None and abs(total_logged_today - allocated) > 0.01:
-            print(json.dumps({
-                "error": "allocation_mismatch",
+        if allocated is not None:
+            gap = round(allocated - total_logged_today, 2)
+            payload = {
                 "task_id": info["task_id"], "tab": info["tab"], "row": info["row"],
                 "assignee": info["assignee"], "task": info["task"], "sub_task": info["sub_task"],
                 "date": target_date.isoformat(),
@@ -650,9 +657,13 @@ if CMD == "log":
                 "logged_before_this_hours": logged_before_this,
                 "total_logged_today_hours": total_logged_today,
                 "allocated_hours": allocated,
-                "gap": round(allocated - total_logged_today, 2),
-            }, ensure_ascii=False))
-            sys.exit(13)
+                "gap": gap,
+            }
+            if gap < -0.01:
+                print(json.dumps(dict(payload, error="allocation_mismatch"), ensure_ascii=False))
+                sys.exit(13)
+            elif gap > 0.01:
+                allocation_note = payload
 
     end_raw = (f.get("end") or "").strip()
     end_val = "" if norm(end_raw) in EMPTY_END else end_raw
@@ -689,7 +700,7 @@ if CMD == "log":
         "delta": delta, "actual": act, "status": f["status"].strip(),
     })
 
-    print(json.dumps({
+    result = {
         "ok": True, "task_id": info["task_id"], "tab": tab, "row": row,
         "assignee": info["assignee"],
         "written": {
@@ -698,7 +709,10 @@ if CMD == "log":
         },
         "estimate": est, "overtime": bool(over),
         "actual_before": before, "delta": delta, "ledger": ledger_note,
-    }, ensure_ascii=False))
+    }
+    if allocation_note is not None:
+        result["allocation_note"] = allocation_note
+    print(json.dumps(result, ensure_ascii=False))
     sys.exit(0)
 
 # ------------------------------------------------------------------------ risk
