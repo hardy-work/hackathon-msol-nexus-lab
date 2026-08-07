@@ -130,6 +130,48 @@ def test_ledger(ns):
         check("chi giu <= 7 ngay", len({e["date"] for e in rows}) <= 7, True)
 
 
+# ------------------------------------------------ ledger_logged_today (exit 13)
+def test_ledger_reset_drift(ns):
+    """Bug thật gặp trên server: 1 task bị reset thẳng Actual Effort trên sheet
+    (không qua `log`) giữa 2 lần report cùng ngày -> cộng thô delta cũ + delta
+    mới bị phồng gấp đôi dù sheet thật chỉ còn giá trị mới nhất."""
+    print("ledger_logged_today: reset giua chung cung 1 task")
+    write_ledger = ns["write_ledger"]
+    ledger_logged_today = ns["ledger_logged_today"]
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "state", "effort-today.json")
+        os.environ["EFFORT_LEDGER_FILE"] = path
+
+        # Log binh thuong, khong reset: 2 task khac nhau, cong dung tong.
+        write_ledger("U1", "2026-08-07", {"task_id": "NEX-1", "delta": 3, "actual": 3, "status": "In progress"})
+        write_ledger("U1", "2026-08-07", {"task_id": "NEX-2", "delta": 5, "actual": 5, "status": "Done"})
+        total, tasks = ledger_logged_today("U1", "2026-08-07")
+        check("2 task khac nhau -> cong dung 8", total, 8)
+        check("2 task khac nhau -> du 2 task_id", sorted(tasks), ["NEX-1", "NEX-2"])
+
+        # Cung 1 task, log 2 lan lien tuc KHONG reset: 4h roi len 8h -> dung la 8h
+        # (khong phai 4+8=12), vi lay actual dau/cuoi chu khong cong delta tho.
+        write_ledger("U2", "2026-08-07", {"task_id": "NEX-3", "delta": 4, "actual": 4, "status": "In progress"})
+        write_ledger("U2", "2026-08-07", {"task_id": "NEX-3", "delta": 4, "actual": 8, "status": "Done"})
+        total2, _ = ledger_logged_today("U2", "2026-08-07")
+        check("1 task log 2 lan lien tuc, khong reset -> 8", total2, 8)
+
+        # Dung bug that: log 8h (actual=8), AI DO RESET sheet ve 0 ngoai script,
+        # roi log lai 4h (actual=4, delta tinh tu 0 la dung 4 tai thoi diem do).
+        # Cong tho delta se ra 8+4=12 (SAI). Phai ra 4 (dung, khop sheet that).
+        write_ledger("U3", "2026-08-07", {"task_id": "NEX-55", "delta": 8, "actual": 8, "status": "In progress"})
+        write_ledger("U3", "2026-08-07", {"task_id": "NEX-55", "delta": 4, "actual": 4, "status": "In progress"})
+        total3, tasks3 = ledger_logged_today("U3", "2026-08-07")
+        check("reset giua chung -> lay actual cuoi (4), KHONG cong tho (12)", total3, 4)
+        check("reset giua chung -> van chi 1 task_id", tasks3, ["NEX-55"])
+
+        # Entry cu thieu field 'actual' (ghi truoc khi field nay ton tai) ->
+        # fallback cong tho delta nhu cu, khong duoc crash.
+        write_ledger("U4", "2026-08-07", {"task_id": "OLD-1", "delta": 3, "status": "Done"})
+        total4, _ = ledger_logged_today("U4", "2026-08-07")
+        check("entry cu thieu 'actual' -> fallback cong tho", total4, 3)
+
+
 # ------------------------------------------------------- cột tab Risk management
 def test_risk_columns(ns):
     """PM chèn cột 'Task' vào giữa -> ghi theo vị trí là lệch hết sang phải."""
@@ -168,6 +210,7 @@ def main():
     test_numbers(ns)
     test_risk_columns(ns)
     test_ledger(ns)
+    test_ledger_reset_drift(ns)
     print()
     if FAILED:
         print("FAIL: %d case hong -> %s" % (len(FAILED), ", ".join(FAILED)))
