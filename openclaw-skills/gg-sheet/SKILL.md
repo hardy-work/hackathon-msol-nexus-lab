@@ -425,10 +425,12 @@ Ba điều cần nhớ ngay cả trước khi mở file đó:
   không phải ghi Risk — đây là sửa lỗi số liệu, xem log-report-rules.md).
 - **Không log được thì vẫn phải trả lời dev**, kèm lý do ngắn. Exit nào cũng ra
   một tin nhắn — im lặng tệ hơn lỗi ghi, vì dev tưởng xong việc rồi đi về.
-- **Sau khi log xong, so tổng actual đã log trong ngày với giờ allocate của dev
-  đó** (tab `Resource plan`) — thiếu/thừa giờ chưa rõ lý do thì hỏi lại dev,
-  không tự đoán. Xem mục "Kiểm tra allocation trước khi log" ở
-  `log-report-rules.md`.
+- **Luôn truyền `--slack-id`.** Ngoài sổ cái effort-today.json, đây cũng là
+  điều kiện để script tự cross-check tổng actual trong ngày của dev với giờ
+  allocate (`Resource plan`) — lệch thì JSON trả về có field
+  `allocation_check` (không chặn log), thiếu `--slack-id` thì bỏ qua im lặng,
+  không cross-check được. Có field này thì hỏi lại dev, không tự đoán lý do —
+  xem mục "Kiểm tra allocation" ở `log-report-rules.md`.
 
 ---
 

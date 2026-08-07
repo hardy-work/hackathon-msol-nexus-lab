@@ -31,6 +31,11 @@
 #          Có --slack-id thì ghi thêm 1 dòng vào sổ cái effort-today.json (giờ
 #          vừa bỏ thêm vào = actual mới - actual đang có trên sheet) để lượt
 #          follow-up 16:30 so được với công đăng ký. Không có thì bỏ qua im lặng.
+#          Có --slack-id thì SAU KHI ghi xong (không chặn) còn cross-check tổng
+#          Actual Effort trong ngày của assignee (mọi task, không riêng task
+#          này) với giờ allocate trong tab "Resource plan" — lệch thì JSON kết
+#          quả có thêm field allocation_check {date, allocated_hours,
+#          total_logged_hours, gap}. Không lệch thì không có field này.
 #
 #   sheet-task.sh risk --task <TASKID> --assignee <A> --diff <h> --reason <text> \
 #                      [--next <hành động>] [--reporter <slack name>]
@@ -423,6 +428,79 @@ def write_ledger(slack_id, date_str, entry):
         return "loi: %s" % ex
 
 
+# ------------------------------------------------------- allocation cross-check
+def parse_ddmmyyyy(raw):
+    """'07-08-2026' hoặc '7-8-2026' -> date. None nếu không parse được."""
+    m = re.match(r"^\s*(\d{1,2})-(\d{1,2})-(\d{4})\s*$", raw or "")
+    if not m:
+        return None
+    d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    try:
+        return datetime(y, mo, d).date()
+    except ValueError:
+        return None
+
+
+MONTHS_EN = {
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+}
+
+
+def same_day_other_actual(tab, col, assignee, target_date, exclude_row):
+    """Tổng Actual Effort của MỌI task khác (cùng tab, cùng assignee) có Start
+    Date Actual == target_date — dùng để cộng dồn với task vừa log ra tổng giờ
+    thực đã report trong ngày, không phải chỉ của 1 task."""
+    a_i, s_i, e_i = col["assignee"], col["start"], col["actual"]
+    last = max(a_i, s_i, e_i)
+    vr = batch_get(["%s!A1:%s2000" % (tab, col_letter(last))])[0]
+    total = 0.0
+    for idx, row in enumerate(vr.get("values", []), start=1):
+        if idx == exclude_row:
+            continue
+        a = row[a_i] if a_i < len(row) else ""
+        if norm(a) != norm(assignee):
+            continue
+        d = parse_ddmmyyyy(row[s_i] if s_i < len(row) else "")
+        if d != target_date:
+            continue
+        eff = to_number(row[e_i] if e_i < len(row) else "")
+        if eff is not None:
+            total += eff
+    return total
+
+
+def read_resource_plan_allocation(slack_id, target_date):
+    """Giờ allocate của 1 member đúng 1 ngày, đọc từ tab 'Resource plan', khối
+    'Thời gian làm việc mỗi ngày' (cột U+). Trả (allocated_hours|None, lý_do)."""
+    names = [t for t, _ in list_tabs()]
+    if "Resource plan" not in names:
+        return None, "khong co tab Resource plan"
+    vr = batch_get(["'Resource plan'!U1:DZ40"])[0]
+    rows = vr.get("values", [])
+    if len(rows) < 4:
+        return None, "khong doc duoc header Resource plan"
+    hdr_month, hdr_day = rows[2], rows[3]
+    width = max(len(hdr_month), len(hdr_day))
+    col_idx, cur_month = None, None
+    for i in range(5, width):
+        m = norm(hdr_month[i]) if i < len(hdr_month) else ""
+        if m in MONTHS_EN:
+            cur_month = MONTHS_EN[m]
+        day_num = to_number(hdr_day[i]) if i < len(hdr_day) else None
+        if cur_month is not None and day_num is not None:
+            if (cur_month, int(day_num)) == (target_date.month, target_date.day):
+                col_idx = i
+                break
+    if col_idx is None:
+        return None, "ngay %s ngoai pham vi Resource plan" % target_date.isoformat()
+    for row in rows[4:]:
+        sid = (row[2] if len(row) > 2 else "").strip()
+        if sid and sid == slack_id.strip():
+            return to_number(row[col_idx] if col_idx < len(row) else ""), "ok"
+    return None, "khong tim thay slack_id trong Resource plan"
+
+
 # ------------------------------------------------------------------------ find
 if CMD == "find":
     if len(ARGV) != 1:
@@ -537,7 +615,26 @@ if CMD == "log":
         "delta": delta, "actual": act, "status": f["status"].strip(),
     })
 
-    print(json.dumps({
+    # Cross-check allocation: KHÔNG chặn log (dữ liệu dev report đã ghi xong ở
+    # trên rồi) — chỉ đính kèm cảnh báo nếu tổng actual trong ngày (mọi task của
+    # assignee, không riêng task này) lệch với giờ được allocate trong Resource
+    # plan. Cần --slack-id để khớp đúng dòng member (Sprint dùng nickname, khác
+    # tên/Slack name ở Resource plan) — thiếu thì bỏ qua im lặng, không suy đoán.
+    allocation_check = None
+    target_date = parse_ddmmyyyy(f["start"])
+    if f.get("slack-id") and target_date is not None:
+        other_total = same_day_other_actual(tab, col, info["assignee"], target_date, row)
+        total_logged = round(other_total + act, 2)
+        allocated, reason = read_resource_plan_allocation(f["slack-id"], target_date)
+        if allocated is not None and abs(total_logged - allocated) > 0.01:
+            allocation_check = {
+                "date": target_date.isoformat(),
+                "allocated_hours": allocated,
+                "total_logged_hours": total_logged,
+                "gap": round(allocated - total_logged, 2),
+            }
+
+    result = {
         "ok": True, "task_id": info["task_id"], "tab": tab, "row": row,
         "assignee": info["assignee"],
         "written": {
@@ -546,7 +643,10 @@ if CMD == "log":
         },
         "estimate": est, "overtime": bool(over),
         "actual_before": before, "delta": delta, "ledger": ledger_note,
-    }, ensure_ascii=False))
+    }
+    if allocation_check is not None:
+        result["allocation_check"] = allocation_check
+    print(json.dumps(result, ensure_ascii=False))
     sys.exit(0)
 
 # ------------------------------------------------------------------------ risk

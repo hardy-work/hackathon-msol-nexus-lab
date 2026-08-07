@@ -76,26 +76,36 @@ Khối `PLAN` (`Estimate (h)`, `Start Date`, `End Date`) là **của PM, chỉ �
 Action này **chỉ sửa ô của dòng đã có sẵn** — không chèn dòng, không xoá dòng,
 không tạo task mới. Id task không có trong sheet thì báo lại, không tự thêm.
 
-## Kiểm tra allocation trước khi log (sau `find`, trước `log`)
+## Kiểm tra allocation — tự động trong `log`, đọc field `allocation_check`
 
-Ngoài cảnh báo "chậm hơn plan" (exit 9, so với `Estimate` của chính task), phải
-cross-check thêm ở cấp **member/ngày**: 1 task không vượt estimate riêng vẫn có
-thể là **chưa log đủ** so với tổng giờ dev thực sự được allocate vào dự án hôm
-đó.
+Ngoài cảnh báo "chậm hơn plan" (exit 9, so với `Estimate` của chính task),
+script tự cross-check thêm ở cấp **member/ngày**: 1 task không vượt estimate
+riêng vẫn có thể là **chưa log đủ** so với tổng giờ dev thực sự được allocate
+vào dự án hôm đó — hoặc member đã log hết task này nhưng còn task khác cùng
+ngày chưa report, nên tổng cả ngày vẫn hụt.
 
-**Bước**: xác định "ngày cần xét" = `Start date` dev vừa report (không phải
-ngày hôm nay theo hệ thống, trừ khi trùng). Đọc allocation của đúng assignee,
-đúng ngày đó từ tab `Resource plan`, khối "Thời gian làm việc mỗi ngày" (cột U
-trở đi) → `allocated_hours`. Cộng `Actual Effort (h)` của **mọi** task khác của
-cùng assignee có `Start Date Actual`/`End Date Actual` trùng ngày đó (đọc qua
-`find` từng task liên quan nếu cần, hoặc quét nhanh tab Sprint) + số giờ vừa
-log → `total_logged`.
+Chỉ chạy khi có `--slack-id` (Sprint dùng nickname như `VinhNV`, khác hẳn
+tên/Slack name ở tab `Resource plan` — không có Slack ID thì không khớp được
+đúng dòng member, script **bỏ qua im lặng**, không suy đoán). "Ngày cần xét" =
+đúng `--start` vừa ghi (không phải ngày hôm nay hệ thống, trừ khi trùng).
+Script tự cộng `Actual Effort (h)` của **mọi** task khác (cùng tab, cùng
+assignee) có `Start Date Actual` trùng ngày đó + số giờ vừa log =
+`total_logged_hours`, so với `allocated_hours` đọc từ `Resource plan`.
 
-- `total_logged == allocated_hours` → khớp, không cần nói gì thêm.
-- `total_logged < allocated_hours` (còn thiếu giờ) → **không chặn việc log**
-  task đang report (số dev đưa vẫn ghi đúng như vậy). Sau khi log xong, hỏi lại
-  dev: "Bạn được allocate `<allocated_hours>`h hôm đó nhưng tổng mới log
-  `<total_logged>`h, còn `<chênh lệch>`h chưa rõ — đang làm task khác chưa
+**Không chặn log** — task đang report vẫn ghi đúng số dev đưa (khác hẳn exit
+9/12). Khớp thì response JSON của `log` không có field `allocation_check`;
+lệch (chênh > 0.01h, 2 chiều đều tính) thì có thêm:
+
+```json
+"allocation_check": {"date": "2026-08-07", "allocated_hours": 8.0, "total_logged_hours": 4.0, "gap": 4.0}
+```
+
+`gap` dương = **thiếu giờ** (`allocated_hours > total_logged_hours`), âm =
+**log nhiều hơn allocate**. Thấy field này thì sau khi báo đã log xong, hỏi
+thêm dev ngay trong cùng lượt trả lời:
+
+- `gap` dương: "Bạn được allocate `<allocated_hours>`h hôm đó nhưng tổng mới
+  log `<total_logged_hours>`h, còn `<gap>`h chưa rõ — đang làm task khác chưa
   log, hay có lý do khác (nghỉ/việc ngoài dự án...)?" Không tự đoán lý do,
   không tự sửa gì cho tới khi dev trả lời.
   - Dev trả lời **có task khác chưa log** → chỉ nhắc dev report nốt task đó,
@@ -103,18 +113,14 @@ log → `total_logged`.
   - Dev trả lời **có lý do khác** (nghỉ đột xuất...) → cập nhật lại đúng ô
     allocation ngày đó của dev trong `Resource plan` cho khớp thực tế, và ghi
     1 dòng vào `Risk management` nêu lý do (cùng format với mục "Task chậm hơn
-    plan" bên dưới — `--diff` = số giờ chênh lệch, `--reason` = nguyên văn lý
-    do dev nói).
+    plan" bên dưới — `--diff` = `|gap|`, `--reason` = nguyên văn lý do dev
+    nói).
   - Dev chưa trả lời/chưa rõ → để nguyên, không sửa Resource plan hay Risk,
     chờ dev xác nhận ở lượt sau.
-- `total_logged > allocated_hours` (log nhiều hơn allocate) → cross-check với
-  tab `Overtime` đúng ngày/đúng người trước khi hỏi gì — có OT khớp số giờ
-  chênh lệch thì không phải bất thường, không cần hỏi. Không khớp → hỏi dev
-  y hệt nhánh thiếu giờ ở trên.
-
-Đây là cross-check **sau khi task đã log xong** (không giữ delta giữa `find`
-và `log`) — mục đích là bắt các trường hợp dev quên report 1 phần công việc
-trong ngày, không phải để chặn report của task đang xử lý.
+- `gap` âm (log nhiều hơn allocate): cross-check với tab `Overtime` đúng
+  ngày/đúng người trước khi hỏi gì — có OT khớp `|gap|` thì không phải bất
+  thường, không cần hỏi. Không khớp → hỏi dev y hệt nhánh thiếu giờ ở trên,
+  đổi câu hỏi cho đúng chiều ("log nhiều hơn allocate" thay vì "còn thiếu").
 
 ## Đọc exit code, đừng đọc chữ trong output
 
