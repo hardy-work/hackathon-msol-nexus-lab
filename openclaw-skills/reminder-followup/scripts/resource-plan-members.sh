@@ -21,6 +21,7 @@
 #             khỏi hỏi ai vì 7,5 với 8)
 # Tham số   : không có       -> JSON {date, found_day_column, people[], off[], no_id[], bad_id[]}
 #             --mentions     -> một dòng "<@U...> <@U...>" của riêng people[], dán thẳng vào Slack
+#             --reminder-message -> NGUYÊN VĂN tin nhắc mở thread của Job A (exit 6 = cả đội nghỉ)
 #             --effort-check -> JSON chia nhóm ai hôm nay log thiếu giờ so với công đăng ký
 #
 # Ô công của hôm nay là một CON SỐ (8 = ngày đủ công, 4 = nghỉ nửa buổi), không
@@ -39,8 +40,8 @@ set -uo pipefail
 
 MODE="${1:-json}"
 case "$MODE" in
-  json | --mentions | --effort-check) ;;
-  *) echo "tham số không hợp lệ: $MODE (chỉ nhận --mentions, --effort-check, hoặc bỏ trống)" >&2; exit 2 ;;
+  json | --mentions | --effort-check | --reminder-message) ;;
+  *) echo "tham số không hợp lệ: $MODE (chỉ nhận --mentions, --reminder-message, --effort-check, hoặc bỏ trống)" >&2; exit 2 ;;
 esac
 
 # Sổ cái giờ đã log hôm nay. gg-sheet/scripts/sheet-task.sh ghi vào đây sau mỗi
@@ -433,6 +434,27 @@ if os.environ.get("MODE") == "--effort-check":
     )
     print()
     sys.exit(0 if people else 6)
+
+if os.environ.get("MODE") == "--reminder-message":
+    # In ra NGUYÊN VĂN tin nhắc mở thread, để Job A chỉ việc chuyển tiếp vào
+    # `openclaw message send` chứ không phải gõ lại. Model gõ lại là template
+    # trôi dần: nuốt dòng trống, mất dấu cách trong "mẫu sau :", tự thêm câu
+    # cho thân thiện. Ở đây thì sai template là bất khả thi, và test bắt được.
+    if not people:
+        sys.exit(6)
+    lines = [
+        " ".join("<@%s>" % m["id"] for m in people),
+        "",
+        "Đến giờ report task rồi, mọi người report hôm nay giúp mình nhé!",
+        "",
+        "Report theo mẫu sau :",
+        "Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status | Note",
+        "",
+        "VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi",
+    ]
+    lines.extend(notices)
+    print("\n".join(lines))
+    sys.exit(0)
 
 if os.environ.get("MODE") == "--mentions":
     # Dòng 1 = chuỗi mention. Các dòng sau (nếu có) = dòng phụ dán vào CUỐI tin.

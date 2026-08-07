@@ -1,30 +1,25 @@
-Việc A skill reminder-followup: đăng tin nhắc report vào kênh, TAG ĐÍCH DANH từng người trong danh sách.
+Việc A skill reminder-followup: đăng tin nhắc report vào kênh, TAG ĐÍCH DANH từng người trong danh sách. Phiên cron KHÔNG có tool slack — dùng tool Bash gọi CLI `openclaw message` để gửi. Làm tuần tự, không delegate cho subagent. Kết thúc PHẢI trả về đúng 1 dòng trạng thái theo mẫu ở cuối.
+
+CHANNEL = C0BKLP5KYD7
+
+JOB NÀY TỰ GỬI TIN BẰNG LỆNH, KHÔNG dựa vào announce. Nghĩa là: nội dung tin là THAM SỐ của lệnh gửi, còn những gì bạn viết ra ở cuối phiên chỉ là DÒNG TRẠNG THÁI cho log — hai đường tách hẳn nhau. Cứ tường thuật thoải mái ở dòng trạng thái, nó không lọt ra Slack. TUYỆT ĐỐI KHÔNG bao giờ nhét câu tường thuật ("Exit 0, mentions retrieved", "Posting the reminder message", "Đã lấy được danh sách"...) vào NỘI DUNG TIN.
 
 0. TÌM THƯ MỤC SKILL BẰNG LỆNH, KHÔNG GÕ ĐƯỜNG DẪN TAY. Chạy đúng 2 dòng này trước mọi bước khác — mỗi máy/profile một đường dẫn khác nhau, gõ cứng là job chạy vào path không tồn tại rồi im lặng hỏng mỗi ngày:
    SKILL_DIR="$(openclaw config get agents.defaults.workspace 2>/dev/null)/skills/reminder-followup"
    [ -d "$SKILL_DIR" ] || SKILL_DIR="${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/workspace/skills/reminder-followup"
-   Cả 2 cách đều không ra thư mục có thật → DỪNG, xuất ra: ERROR | khong tim thay thu muc skill
+   Cả 2 cách đều không ra thư mục có thật → DỪNG, trả về "ERROR | khong tim thay thu muc skill".
 
-1. Lấy chuỗi mention bằng tool Bash, GHI NHỚ CẢ EXIT CODE:
-   bash "$SKILL_DIR/scripts/resource-plan-members.sh" --mentions
-   DÒNG 1 của output = chuỗi mention "<@U...> <@U...> ...", lấy từ tab "Resource plan" của Google Sheet logtime (cột Member + Slack ID), ĐÃ TỰ LOẠI những người NGHỈ hôm nay (ô công trống/0/P/nghỉ). TUYỆT ĐỐI không tự gõ lại id, không tự nhớ danh sách từ tin nhắc cũ, không tự thêm ai vào, KHÔNG BAO GIỜ dùng <!here> hay <!channel>.
-   CÁC DÒNG SAU (nếu có, dạng "(...)") = dòng phụ, dán y nguyên vào CUỐI tin nhắc, mỗi dòng 1 dòng. Không có dòng nào thì thôi. Đây là 2 dòng phụ DUY NHẤT được thêm vào tin — ngoài chúng ra không chế thêm câu nào.
+1. LẤY NGUYÊN VĂN TIN NHẮC bằng tool Bash. TUYỆT ĐỐI KHÔNG tự gõ lại nội dung tin, KHÔNG sửa câu chữ, KHÔNG thêm bớt dòng nào — script in ra sao thì gửi đi y hệt vậy:
+   MSG="$(bash "$SKILL_DIR/scripts/resource-plan-members.sh" --reminder-message)"
+   GHI NHỚ EXIT CODE của lệnh này.
+   Script tự đọc tab "Resource plan" của Google Sheet logtime, tự loại người NGHỈ hôm nay, tự dựng chuỗi mention và tự bọc đủ các dòng cố định. Nội dung tin nằm trong CODE chứ không nằm trong prompt này — cố ý như vậy, vì model gõ lại template là template trôi dần (nuốt dòng trống, mất dấu cách trong "mẫu sau :", tự thêm câu cho thân thiện).
+   KHÔNG BAO GIỜ tự gõ id, không nhớ danh sách từ tin nhắc cũ, không thêm ai vào, không dùng <!here>/<!channel>.
 
-2. EXIT 6 = hôm nay CẢ ĐỘI NGHỈ (T7/CN hoặc cả đội off). KHÔNG ĐĂNG GÌ CẢ, không cảnh báo ai — chỉ xuất ra đúng 1 dòng: SKIP | ca doi nghi hom nay
+2. EXIT 6 = hôm nay CẢ ĐỘI NGHỈ (T7/CN hoặc cả đội off). KHÔNG GỬI GÌ CẢ, không cảnh báo ai — trả về "SKIP | ca doi nghi hom nay".
 
-3. EXIT 0 → XUẤT RA final message CHÍNH LÀ nội dung dưới đây để hệ thống tự đăng vào kênh. KHÔNG dùng thêm tool nào, KHÔNG giải thích, KHÔNG thêm lời dẫn, KHÔNG thêm bullet hướng dẫn tự chế. Thay <MENTIONS> bằng đúng nguyên văn DÒNG 1 ở bước 1, và nối các dòng phụ (nếu có) vào cuối. GIỮ NGUYÊN các dòng trống: chuỗi mention đứng RIÊNG MỘT DÒNG, cách câu "Đến giờ report task rồi" bằng một dòng trống — không gộp chung một dòng:
+3. EXIT 0 → NỘI DUNG TIN chính là "$MSG", dùng nguyên xi. Sang bước 5.
 
-<MENTIONS>
-
-Đến giờ report task rồi, mọi người report hôm nay giúp mình nhé!
-
-Report theo mẫu sau :
-Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status | Note
-
-VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi
-<DÒNG PHỤ nếu có>
-
-4. EXIT 2/3/4/5 (không đọc được sheet) → VẪN PHẢI đăng tin, xuất ra đúng nguyên văn nội dung dưới đây. Bỏ hẳn một ngày còn tệ hơn: không có tin này thì lượt follow-up chiều cũng chết theo mà không ai biết. Giữ nguyên câu "Đến giờ report task rồi" vì lượt follow-up dựa vào đó để tìm lại thread:
+4. EXIT 2/3/4/5 (không đọc được sheet) → "$MSG" rỗng/không dùng được. VẪN PHẢI gửi tin, NỘI DUNG TIN là đúng nguyên văn dưới đây. Bỏ hẳn một ngày còn tệ hơn: không có tin này thì lượt follow-up chiều cũng chết theo mà không ai biết. Giữ nguyên câu "Đến giờ report task rồi" vì lượt follow-up dựa vào đó để tìm lại thread khi state hỏng:
 
 Mình chưa đọc được danh sách người phải report từ Google Sheet logtime (tab Resource plan) nên hôm nay chưa tag được ai — nhờ PM kiểm tra lại link/quyền chia sẻ giúp mình nhé.
 
@@ -34,3 +29,20 @@ Report theo mẫu sau :
 Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status | Note
 
 VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi
+
+5. GỬI TIN bằng tool Bash. Đây là tin MỞ THREAD nên KHÔNG có --reply-to:
+   openclaw message send --channel slack --target C0BKLP5KYD7 --json --message "$MSG"
+   Nhánh bước 4 thì thay "$MSG" bằng nội dung ở bước 4 (dùng $'...\n...' hoặc heredoc — đừng bóp thành một dòng, xuống dòng là một phần của tin).
+   Lệnh lỗi → THỬ LẠI ĐÚNG MỘT LẦN. Vẫn lỗi → trả về "ERROR | khong gui duoc tin nhac" và DỪNG (bỏ luôn bước 6). Đây là hỏng nặng: cả ngày hôm đó không có tin nhắc, và lượt follow-up chiều cũng không tìm thấy thread.
+
+6. GHI STATE để Job B khỏi phải quét lịch sử kênh. Từ JSON trả về của bước 5, lấy "messageId" (chính là ts của tin vừa gửi). Chạy bằng lệnh, KHÔNG tự dựng JSON bằng tay:
+   TODAY=$(TZ=Asia/Ho_Chi_Minh date +%F)
+   mkdir -p "$SKILL_DIR/state"
+   python3 -c 'import json,sys; open(sys.argv[1],"w").write(json.dumps({"reminderThreadTs": sys.argv[2]}))' "$SKILL_DIR/state/$TODAY.json" "<messageId>"
+   Bước này lỗi → KHÔNG coi là thất bại, vẫn trả về POSTED bình thường và ghi thêm " (state loi)" vào cuối dòng trạng thái. Tin đã lên kênh rồi, mà Job B vẫn có nhánh quét lịch sử để tìm lại thread — mất state chỉ tốn thêm ít token chứ không gãy luồng.
+
+DÒNG TRẢ VỀ CUỐI CÙNG (chỉ 1 dòng, không thêm chữ nào khác). Dòng này CHỈ vào log, KHÔNG lên Slack:
+- POSTED | da tag: <N> nguoi
+- POSTED | khong doc duoc sheet (exit <mã>)
+- SKIP | ca doi nghi hom nay
+- ERROR | <mô tả ngắn>

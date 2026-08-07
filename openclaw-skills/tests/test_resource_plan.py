@@ -181,8 +181,54 @@ def test_effort_check():
     check("chua co so cai -> khong crash", sorted(r["chua_log"]), ["U0000000001", "U0000000003"])
 
 
+def test_reminder_message():
+    """Tin nhắc phải ra ĐÚNG TỪNG KÝ TỰ — đây là lý do tồn tại của
+    --reminder-message. Trước đây model tự gõ lại template vào --message nên
+    template trôi dần: nuốt dòng trống, mất dấu cách trong "mẫu sau :"."""
+    print("tin nhac mo thread (--reminder-message)")
+
+    # Fixture riêng KHÔNG có người thiếu Slack ID, để so nguyên văn phần thân.
+    # (BASE có "Dũng" thiếu id -> script tự nối một dòng phụ, đúng như thiết kế.)
+    no_missing = [r for r in BASE if r[0] != "4"]
+
+    code, out = run("--reminder-message", "2026-08-03", mock=no_missing)
+    want = "\n".join([
+        "<@U0000000001> <@U0000000002> <@U0000000003>",
+        "",
+        "Đến giờ report task rồi, mọi người report hôm nay giúp mình nhé!",
+        "",
+        "Report theo mẫu sau :",
+        "Id task | Re-estimate (h) | Start date | End date | Actual Effort (h) | Status | Note",
+        "",
+        "VD: NEX-214 | 8 | 03-08-2026 | 04-08-2026 | 7.5 | Done | xong sớm nửa buổi",
+    ])
+    check("exit 0", code, 0)
+    check("nguyen van tin nhac", out.strip("\n"), want)
+
+    # Mấy chỗ template hay bị trôi nhất, khoá riêng từng cái.
+    lines = out.strip("\n").split("\n")
+    check("mention dung mot dong rieng", lines[0].startswith("<@") and "Đến giờ" not in lines[0], True)
+    check("co dong trong sau mention", lines[1], "")
+    check("giu dau cach trong 'mau sau :'", "Report theo mẫu sau :" in out, True)
+    check("khong co icon", any(ord(c) > 0x2500 for c in out), False)
+
+    # Nghỉ nửa buổi (4h) vẫn phải tag; T7/CN thì cả đội nghỉ -> exit 6, không in gì.
+    code, out = run("--reminder-message", "2026-08-06", mock=no_missing)
+    check("nghi nua buoi van tag", "<@U0000000001>" in out, True)
+
+    # Có người thiếu Slack ID -> dòng phụ được nối vào CUỐI, sau dòng VD.
+    code, out = run("--reminder-message", "2026-08-03")
+    check("dong phu nam o cuoi", out.strip("\n").split("\n")[-1].startswith("(Chưa có Id Slack"), True)
+    check("dong phu khong chen vao giua", out.index("VD: NEX-214") < out.index("(Chưa có Id Slack"), True)
+
+    code, out = run("--reminder-message", "2026-08-01")
+    check("ca doi nghi -> exit 6", code, 6)
+    check("ca doi nghi -> khong in tin", out.strip(), "")
+
+
 def main():
     test_day_column()
+    test_reminder_message()
     test_effort_check()
     print()
     if FAILED:
