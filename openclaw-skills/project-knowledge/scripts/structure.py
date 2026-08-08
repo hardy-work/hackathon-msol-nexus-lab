@@ -12,6 +12,7 @@ import argparse
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import yaml
@@ -146,6 +147,42 @@ def missing_page_markers(before: str, after: str) -> list[str]:
     return [f"mất marker trang: {', '.join('[[page ' + n + ']]' for n in lost)}"] if lost else []
 
 
+# Một tài liệu dài là NHIỀU lượt gọi nối tiếp, nên xác suất vấp một lỗi tạm thời cộng
+# dồn theo số khúc. Không thử lại thì một lần CLI trả mã lỗi với stderr rỗng — hoặc trả
+# đúng chuỗi rỗng — vứt sạch công của mọi khúc đã chạy xong trước đó. Thử lại chỉ áp
+# dụng cho lỗi HẠ TẦNG (gọi hỏng, đầu ra rỗng); cổng số chặn thì KHÔNG thử lại, vì đó
+# là kết luận về nội dung chứ không phải sự cố.
+RETRIES = 3
+RETRY_BACKOFF = 15
+
+
+def call_with_retry(chunk: str, budget: int, tag: str) -> tuple[str | None, str]:
+    last = "không rõ"
+    for attempt in range(1, RETRIES + 1):
+        try:
+            proc = subprocess.run(
+                [models.CLAUDE, "-p", "--model", models.LIGHT, "--allowedTools", ""],
+                input=PROMPT.format(body=chunk), capture_output=True, text=True,
+                encoding="utf-8", timeout=budget, cwd=ROOT,
+            )
+        except subprocess.TimeoutExpired:
+            last = f"quá {budget}s cho {len(chunk):,} ký tự"
+        else:
+            if proc.returncode != 0:
+                last = f"mã lỗi {proc.returncode}: {(proc.stderr or '').strip()[:200] or 'stderr rỗng'}"
+            else:
+                piece = re.sub(r"^```(?:markdown)?\n|\n```$", "",
+                               (proc.stdout or "").strip()).strip()
+                if piece:
+                    return piece, ""
+                last = "đầu ra rỗng"
+        if attempt < RETRIES:
+            print(f"⟳ {tag or 'tài liệu'}: {last} — thử lại {attempt}/{RETRIES - 1}",
+                  file=sys.stderr)
+            time.sleep(RETRY_BACKOFF * attempt)
+    return None, f"{tag}: Claude hỏng sau {RETRIES} lần thử — {last}"
+
+
 def structure_one(doc_id: str, raw_path: Path, timeout: int | None = None) -> tuple[str | None, list[str], list[str]]:
     raw_text = raw_path.read_text(encoding="utf-8")
     fm, body = frontmatter(raw_text)
@@ -154,17 +191,9 @@ def structure_one(doc_id: str, raw_path: Path, timeout: int | None = None) -> tu
     for index, chunk in enumerate(chunks, start=1):
         tag = f"khúc {index}/{len(chunks)}" if len(chunks) > 1 else ""
         budget = timeout if timeout is not None else structure_timeout(chunk)
-        try:
-            proc = subprocess.run(
-                [models.CLAUDE, "-p", "--model", models.LIGHT, "--allowedTools", ""],
-                input=PROMPT.format(body=chunk), capture_output=True, text=True,
-                encoding="utf-8", timeout=budget, cwd=ROOT,
-            )
-        except subprocess.TimeoutExpired:
-            return None, [f"{tag}: Claude quá {budget}s cho {len(chunk):,} ký tự"], warnings
-        if proc.returncode != 0:
-            return None, [f"{tag}: Claude lỗi: {(proc.stderr or '').strip()[:240]}"], warnings
-        piece = re.sub(r"^```(?:markdown)?\n|\n```$", "", (proc.stdout or "").strip()).strip()
+        piece, failure = call_with_retry(chunk, budget, tag)
+        if piece is None:
+            return None, [failure], warnings
         piece_errors, piece_warnings = numeric_guard.check_transform(chunk, piece)
         piece_errors += missing_page_markers(chunk, piece) + too_short(chunk, piece)
         errors += [f"{tag}: {message}" if tag else message for message in piece_errors]
