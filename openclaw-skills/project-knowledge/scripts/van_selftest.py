@@ -265,6 +265,36 @@ def test_masking() -> int:
     return failures
 
 
+# ------------------------------------------- Stage 2 · đọc ảnh hai lượt
+def test_vision_agreement() -> int:
+    """Điều kiện nhận một trang đọc bằng thị giác: hai lượt khớp TỪNG CHỮ SỐ.
+
+    Khác câu chữ thì bỏ qua (xuống dòng, khoảng trắng, cách viết hoa) vì đó là
+    cách trình bày. Khác chữ số thì chắc chắn có một lượt sai, và trang đó phải
+    được người đối chiếu bản gốc.
+    """
+    import extract_van
+
+    failures = 0
+    same = [
+        ("khác cách xuống dòng", "45.4. Nghỉ 365 ngày\ntính từ", "45.4. Nghỉ 365 ngày tính từ"),
+        ("khác khoảng trắng", "Làm  40  giờ/tuần", "Làm 40 giờ/tuần"),
+    ]
+    for label, first, second in same:
+        failures += not check(f"hai lượt coi là KHỚP — {label}",
+                              extract_van._digits_of(first) == extract_van._digits_of(second),
+                              f"{extract_van._digits_of(first)} vs {extract_van._digits_of(second)}")
+    differ = [
+        ("lệch một chữ số", "thời hạn 365 ngày", "thời hạn 385 ngày"),
+        ("thiếu hẳn một số", "Nghỉ 12 ngày phép", "Nghỉ ngày phép"),
+    ]
+    for label, first, second in differ:
+        failures += not check(f"hai lượt coi là LỆCH — {label}",
+                              extract_van._digits_of(first) != extract_van._digits_of(second),
+                              extract_van._digits_of(first))
+    return failures
+
+
 # ------------------------------------------------------- Stage 3 · cắt khúc
 def test_split_chunks() -> int:
     """Cắt khúc phải KHÔNG MẤT ký tự nào và chỉ cắt ở ranh giới trang.
@@ -493,6 +523,8 @@ def main() -> int:
     failures += test_extract()
     print("── numeric_guard · che định danh theo vị trí ──")
     failures += test_masking()
+    print("── Stage 2 · đọc ảnh hai lượt đối chiếu ──")
+    failures += test_vision_agreement()
     print("── Stage 3 · cắt khúc không mất chữ ──")
     failures += test_split_chunks()
     print("── numeric_guard · cổng biến đổi hai pha ──")
