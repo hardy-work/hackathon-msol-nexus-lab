@@ -40,6 +40,10 @@ LUẬT CỨNG:
   marker ở ngay dòng đầu — đoạn dưới đây là một PHẦN của tài liệu dài, không phải
   toàn bộ, nên nó thường mở đầu bằng một marker và marker đó phải là dòng đầu tiên
   bạn xuất ra.
+- TRANG BÌA, BẢNG KIỂM SOÁT TÀI LIỆU, LỊCH SỬ THAY ĐỔI, MỤC LỤC, chữ ký phê duyệt,
+  header/footer đều là NỘI DUNG và phải chép đủ. Chúng trông như phần phụ nhưng lại
+  giữ ngày hiệu lực, phiên bản, người phê duyệt và danh mục điều khoản — tức là toàn
+  bộ phần truy nguồn của tài liệu. Không được bỏ vì "không phải văn bản chính".
 - Đoạn này bị cắt ra giữa chừng nên có thể mở đầu hoặc kết thúc dở một chương/điều.
   Cứ để dở. KHÔNG viết thêm tiêu đề nối kiểu "(tiếp theo)", không lặp lại tiêu đề
   chương của đoạn trước, không thêm phần mở đầu hay kết thúc cho tròn ý.
