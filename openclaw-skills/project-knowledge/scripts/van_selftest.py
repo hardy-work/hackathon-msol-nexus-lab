@@ -33,6 +33,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import ingest_van  # noqa: E402
 import lint  # noqa: E402
 import numeric_guard  # noqa: E402
+import structure  # noqa: E402
 
 
 # Văn bản nguồn cố ý có BỐN cái bẫy:
@@ -251,6 +252,29 @@ def test_masking() -> int:
     return failures
 
 
+# ------------------------------------------------------- Stage 3 · cắt khúc
+def test_split_chunks() -> int:
+    """Cắt khúc phải KHÔNG MẤT ký tự nào và chỉ cắt ở ranh giới trang.
+
+    Đây là bất biến duy nhất giữ cho việc cắt khúc an toàn: nếu nối lại không
+    bằng đúng bản gốc thì cổng số của từng khúc vẫn xanh mà cả tài liệu đã hụt.
+    """
+    body = "".join(f"[[page {n}]]\nĐiều {n}. Nghỉ {n} ngày.\n" + "x" * 4000 + "\n"
+                   for n in range(1, 11))
+    chunks = structure.split_chunks(body, limit=8000)
+    failures = 0
+    failures += not check("cắt khúc: nối lại khớp nguyên văn",
+                          "".join(chunks) == body, f"{len(''.join(chunks))} vs {len(body)}")
+    failures += not check("cắt khúc: tài liệu dài bị chia nhỏ thật", len(chunks) > 1, str(len(chunks)))
+    failures += not check("cắt khúc: mỗi khúc mở đầu bằng marker trang",
+                          all(chunk.lstrip().startswith("[[page ") for chunk in chunks),
+                          str([chunk[:20] for chunk in chunks]))
+    short = structure.split_chunks("Chỉ một dòng, 5 ngày.")
+    failures += not check("cắt khúc: tài liệu ngắn giữ nguyên một khúc",
+                          short == ["Chỉ một dòng, 5 ngày."], str(short))
+    return failures
+
+
 # ------------------------------------------------ cổng biến đổi · hai pha
 def test_transform_two_phase() -> int:
     """Pha TRỊ SỐ chống bịa; pha ĐƠN VỊ chỉ xét trị số còn ở cả hai vế.
@@ -418,6 +442,8 @@ def main() -> int:
     failures += test_extract()
     print("── numeric_guard · che định danh theo vị trí ──")
     failures += test_masking()
+    print("── Stage 3 · cắt khúc không mất chữ ──")
+    failures += test_split_chunks()
     print("── numeric_guard · cổng biến đổi hai pha ──")
     failures += test_transform_two_phase()
     with tempfile.TemporaryDirectory(prefix="pk-van-") as temp:

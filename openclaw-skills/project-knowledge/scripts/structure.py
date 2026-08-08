@@ -73,25 +73,64 @@ def structure_timeout(body: str) -> int:
     return max(TIMEOUT_MIN, min(TIMEOUT_MAX, len(body) // 1000 * SECONDS_PER_KCHAR))
 
 
+# Stage 3 phải TRẢ LẠI cả tài liệu, nên độ dài đầu ra bằng độ dài đầu vào. Một bản nội
+# quy 38 trang (94k ký tự) vượt sức một lượt sinh: model không báo lỗi, nó lặng lẽ rút
+# gọn — lượt chạy thật rơi 37 lần số `1`, 17 lần `38` và một loạt số Điều lẻ, tức là mất
+# hẳn nhiều điều khoản. Cắt khúc là bắt buộc, không phải tối ưu.
+#
+# Cắt theo ranh giới trang `[[page N]]` vì đó là ranh giới CÓ THẬT trong nguồn: không
+# cắt giữa câu, và marker trang vẫn nằm đúng chỗ sau khi nối lại. Mỗi khúc được soi
+# cổng RIÊNG với đúng khúc nguồn của nó — chặt hơn soi cả tài liệu (số rơi ở khúc này
+# không thể được bù bằng số trùng giá trị ở khúc khác) và báo lỗi đúng vị trí.
+CHUNK_CHARS = 12000
+PAGE_MARKER = re.compile(r"^\s*\[\[page \d+\]\]\s*$")
+
+
+def split_chunks(body: str, limit: int = CHUNK_CHARS) -> list[str]:
+    """Cắt body thành khúc <= limit, chỉ cắt ở ranh giới trang (hoặc dòng trống)."""
+    lines = body.splitlines(keepends=True)
+    chunks: list[str] = []
+    current: list[str] = []
+    size = 0
+    for line in lines:
+        boundary = PAGE_MARKER.match(line) or not line.strip()
+        if current and boundary and size >= limit:
+            chunks.append("".join(current))
+            current, size = [], 0
+        current.append(line)
+        size += len(line)
+    if current:
+        chunks.append("".join(current))
+    # Không có ranh giới nào để cắt (tài liệu một khối) — trả nguyên, cổng sẽ báo nếu hụt.
+    return chunks or [body]
+
+
 def structure_one(doc_id: str, raw_path: Path, timeout: int | None = None) -> tuple[str | None, list[str], list[str]]:
     raw_text = raw_path.read_text(encoding="utf-8")
     fm, body = frontmatter(raw_text)
-    budget = timeout if timeout is not None else structure_timeout(body)
-    try:
-        proc = subprocess.run(
-            [models.CLAUDE, "-p", "--model", models.LIGHT, "--allowedTools", ""],
-            input=PROMPT.format(body=body), capture_output=True, text=True,
-            encoding="utf-8", timeout=budget, cwd=ROOT,
-        )
-    except subprocess.TimeoutExpired:
-        return None, [f"Claude quá {budget}s cho {len(body):,} ký tự — "
-                      f"tăng SECONDS_PER_KCHAR hoặc tách tài liệu"], []
-    if proc.returncode != 0:
-        return None, [f"Claude lỗi: {(proc.stderr or '').strip()[:240]}"], []
-    output = re.sub(r"^```(?:markdown)?\n|\n```$", "", (proc.stdout or "").strip()).strip()
-    errors, warnings = numeric_guard.check_transform(body, output)
+    chunks = split_chunks(body)
+    pieces, errors, warnings = [], [], []
+    for index, chunk in enumerate(chunks, start=1):
+        tag = f"khúc {index}/{len(chunks)}" if len(chunks) > 1 else ""
+        budget = timeout if timeout is not None else structure_timeout(chunk)
+        try:
+            proc = subprocess.run(
+                [models.CLAUDE, "-p", "--model", models.LIGHT, "--allowedTools", ""],
+                input=PROMPT.format(body=chunk), capture_output=True, text=True,
+                encoding="utf-8", timeout=budget, cwd=ROOT,
+            )
+        except subprocess.TimeoutExpired:
+            return None, [f"{tag}: Claude quá {budget}s cho {len(chunk):,} ký tự"], warnings
+        if proc.returncode != 0:
+            return None, [f"{tag}: Claude lỗi: {(proc.stderr or '').strip()[:240]}"], warnings
+        piece = re.sub(r"^```(?:markdown)?\n|\n```$", "", (proc.stdout or "").strip()).strip()
+        piece_errors, piece_warnings = numeric_guard.check_transform(chunk, piece)
+        errors += [f"{tag}: {message}" if tag else message for message in piece_errors]
+        warnings += [f"{tag}: {message}" if tag else message for message in piece_warnings]
+        pieces.append(piece)
     if errors:
         return None, errors, warnings
+    output = "\n\n".join(pieces)
     header = {
         "doc_id": doc_id,
         "version": fm.get("version", 1),
