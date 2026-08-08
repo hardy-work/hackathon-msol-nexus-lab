@@ -315,6 +315,35 @@ def test_transform_two_phase() -> int:
         errors, warnings = numeric_guard.check_transform(before, after)
         failures += not check(f"chỉ cảnh báo — {label}",
                               errors == [] and warnings != [], f"{errors} / {warnings}")
+
+    # Cùng một giá trị vừa xuất hiện có đơn vị vừa xuất hiện trần. Rơi bản TRẦN thì
+    # bản có đơn vị vẫn còn — không được gán nhãn đơn vị của instance khác rồi nâng
+    # thành lỗi cứng.
+    before = "Hợp đồng 36 tháng theo mẫu 36 của Bộ. Phụ lục 36 kèm theo."
+    after = "Hợp đồng 36 tháng theo mẫu 36 của Bộ."
+    errors, warnings = numeric_guard.check_transform(before, after)
+    failures += not check("rơi số TRẦN không bị gán đơn vị của instance khác",
+                          errors == [] and any("36" in message for message in warnings),
+                          f"{errors} / {warnings}")
+    dropped = numeric_guard.check_transform("Nghỉ 36 tháng.", "Nghỉ theo quy định.")[0]
+    failures += not check("rơi số CÓ đơn vị vẫn là lỗi cứng",
+                          any("36" in message and "month" in message for message in dropped),
+                          str(dropped))
+    return failures
+
+
+# ------------------------------------------------- Stage 3 · marker provenance
+def test_page_markers() -> int:
+    """`[[page N]]` không phải số đo (che), nhưng mất nó là mất dấu vết nguồn."""
+    failures = 0
+    rows = numeric_guard.transform_numbers("[[page 38]]\nNghỉ 12 ngày phép.")
+    failures += not check("marker trang không bị coi là số đo",
+                          rows == [("12", "day", "12")], str(rows))
+    lost = structure.missing_page_markers("[[page 12]]\nA\n[[page 13]]\nB", "[[page 12]]\nA B")
+    failures += not check("mất marker trang bị báo là lỗi provenance",
+                          lost == ["mất marker trang: [[page 13]]"], str(lost))
+    kept = structure.missing_page_markers("[[page 12]]\nA", "# Tiêu đề\n\n[[page 12]]\n\nA")
+    failures += not check("giữ đủ marker thì không báo", kept == [], str(kept))
     return failures
 
 
@@ -459,6 +488,8 @@ def main() -> int:
     failures += test_split_chunks()
     print("── numeric_guard · cổng biến đổi hai pha ──")
     failures += test_transform_two_phase()
+    print("── Stage 3 · marker trang là provenance ──")
+    failures += test_page_markers()
     with tempfile.TemporaryDirectory(prefix="pk-van-") as temp:
         root, structured = build_corpus(Path(temp))
         print("── Stage 4 · cổng ghi trang wiki ──")

@@ -62,6 +62,7 @@ MASK = [
     r"\b\d+/\d{4}/[A-ZĐ]+\d*(?:[-–][A-ZĐ]+\d*)*", # số hiệu luật: 86/2015/QH13, 72/2013/NĐ-CP
     r"\b[A-Z]{2,}(?:\.[A-Z0-9]+)+",         # mã tài liệu: MOR.BO.PRO.01
     r"(?:Điều|Chương|Mục|Khoản|Điểm)\s*\d+(?:\s*[-–]\s*\d+)?",  # tham chiếu điều khoản: Điều 12, Điều 39–48
+    r"\[\[page \d+\]\]",                   # marker trang do extract_van chèn
     r"\bv\d+(?:\.\d+)*",                   # phiên bản: v2.1
     # Nhãn kiểm soát tài liệu tiếng Việt, đứng trong footer chạy trang. Con số sau
     # chúng là ĐỊNH DANH phiên bản/lần in, không phải số đo. Chấp nhận cả bản OCR mất
@@ -302,9 +303,14 @@ def check_transform(before, after, *, allow_loss=False):
         errors.append(f"số mới/đổi/làm tròn `{number}`")
     if not allow_loss:
         for number, count in (src_values - dst_values).items():
-            units = sorted(_units_of(src, number))
-            message = f"rơi {count}× `{number}`" + (f" {'/'.join(units)}" if units else "")
-            (errors if units else warnings).append(message)
+            # Chỉ MẤT SỐ CÓ ĐƠN VỊ mới là lỗi cứng. Phải hỏi "có instance mang đơn vị
+            # nào biến mất không", chứ không phải "giá trị này có ở đâu đó mang đơn vị
+            # không": `36` xuất hiện 4 lần — 2 lần là `36 tháng`, 2 lần trần trong số
+            # hiệu — và khi một bản TRẦN rơi thì cả hai `36 tháng` vẫn còn nguyên.
+            # Gán nhãn theo toàn bộ nguồn thì số trần rơi bị báo thành mất `36 month`.
+            gone = _units_of(src, number) - _units_of(dst, number)
+            message = f"rơi {count}× `{number}`" + (f" {'/'.join(sorted(gone))}" if gone else "")
+            (errors if gone else warnings).append(message)
 
     # ---- PHA 2 · ĐƠN VỊ, chỉ cho trị số còn nguyên ở cả hai vế.
     for number in sorted(set(src_values) & set(dst_values)):

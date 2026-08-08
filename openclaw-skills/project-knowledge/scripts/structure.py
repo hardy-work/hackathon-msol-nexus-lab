@@ -105,6 +105,20 @@ def split_chunks(body: str, limit: int = CHUNK_CHARS) -> list[str]:
     return chunks or [body]
 
 
+PAGE_REF = re.compile(r"\[\[page (\d+)\]\]")
+
+
+def missing_page_markers(before: str, after: str) -> list[str]:
+    """Marker trang là PROVENANCE, không phải số đo — mất là lỗi, nhưng lỗi của nó.
+
+    `numeric_guard` che `[[page N]]` vì số trang không phải số đo (không che thì mỗi
+    lần dàn lại trang lại báo "rơi 38"). Che rồi thì không còn ai canh chúng, mà `src`
+    của Gate 3a lại trỏ vào đúng những marker này để định vị mục trong raw. Nên canh
+    riêng, và báo bằng đúng tên: mất dấu vết nguồn, không phải sai số liệu."""
+    lost = sorted(set(PAGE_REF.findall(before)) - set(PAGE_REF.findall(after)), key=int)
+    return [f"mất marker trang: {', '.join('[[page ' + n + ']]' for n in lost)}"] if lost else []
+
+
 def structure_one(doc_id: str, raw_path: Path, timeout: int | None = None) -> tuple[str | None, list[str], list[str]]:
     raw_text = raw_path.read_text(encoding="utf-8")
     fm, body = frontmatter(raw_text)
@@ -125,6 +139,7 @@ def structure_one(doc_id: str, raw_path: Path, timeout: int | None = None) -> tu
             return None, [f"{tag}: Claude lỗi: {(proc.stderr or '').strip()[:240]}"], warnings
         piece = re.sub(r"^```(?:markdown)?\n|\n```$", "", (proc.stdout or "").strip()).strip()
         piece_errors, piece_warnings = numeric_guard.check_transform(chunk, piece)
+        piece_errors += missing_page_markers(chunk, piece)
         errors += [f"{tag}: {message}" if tag else message for message in piece_errors]
         warnings += [f"{tag}: {message}" if tag else message for message in piece_warnings]
         pieces.append(piece)
