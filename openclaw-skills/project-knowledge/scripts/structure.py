@@ -61,14 +61,31 @@ def raw_documents() -> dict[str, Path]:
     return docs
 
 
-def structure_one(doc_id: str, raw_path: Path, timeout: int = 600) -> tuple[str | None, list[str], list[str]]:
+# Stage 3 chép lại NGUYÊN VĂN cả tài liệu, nên thời gian chạy tỉ lệ với độ dài đầu
+# vào chứ không phải một hằng số. Mốc 600s cố định vừa đủ cho vài trang và hết giờ
+# ở một bản nội quy 38 trang (94k ký tự) — mà lại hết giờ bằng traceback, sau mười
+# phút, không nói gì về nguyên nhân. Cho ngân sách co theo cỡ tài liệu, có sàn và trần.
+SECONDS_PER_KCHAR = 12
+TIMEOUT_MIN, TIMEOUT_MAX = 600, 3600
+
+
+def structure_timeout(body: str) -> int:
+    return max(TIMEOUT_MIN, min(TIMEOUT_MAX, len(body) // 1000 * SECONDS_PER_KCHAR))
+
+
+def structure_one(doc_id: str, raw_path: Path, timeout: int | None = None) -> tuple[str | None, list[str], list[str]]:
     raw_text = raw_path.read_text(encoding="utf-8")
     fm, body = frontmatter(raw_text)
-    proc = subprocess.run(
-        [models.CLAUDE, "-p", "--model", models.LIGHT, "--allowedTools", ""],
-        input=PROMPT.format(body=body), capture_output=True, text=True,
-        encoding="utf-8", timeout=timeout, cwd=ROOT,
-    )
+    budget = timeout if timeout is not None else structure_timeout(body)
+    try:
+        proc = subprocess.run(
+            [models.CLAUDE, "-p", "--model", models.LIGHT, "--allowedTools", ""],
+            input=PROMPT.format(body=body), capture_output=True, text=True,
+            encoding="utf-8", timeout=budget, cwd=ROOT,
+        )
+    except subprocess.TimeoutExpired:
+        return None, [f"Claude quá {budget}s cho {len(body):,} ký tự — "
+                      f"tăng SECONDS_PER_KCHAR hoặc tách tài liệu"], []
     if proc.returncode != 0:
         return None, [f"Claude lỗi: {(proc.stderr or '').strip()[:240]}"], []
     output = re.sub(r"^```(?:markdown)?\n|\n```$", "", (proc.stdout or "").strip()).strip()
