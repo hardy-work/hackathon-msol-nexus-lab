@@ -344,6 +344,15 @@ def test_page_markers() -> int:
                           lost == ["mất marker trang: [[page 13]]"], str(lost))
     kept = structure.missing_page_markers("[[page 12]]\nA", "# Tiêu đề\n\n[[page 12]]\n\nA")
     failures += not check("giữ đủ marker thì không báo", kept == [], str(kept))
+
+    # Khúc toàn văn xuôi có thể mất nửa nội dung mà không rơi con số nào.
+    long_text = "Người lao động có nghĩa vụ tuân thủ nội quy. " * 40
+    failures += not check("rút gọn mạnh bị chặn dù không rơi số nào",
+                          structure.too_short(long_text, long_text[:len(long_text) // 4]) != [],
+                          "không báo")
+    failures += not check("dàn lại bình thường không bị chặn",
+                          structure.too_short(long_text, "## Nghĩa vụ\n\n" + long_text) == [],
+                          "báo nhầm")
     return failures
 
 

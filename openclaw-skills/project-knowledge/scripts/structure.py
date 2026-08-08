@@ -32,13 +32,16 @@ LUẬT CỨNG:
 - Không thêm thông tin, không suy luận, không tóm tắt làm mất điều kiện.
 - Giữ nguyên mọi số, ngày, đơn vị và số hiệu; không làm tròn hoặc đổi đơn vị.
 - KHÔNG SỬA LỖI NGUỒN. Văn bản raw có thể là kết quả OCR và chứa lỗi thấy rõ: sai
-  dấu tiếng Việt ("gid" thay vì "giờ"), dính số thứ tự ("437." thay vì "43.7."), và
-  sai cả chữ số ("385" thay vì "365"). Chép NGUYÊN XI, kể cả khi bạn biết chắc giá
-  trị đúng phải là gì. Sửa lỗi nguồn là việc của người đối chiếu bản gốc, không phải
-  của bạn: cổng số phía sau không phân biệt được "sửa đúng" với "bịa", nên nó chặn cả
+  dấu tiếng Việt, dính số thứ tự khoản, và sai cả chữ số. Chép NGUYÊN XI, kể cả khi
+  bạn biết chắc giá trị đúng phải là gì. Sửa lỗi nguồn là việc của người đối chiếu
+  bản gốc: cổng số phía sau không phân biệt được "sửa đúng" với "bịa", nên nó chặn cả
   hai như nhau, và một lần bạn sửa đúng sẽ làm hỏng cả tài liệu.
-- Giữ marker nguồn như [[page N]] và tiêu đề/bảng khi có.
+- Giữ marker nguồn như [[page N]] và tiêu đề/bảng khi có. Giữ ĐỦ mọi marker.
 - Chỉ trả Markdown nội dung, không frontmatter, không lời dẫn, không code fence.
+- TUYỆT ĐỐI không viết nhận xét về công việc của chính bạn: không mở đầu, không kết
+  luận, không thống kê số dòng, không liệt kê lỗi OCR bạn đã thấy. Ký tự cuối cùng
+  bạn xuất ra phải là ký tự cuối cùng của tài liệu. Mọi con số bạn viết thêm ngoài
+  tài liệu đều bị cổng ghi nhận là số bịa và cả khúc này sẽ bị vứt.
 
 ===== RAW =====
 {body}
@@ -107,6 +110,20 @@ def split_chunks(body: str, limit: int = CHUNK_CHARS) -> list[str]:
 
 PAGE_REF = re.compile(r"\[\[page (\d+)\]\]")
 
+# Stage 3 dàn lại chứ không tóm tắt, nên độ dài đầu ra phải xấp xỉ đầu vào. Cổng số
+# bắt được việc rút gọn ở khúc nhiều số, nhưng một khúc toàn văn xuôi — nghĩa vụ,
+# quy tắc ứng xử — có thể mất nửa nội dung mà không rơi con số nào. Ngưỡng đặt rộng
+# để không cản việc bỏ header/footer lặp và gộp dòng gãy của OCR.
+MIN_LENGTH_RATIO = 0.6
+
+
+def too_short(before: str, after: str) -> list[str]:
+    ratio = len(after) / len(before) if before else 1.0
+    if ratio >= MIN_LENGTH_RATIO:
+        return []
+    return [f"rút gọn còn {ratio:.0%} độ dài nguồn "
+            f"({len(after):,}/{len(before):,} ký tự) — Stage 3 dàn lại, không tóm tắt"]
+
 
 def missing_page_markers(before: str, after: str) -> list[str]:
     """Marker trang là PROVENANCE, không phải số đo — mất là lỗi, nhưng lỗi của nó.
@@ -139,7 +156,7 @@ def structure_one(doc_id: str, raw_path: Path, timeout: int | None = None) -> tu
             return None, [f"{tag}: Claude lỗi: {(proc.stderr or '').strip()[:240]}"], warnings
         piece = re.sub(r"^```(?:markdown)?\n|\n```$", "", (proc.stdout or "").strip()).strip()
         piece_errors, piece_warnings = numeric_guard.check_transform(chunk, piece)
-        piece_errors += missing_page_markers(chunk, piece)
+        piece_errors += missing_page_markers(chunk, piece) + too_short(chunk, piece)
         errors += [f"{tag}: {message}" if tag else message for message in piece_errors]
         warnings += [f"{tag}: {message}" if tag else message for message in piece_warnings]
         pieces.append(piece)
