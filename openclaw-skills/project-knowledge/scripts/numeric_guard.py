@@ -61,7 +61,10 @@ MASK = [
     # Đặt TRƯỚC mẫu ô Excel: nếu không, '[A-Z]{1,3}\d+' nuốt 'QH13' và bỏ sót năm.
     r"\b\d+/\d{4}/[A-ZĐ]+\d*(?:[-–][A-ZĐ]+\d*)*", # số hiệu luật: 86/2015/QH13, 72/2013/NĐ-CP
     r"\b[A-Z]{2,}(?:\.[A-Z0-9]+)+",         # mã tài liệu: MOR.BO.PRO.01
-    r"(?:Điều|Chương|Mục|Khoản|Điểm)\s*\d+(?:\s*[-–]\s*\d+)?",  # tham chiếu điều khoản: Điều 12, Điều 39–48
+    # Tham chiếu điều khoản: Điều 12, Điều 39–48. KHÔNG phân biệt hoa/thường: văn bản
+    # pháp quy tiếng Việt viết tiêu đề chương in hoa toàn bộ ("CHƯƠNG 2. HỢP ĐỒNG LAO
+    # ĐỘNG"), và bản chỉ khớp "Chương" để lọt số chương thành số đo.
+    r"(?i:Điều|Chương|Mục|Khoản|Điểm)\s*\d+(?:\s*[-–]\s*\d+)?",
     r"\[\[page \d+\]\]",                   # marker trang do extract_van chèn
     r"\bv\d+(?:\.\d+)*",                   # phiên bản: v2.1
     # Nhãn kiểm soát tài liệu tiếng Việt, đứng trong footer chạy trang. Con số sau

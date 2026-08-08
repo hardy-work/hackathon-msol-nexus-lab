@@ -236,6 +236,12 @@ def test_masking() -> int:
         failures += not check(f"che theo vị trí: {text!r} vẫn thấy {want_value} {want_unit}",
                               any(value == want_value and unit == want_unit
                                   for value, unit, _ in rows), str(rows))
+    # Văn bản pháp quy tiếng Việt viết tiêu đề chương IN HOA TOÀN BỘ.
+    for text in ("CHƯƠNG 2. HỢP ĐỒNG LAO ĐỘNG", "Chương 2. Hợp đồng", "ĐIỀU 45. Kỷ luật"):
+        rows = numeric_guard.transform_numbers(text)
+        failures += not check(f"số chương/điều được che bất kể hoa thường: {text!r}",
+                              rows == [], str(rows))
+
     identifiers = numeric_guard.transform_numbers("Ban hành theo Luật 86/2015/QH13.")
     failures += not check("số hiệu văn bản không bị coi là số đo",
                           all(unit is None for _, unit, _ in identifiers), str(identifiers))

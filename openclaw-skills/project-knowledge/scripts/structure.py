@@ -36,7 +36,13 @@ LUẬT CỨNG:
   bạn biết chắc giá trị đúng phải là gì. Sửa lỗi nguồn là việc của người đối chiếu
   bản gốc: cổng số phía sau không phân biệt được "sửa đúng" với "bịa", nên nó chặn cả
   hai như nhau, và một lần bạn sửa đúng sẽ làm hỏng cả tài liệu.
-- Giữ marker nguồn như [[page N]] và tiêu đề/bảng khi có. Giữ ĐỦ mọi marker.
+- Giữ marker nguồn như [[page N]] và tiêu đề/bảng khi có. Giữ ĐỦ mọi marker, kể cả
+  marker ở ngay dòng đầu — đoạn dưới đây là một PHẦN của tài liệu dài, không phải
+  toàn bộ, nên nó thường mở đầu bằng một marker và marker đó phải là dòng đầu tiên
+  bạn xuất ra.
+- Đoạn này bị cắt ra giữa chừng nên có thể mở đầu hoặc kết thúc dở một chương/điều.
+  Cứ để dở. KHÔNG viết thêm tiêu đề nối kiểu "(tiếp theo)", không lặp lại tiêu đề
+  chương của đoạn trước, không thêm phần mở đầu hay kết thúc cho tròn ý.
 - Chỉ trả Markdown nội dung, không frontmatter, không lời dẫn, không code fence.
 - TUYỆT ĐỐI không viết nhận xét về công việc của chính bạn: không mở đầu, không kết
   luận, không thống kê số dòng, không liệt kê lỗi OCR bạn đã thấy. Ký tự cuối cùng
