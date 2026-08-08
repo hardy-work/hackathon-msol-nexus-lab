@@ -341,8 +341,13 @@ def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, An
             "supersedes": None,
             "visibility": "internal",
             "extractor": extractor,
-            "raw_paths": [f"raw/{doc_id}.md"] if extractor in {"markdown", "spreadsheet"}
-            else [],
+            # Mọi extractor sinh ĐÚNG MỘT artifact raw/<doc_id>.md đều khai ở đây.
+            # `van` từng bị bỏ sót dù nó cũng chỉ sinh một file như `markdown`, nên mọi
+            # tài liệu .docx/.pdf nhận raw_paths rỗng và Gate 3a chặn 100% — kho không
+            # bao giờ nhận được một tài liệu văn xuôi nào. `nexus` vẫn đứng ngoài vì
+            # workbook sinh nhiều artifact, do build_nexus_wiki khai riêng.
+            "raw_paths": [f"raw/{doc_id}.md"]
+            if extractor in {"markdown", "spreadsheet", "van"} else [],
         }
 
     destination = root / original

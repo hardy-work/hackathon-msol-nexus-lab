@@ -23,6 +23,7 @@ Bộ test khoá cả hai, cộng LUẬT OCR (phải chặn ở CODE, không ch�
 """
 from __future__ import annotations
 
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -268,6 +269,31 @@ def test_masking() -> int:
     inline = numeric_guard.transform_numbers("Nghỉ 12 ngày phép.")
     failures += not check("đơn vị cùng dòng vẫn nhận diện",
                           inline == [("12", "day", "12")], str(inline))
+    return failures
+
+
+# ------------------------------------------------- Stage 1 · intake khai raw_paths
+def test_intake_registers_raw_path() -> int:
+    """Extractor sinh đúng một raw/<doc_id>.md thì intake PHẢI khai nó vào registry.
+
+    `van` từng bị bỏ khỏi tập này, nên mọi tài liệu .docx/.pdf nhận `raw_paths: []`
+    và Gate 3a chặn 100% với 'tham chiếu raw không thuộc current registry'. Không
+    một tài liệu văn xuôi nào có thể vào kho — bằng chứng lane này chưa từng chạy trọn.
+    """
+    import intake
+
+    failures = 0
+    for kind, want in [("docx", "van"), ("pdf", "van"),
+                       ("markdown", "markdown"), ("xlsx", "spreadsheet")]:
+        got = intake.extractor_for("bat-ky", kind)
+        failures += not check(f"intake định tuyến {kind} → {want}", got == want, got)
+    single = {"markdown", "spreadsheet", "van"}
+    source = Path(intake.__file__).read_text(encoding="utf-8")
+    declared = re.search(r'"raw_paths": \[f"raw/\{doc_id\}\.md"\]\s*'
+                         r'if extractor in \{([^}]*)\}', source)
+    names = set(re.findall(r'"(\w+)"', declared.group(1))) if declared else set()
+    failures += not check("intake khai raw_paths cho MỌI lane một-artifact",
+                          names == single, f"{sorted(names)} != {sorted(single)}")
     return failures
 
 
@@ -529,6 +555,8 @@ def main() -> int:
     failures += test_extract()
     print("── numeric_guard · che định danh theo vị trí ──")
     failures += test_masking()
+    print("── Stage 1 · intake khai raw_paths ──")
+    failures += test_intake_registers_raw_path()
     print("── Stage 2 · đọc ảnh hai lượt đối chiếu ──")
     failures += test_vision_agreement()
     print("── Stage 3 · cắt khúc không mất chữ ──")
