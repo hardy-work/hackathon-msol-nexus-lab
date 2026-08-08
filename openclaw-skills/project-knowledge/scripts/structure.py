@@ -129,6 +129,14 @@ def structure_one(doc_id: str, raw_path: Path, timeout: int | None = None) -> tu
         warnings += [f"{tag}: {message}" if tag else message for message in piece_warnings]
         pieces.append(piece)
     if errors:
+        # Cổng chặn thì KHÔNG ghi structured/ — nhưng bản bị từ chối phải xem được, nếu
+        # không thì chẩn đoán một danh sách "rơi 5× `1` day" là đoán mò, và cách duy nhất
+        # để nhìn là chạy lại cả tài liệu. Ghi vào derived/ vì đây là trạng thái vận hành
+        # tái tạo được, không phải artifact của corpus.
+        reject_dir = ROOT / "derived/stage3-rejected"
+        reject_dir.mkdir(parents=True, exist_ok=True)
+        (reject_dir / f"{doc_id}.md").write_text("\n\n".join(pieces), encoding="utf-8")
+        errors.append(f"bản bị từ chối: derived/stage3-rejected/{doc_id}.md")
         return None, errors, warnings
     output = "\n\n".join(pieces)
     header = {

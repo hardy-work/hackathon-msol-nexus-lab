@@ -249,6 +249,19 @@ def test_masking() -> int:
         rows = numeric_guard.transform_numbers(text)
         failures += not check(f"che dấu phẩy không nuốt {text!r}",
                               any(value == want for value, _, _ in rows), str(rows))
+
+    # Footer chạy trang: số sau nhãn kiểm soát tài liệu là ĐỊNH DANH phiên bản.
+    footer = numeric_guard.transform_numbers("Lần ban hành: 1.0\n\nNgày ban hành:\n")
+    failures += not check("footer 'Lần ban hành: 1.0' không phải số đo",
+                          footer == [], str(footer))
+
+    # Đơn vị phải CÙNG DÒNG với con số. Vắt qua dòng là nhặt nhãn của đoạn sau.
+    across = numeric_guard.transform_numbers("Tổng cộng 20\n\nNgày làm việc\n")
+    failures += not check("đơn vị không được đọc vắt dòng",
+                          across == [("20", None, "20")], str(across))
+    inline = numeric_guard.transform_numbers("Nghỉ 12 ngày phép.")
+    failures += not check("đơn vị cùng dòng vẫn nhận diện",
+                          inline == [("12", "day", "12")], str(inline))
     return failures
 
 

@@ -63,6 +63,11 @@ MASK = [
     r"\b[A-Z]{2,}(?:\.[A-Z0-9]+)+",         # mã tài liệu: MOR.BO.PRO.01
     r"(?:Điều|Chương|Mục|Khoản|Điểm)\s*\d+(?:\s*[-–]\s*\d+)?",  # tham chiếu điều khoản: Điều 12, Điều 39–48
     r"\bv\d+(?:\.\d+)*",                   # phiên bản: v2.1
+    # Nhãn kiểm soát tài liệu tiếng Việt, đứng trong footer chạy trang. Con số sau
+    # chúng là ĐỊNH DANH phiên bản/lần in, không phải số đo. Chấp nhận cả bản OCR mất
+    # dấu ('Lan ban hanh') vì footer là chỗ OCR hỏng nặng nhất.
+    r"(?:Phiên|Phien)\s*(?:bản|ban)\s*:?\s*[\d.]+",
+    r"(?:Lần|Lan)\s*(?:ban\s*hành|ban\s*hanh)\s*:?\s*[\d.]+",
     r"§[\d.]+",                            # tham chiếu mục: §5.3
     r"\b[A-Z]{1,3}\d+(?::[A-Z]{1,3}\d+)?", # ô Excel: H14, B3:B11
     r"\b[A-Z]{1,10}-\d+\b",                # mã task: AU-1, NEX-123
@@ -202,8 +207,13 @@ def _canonical_transform_number(token):
 
 def unit_after(tail):
     """Đọc đơn vị NGAY SAU con số (tối đa 2 từ chữ, cho 'ký tự') -> dạng chuẩn hoặc
-    None. None = không nhận diện được đơn vị -> bỏ qua khớp đơn vị cho token này."""
-    match = re.match(r"\s*([^\W\d_]+)(?:\s+([^\W\d_]+))?", tail, re.UNICODE)
+    None. None = không nhận diện được đơn vị -> bỏ qua khớp đơn vị cho token này.
+
+    Chỉ nhìn trong CÙNG MỘT DÒNG. Bản trước dùng `\\s*` nên vắt qua cả dòng trống và
+    nhặt chữ đầu của đoạn sau làm đơn vị: footer chạy trang `Lần ban hành: 1.0` ⏎⏎
+    `Ngày ban hành:` sinh ra một "số đo 1 ngày" không hề tồn tại. Số đo và đơn vị của
+    nó luôn đứng cạnh nhau trong một dòng; qua dấu xuống dòng là sang ý khác."""
+    match = re.match(r"[^\S\n]*([^\W\d_]+)(?:[^\S\n]+([^\W\d_]+))?", tail, re.UNICODE)
     if not match:
         return None
     first = match.group(1).lower()
