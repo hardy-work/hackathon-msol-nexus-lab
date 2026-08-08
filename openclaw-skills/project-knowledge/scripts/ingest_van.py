@@ -19,6 +19,7 @@ báo, số trong đó không phải nguyên văn.
 """
 import json
 import re
+import unicodedata
 import subprocess
 import sys
 import time
@@ -79,6 +80,123 @@ Nhiệm vụ: viết trang `wiki/sources/{doc_id}.md` — trang loại `source` 
 6. Kết bài có một mục "## Nguồn" ghi: doc_id, và raw_paths.
 7. Gọn, đủ để người đọc biết tài liệu chứa gì và tra tiếp ở đâu — KHÔNG chép nguyên văn.
 """
+
+
+SECTION_PROMPT = """Bạn đang thực hiện STAGE 4 (WIKI-INGEST) của hệ thống LLM-wiki.
+Nhiệm vụ: viết trang `wiki/sources/{doc_id}--{slug}.md` — trang loại `source` cho MỘT
+CHƯƠNG của tài liệu "{title}": **{section_title}**.
+
+Trang tổng quan của tài liệu đã có và chỉ tóm tắt bố cục. Trang này là nơi nội dung
+chương thật sự được đánh chỉ mục để tra cứu, nên nó phải CHI TIẾT hơn hẳn: đi theo
+từng Điều, giữ đủ điều kiện/ngưỡng/thủ tục để người đọc trả lời được câu hỏi cụ thể
+mà không phải mở tài liệu gốc.
+
+===== HỢP ĐỒNG (CLAUDE.md) =====
+{contract}
+
+===== SCHEMA MÁY ĐỌC (schema.yml) =====
+{schema}
+
+===== NỘI DUNG CHƯƠNG (trích structured/{doc_id}.md) =====
+Đây là TOÀN BỘ nội dung được phép dùng. Không dùng gì ngoài đây, kể cả kiến thức về
+các chương khác của tài liệu.
+{ocr_note}
+{raw}
+
+===== YÊU CẦU =====
+1. Trả về ĐÚNG nội dung file markdown, ký tự ĐẦU TIÊN là `-` của dòng `---`. KHÔNG rào
+   ```, KHÔNG lời dẫn trước `---`, KHÔNG lời bàn/tự-đánh-giá SAU nội dung trang.
+2. Frontmatter BẮT BUỘC, đúng thứ tự:
+   page: source
+   name: "{title} — {section_title}"
+   doc_id: {doc_id}
+   version: {version}
+   domain: {domain}          # DIMENSION — chọn đúng giá trị này, không đổi
+   visibility: {visibility}
+   raw_paths:
+     - {raw_path}
+   section: "{section_title}"
+   part_of: wiki/sources/{doc_id}.md
+   KHÔNG thêm `project`.
+{facts_rule}
+3. Thân bài: đi theo TỪNG ĐIỀU của chương này, mỗi Điều một mục con, nêu đủ nghĩa vụ,
+   điều kiện, thủ tục và ngưỡng. Đây KHÔNG phải bản tóm tắt một dòng — người đọc phải
+   tra được chi tiết ở đây.
+4. TUYỆT ĐỐI KHÔNG bịa. Chỉ viết điều CÓ trong nội dung chương trên.
+5. Con số: phải là số CÓ THẬT trong chương này và ghi rõ trích từ Điều nào. Không tự
+   cộng/suy ra số mới. Số hiệu văn bản, mã tài liệu, số Điều/Chương là ĐỊNH DANH.
+{ocr_rule}
+6. Kết bài có một mục "## Nguồn" ghi: doc_id, raw_paths, và trang tổng quan
+   `wiki/sources/{doc_id}.md`.
+"""
+
+
+# ------------------------------------------------- trang theo CHƯƠNG (tài liệu dài)
+# Trang `source` cố ý là bản TÓM TẮT — prompt trên ghi rõ "KHÔNG chép nguyên văn",
+# "đủ để người đọc biết tài liệu chứa gì và tra tiếp ở đâu". Với một tài liệu vài
+# trang thì đúng. Với bản nội quy 38 trang thì trang wiki còn 9% độ dài structured,
+# và "tra tiếp" KHÔNG CÓ CƠ CHẾ NÀO: truy hồi chỉ phục vụ `wiki/`, nên 91% nội dung
+# không bao giờ được đánh chỉ mục. Kho tìm đúng trang, trang không chứa câu trả lời,
+# Gate 4 nói `not_in_kb` — kho có tài liệu mà bảo không biết.
+#
+# Luồng SỐ không gặp chuyện này vì workbook sinh nhiều trang (mỗi người một trang).
+# Luồng VĂN sinh đúng một trang cho mọi tài liệu, dài bao nhiêu cũng vậy. Nên tài liệu
+# dài được cắt thêm trang theo CHƯƠNG — ranh giới có thật trong văn bản, không phải
+# cửa sổ trượt — và mỗi trang chương đi qua đúng những cổng như trang tổng quan.
+SECTION_MIN_CHARS = 20000
+# Không dựa vào cú pháp markdown. `structured/` do Stage 3 sinh trên 8 khúc ĐỘC LẬP,
+# nên cách đánh dấu tiêu đề không nhất quán: chương 3–5 và 8–9 có tiền tố `## `, còn
+# chương 2, 6, 7, 10 là dòng trần. Nhận diện theo MẪU CHỮ, tiền tố `#` là tuỳ chọn.
+CHAPTER_HEADING = re.compile(r"(?im)^[#\s]*(CHƯƠNG\s+(\d+)\.\s+[^\n]*?)\s*$")
+# Dòng mục lục khớp y hệt tiêu đề thật, chỉ khác ở số trang cuối dòng.
+TOC_TAIL = re.compile(r"\s\d+$")
+FRONT_SECTION = ("phan-dau", "Phần đầu: bìa, kiểm soát tài liệu, mục lục")
+
+
+def slugify(text):
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    text = text.replace("đ", "d").replace("Đ", "D").lower()
+    return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", text)).strip("-")[:60]
+
+
+def chapter_marks(body):
+    """Vị trí tiêu đề chương THÂN BÀI: bỏ dòng mục lục, mỗi số chương lấy lần cuối."""
+    last = {}
+    for match in CHAPTER_HEADING.finditer(body):
+        title = " ".join(match.group(1).split())
+        if TOC_TAIL.search(title):
+            continue
+        last[match.group(2)] = (match.start(), title)
+    marks = sorted(last.values())
+    # Giữ dãy tăng dần theo vị trí lẫn số chương — một tiêu đề nhắc lại ở giữa thân
+    # bài không được cắt tài liệu thành hai mảnh chồng nhau.
+    kept, seen = [], -1
+    for start, title in marks:
+        number = int(CHAPTER_HEADING.match(title).group(2)) if CHAPTER_HEADING.match(title) else 0
+        if number > seen:
+            kept.append((start, title))
+            seen = number
+    return kept
+
+
+def split_sections(body):
+    """Cắt structured theo CHƯƠNG. Trả [(slug, tiêu đề, nội dung)], phủ TOÀN BỘ body.
+
+    Phần trước tiêu đề chương đầu tiên — bìa, bảng kiểm soát tài liệu, mục lục — thành
+    một mục riêng chứ không bị bỏ: đó là nơi giữ ngày hiệu lực, phiên bản và người
+    phê duyệt.
+    """
+    marks = chapter_marks(body)
+    if len(marks) < 2:
+        return []
+    sections = []
+    if marks[0][0] > 0:
+        sections.append((*FRONT_SECTION, body[:marks[0][0]]))
+    for index, (start, title) in enumerate(marks):
+        end = marks[index + 1][0] if index + 1 < len(marks) else len(body)
+        sections.append((slugify(title), title, body[start:end]))
+    return sections
 
 
 def load_docs():
@@ -153,13 +271,36 @@ def ingest_one(doc_id, d, contract, schema, timeout=600):
             "   đơn vị phải khớp chữ đứng cạnh số ở đó. Trỏ sai mục thì bị chặn, kể cả khi con số\n"
             "   có thật ở một mục khác. Không chắc số nằm ở mục nào thì ĐỪNG khai trường đó.") \
             .format(doc_id=doc_id, raw_path=raw_path.relative_to(ROOT).as_posix())
-    prompt = PROMPT.format(
+    common = dict(
         doc_id=doc_id, title=d.get("title", doc_id), domain=d["domain"],
         version=int(registry["version"]), visibility=registry.get("visibility", "internal"),
-        contract=contract, schema=schema, raw=structured, ocr_note=ocr_note,
+        contract=contract, schema=schema, ocr_note=ocr_note,
         ocr_rule=ocr_rule, facts_rule=facts_rule,
         raw_path=raw_path.relative_to(ROOT).as_posix())
 
+    pages, elapsed = [], 0.0
+    text, dt, err = render(PROMPT.format(raw=structured, **common), structured, timeout)
+    elapsed += dt
+    if err:
+        return None, elapsed, err
+    pages.append((f"wiki/sources/{doc_id}.md", text))
+
+    # Tài liệu dài: thêm một trang cho mỗi CHƯƠNG. Trang tổng quan vẫn giữ nguyên vai
+    # trò mục lục; trang chương mới là chỗ nội dung thật sự vào được chỉ mục.
+    sections = split_sections(structured) if len(structured) >= SECTION_MIN_CHARS else []
+    for slug, section_title, section_text in sections:
+        prompt = SECTION_PROMPT.format(raw=section_text, slug=slug,
+                                       section_title=section_title, **common)
+        text, dt, err = render(prompt, section_text, timeout)
+        elapsed += dt
+        if err:
+            return None, elapsed, f"[{slug}] {err}"
+        pages.append((f"wiki/sources/{doc_id}--{slug}.md", text))
+    return pages, elapsed, None
+
+
+def render(prompt, scope, timeout):
+    """Gọi Opus, dọn đầu ra, soi cổng với ĐÚNG phạm vi nguồn của trang đó."""
     t0 = time.time()
     out = subprocess.run(
         [models.CLAUDE, "-p", "--model", models.HEAVY, "--allowedTools", ""],
@@ -177,7 +318,7 @@ def ingest_one(doc_id, d, contract, schema, timeout=600):
         if not m:
             return None, dt, "không tìm thấy frontmatter (---)"
         text = text[m.start():]
-    problems = validate_page(structured, text, ROOT)
+    problems = validate_page(scope, text, ROOT)
     if problems:
         return None, dt, "GATE 2/WIKI chặn: " + "; ".join(problems)
     return text + "\n", dt, None
@@ -213,14 +354,20 @@ def main():
         if write_pages is not None and page_rel not in write_pages:
             print(f"{D}↷{OFF} {doc_id}: page không impacted, giữ nguyên")
             continue
-        text, dt, err = ingest_one(doc_id, docs[doc_id], contract, schema)
+        pages, dt, err = ingest_one(doc_id, docs[doc_id], contract, schema)
         tot += dt
         if err:
             print(f"{R}✗{OFF} {doc_id:20s} {dt:5.1f}s  {err}")
             continue
-        (ROOT / "wiki/sources" / f"{doc_id}.md").write_text(text, encoding="utf-8")
+        # Ghi TẤT CẢ hoặc KHÔNG GHI GÌ: một tài liệu nửa trang tổng quan mới, nửa trang
+        # chương cũ là một kho tự mâu thuẫn. Lỗi ở trên đã `continue` trước khi tới đây.
+        for rel, text in pages:
+            (ROOT / rel).write_text(text, encoding="utf-8")
         done.append(doc_id)
-        print(f"{G}✓{OFF} {doc_id:20s} {dt:5.1f}s  {len(text):5d} ký tự → wiki/sources/{doc_id}.md")
+        chars = sum(len(text) for _, text in pages)
+        extra = f" (+{len(pages) - 1} trang chương)" if len(pages) > 1 else ""
+        print(f"{G}✓{OFF} {doc_id:20s} {dt:5.1f}s  {chars:6d} ký tự → "
+              f"wiki/sources/{doc_id}.md{extra}")
 
     # Stage 4 (phần cuối, CLAUDE.md §4): đồng bộ index.md + append log.md — bằng MÁY.
     if done:

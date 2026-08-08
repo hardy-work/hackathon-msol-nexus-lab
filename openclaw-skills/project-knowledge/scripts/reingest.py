@@ -179,8 +179,17 @@ def _page_inventory(root: Path, doc_id: str) -> tuple[set[str], set[str]]:
     """Return expected/existing generated pages for one document identity."""
     expected = {f"wiki/sources/{doc_id}.md"}
     if doc_id != "nexus-plan":
+        # Tài liệu văn xuôi dài sinh thêm một trang cho mỗi CHƯƠNG
+        # (`wiki/sources/<doc_id>--<slug>.md`). Không kể chúng vào `existing` thì
+        # re-ingest coi chúng là trang lạ và bỏ mặc: bản v2 có trang tổng quan mới
+        # nhưng vẫn còn nguyên các trang chương của v1.
+        existing = {page.relative_to(root).as_posix()
+                    for page in sorted((root / "wiki/sources").glob(f"{doc_id}--*.md"))}
+        expected |= existing
         source = root / f"wiki/sources/{doc_id}.md"
-        return expected, {source.relative_to(root).as_posix()} if source.is_file() else set()
+        if source.is_file():
+            existing.add(source.relative_to(root).as_posix())
+        return expected, existing
     document = document_registry.current(doc_id, root)
     facts_path = root / artifact_rel(document, "nexus-people", "facts")
     payload = json.loads(facts_path.read_text(encoding="utf-8"))

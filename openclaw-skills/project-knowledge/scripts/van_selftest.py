@@ -272,6 +272,40 @@ def test_masking() -> int:
     return failures
 
 
+# --------------------------------------- Stage 4 · cắt trang theo chương
+def test_split_sections() -> int:
+    """Tài liệu dài phải sinh thêm trang theo CHƯƠNG, phủ 100% và không mất chữ.
+
+    Trang `source` cố ý là bản tóm tắt, nên với tài liệu 38 trang nó chỉ còn 9% độ
+    dài structured. Truy hồi chỉ phục vụ `wiki/`, nên 91% nội dung không bao giờ
+    được đánh chỉ mục: kho tìm đúng trang, trang không chứa câu trả lời, và Gate 4
+    nói `not_in_kb` cho một tài liệu kho ĐANG CÓ.
+    """
+    failures = 0
+    # Định dạng tiêu đề KHÔNG nhất quán — Stage 3 chạy nhiều khúc độc lập nên chương
+    # này có `## `, chương kia là dòng trần. Và mục lục khớp y hệt, chỉ khác số trang.
+    body = (
+        "Bìa và bảng kiểm soát tài liệu\n\n"
+        "CHƯƠNG 1. NHỮNG QUY ĐỊNH CHUNG 5\n"
+        "CHƯƠNG 2. HỢP ĐỒNG LAO ĐỘNG 7\n\n"
+        "## CHƯƠNG 1. NHỮNG QUY ĐỊNH CHUNG\n\nĐiều 1. Giải thích từ ngữ.\n\n"
+        "CHƯƠNG 2. HỢP ĐỒNG LAO ĐỘNG\n\nĐiều 4. Nghỉ 12 ngày phép.\n"
+    )
+    sections = ingest_van.split_sections(body)
+    slugs = [slug for slug, _, _ in sections]
+    failures += not check("cắt chương: bỏ dòng mục lục, giữ tiêu đề thân bài",
+                          slugs == ["phan-dau", "chuong-1-nhung-quy-dinh-chung",
+                                    "chuong-2-hop-dong-lao-dong"], str(slugs))
+    failures += not check("cắt chương: nối lại khớp nguyên văn",
+                          "".join(text for _, _, text in sections) == body,
+                          f"{sum(len(t) for _, _, t in sections)} vs {len(body)}")
+    failures += not check("cắt chương: phần bìa/mục lục không bị bỏ",
+                          "Bìa và bảng kiểm soát" in sections[0][2], sections[0][2][:40])
+    single = ingest_van.split_sections("## CHƯƠNG 1. A\n\nnội dung\n")
+    failures += not check("cắt chương: một chương thì không cắt", single == [], str(single))
+    return failures
+
+
 # ------------------------------------------------- Stage 1 · intake khai raw_paths
 def test_intake_registers_raw_path() -> int:
     """Extractor sinh đúng một raw/<doc_id>.md thì intake PHẢI khai nó vào registry.
@@ -555,6 +589,8 @@ def main() -> int:
     failures += test_extract()
     print("── numeric_guard · che định danh theo vị trí ──")
     failures += test_masking()
+    print("── Stage 4 · cắt trang theo chương ──")
+    failures += test_split_sections()
     print("── Stage 1 · intake khai raw_paths ──")
     failures += test_intake_registers_raw_path()
     print("── Stage 2 · đọc ảnh hai lượt đối chiếu ──")
