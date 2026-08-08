@@ -106,9 +106,11 @@ def read_output_tab(file_id: str, tab_name: str, token: str) -> list[dict]:
     combined_idx = _find_col_index(header, "Related Assignee/Task")
     assignee_idx = _find_col_index(header, "Related Assignee")
     task_idx = _find_col_index(header, "Task")
+    if task_idx is None:
+        task_idx = _find_col_index(header, "Related Task")
     if combined_idx is None and (assignee_idx is None or task_idx is None):
         raise ValueError(
-            f'Không tìm thấy cột "Related Assignee/Task" (hoặc cặp "Related Assignee" + "Task") trong tab "{tab_name}"'
+            f'Không tìm thấy cột "Related Assignee/Task" (hoặc cặp "Related Assignee" + "Task"/"Related Task") trong tab "{tab_name}"'
         )
 
     def cell(row: list, idx: int | None) -> str:
