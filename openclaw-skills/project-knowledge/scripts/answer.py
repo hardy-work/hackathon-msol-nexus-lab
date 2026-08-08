@@ -157,6 +157,16 @@ FIELD_PATTERNS = {
 }
 
 
+# MẠNH: chỉ gặp trong ngữ cảnh workbook Nexus, đủ để tự định tuyến.
+STRONG_TASK_SIGNAL = r"api\s+login|taskid|\bsprint\b|\bbacklog\b"
+# YẾU: từ thông dụng, xuất hiện đầy trong văn bản nhân sự/quy trình. Phải đi kèm
+# một tên trường của bảng task thì mới coi là hỏi bảng.
+WEAK_TASK_SIGNAL = r"\btask\b|cong viec"
+TASK_FIELD_SIGNAL = (r"priority|uu tien|status|trang thai|progress|tien do|"
+                     r"remaining|con lai|assignee|\bpic\b|estimate|uoc luong|"
+                     r"deadline|due date")
+
+
 def inferred_docs(q):
     """Chọn sheet theo ngữ cảnh khi người hỏi không nêu tên sheet.
 
@@ -182,8 +192,16 @@ def inferred_docs(q):
         return ["nexus-master-schedule"]
     # Tên task/field phổ biến đã nằm trong Sprint 1. Chỉ dùng khi câu hỏi có
     # dấu hiệu hỏi task, tránh kéo một câu mở bất kỳ vào bảng.
-    if re.search(r"api\s+login|taskid|task|cong viec|priority|uu tien|remaining|con lai",
-                 qa):
+    #
+    # Tín hiệu phải phân biệt được MẠNH và YẾU. Bản trước gộp chung, nên `cong viec`
+    # — cụm có mặt trong gần như mọi câu hỏi nhân sự tiếng Việt — một mình kéo được
+    # câu hỏi vào bảng Sprint 1. "Thủ tục bàn giao công việc khi nghỉ việc thế nào?"
+    # được trả lời bằng danh sách task JWT của dự án Nexus, và trả về `in_kb`: tự tin
+    # và sai domain, tệ hơn hẳn im lặng. Bậc 1 là bậc TẤT ĐỊNH và chạy trước, nên nó
+    # thắng mọi bậc sau — định tuyến sai ở đây không có gì cứu được.
+    if re.search(STRONG_TASK_SIGNAL, qa):
+        return ["nexus-sprint1"]
+    if re.search(WEAK_TASK_SIGNAL, qa) and re.search(TASK_FIELD_SIGNAL, qa):
         return ["nexus-sprint1"]
     return []
 
