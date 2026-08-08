@@ -70,13 +70,20 @@ def _by_artifact(root: Path, paths: list[str]) -> dict[str, str]:
 
 
 def _artifact_paths(root: Path, document: dict) -> list[str]:
-    """Include implicit facts companions for legacy md-only registry entries."""
+    """Include implicit facts companions for legacy md-only registry entries.
+
+    `raw_paths` dùng dấu gạch chéo. `Path.with_suffix()` trả về dạng của HĐH, nên
+    trên Windows bạn đồng hành sinh ra là `raw\\plan@v1.facts.json` — không khớp
+    chuỗi nào trong `known`, dù file đó đã được khai. Đường dẫn bị thêm lần thứ hai,
+    rồi `_by_artifact` thấy hai path cùng quy về `plan::facts` và chặn. Chuẩn hoá về
+    posix để phép so sánh nằm trên cùng một bảng chữ.
+    """
     paths = list(document.get("raw_paths") or [])
     known = set(paths)
     for rel in list(paths):
         if not str(rel).endswith(".md"):
             continue
-        facts = str(Path(rel).with_suffix(".facts.json"))
+        facts = Path(rel).with_suffix(".facts.json").as_posix()
         if facts not in known and (root / facts).is_file():
             paths.append(facts)
             known.add(facts)

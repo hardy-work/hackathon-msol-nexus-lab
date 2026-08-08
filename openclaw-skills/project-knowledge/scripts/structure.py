@@ -31,6 +31,12 @@ Chỉ tổ chức lại văn bản raw dưới đây thành Markdown mạch lạ
 LUẬT CỨNG:
 - Không thêm thông tin, không suy luận, không tóm tắt làm mất điều kiện.
 - Giữ nguyên mọi số, ngày, đơn vị và số hiệu; không làm tròn hoặc đổi đơn vị.
+- KHÔNG SỬA LỖI NGUỒN. Văn bản raw có thể là kết quả OCR và chứa lỗi thấy rõ: sai
+  dấu tiếng Việt ("gid" thay vì "giờ"), dính số thứ tự ("437." thay vì "43.7."), và
+  sai cả chữ số ("385" thay vì "365"). Chép NGUYÊN XI, kể cả khi bạn biết chắc giá
+  trị đúng phải là gì. Sửa lỗi nguồn là việc của người đối chiếu bản gốc, không phải
+  của bạn: cổng số phía sau không phân biệt được "sửa đúng" với "bịa", nên nó chặn cả
+  hai như nhau, và một lần bạn sửa đúng sẽ làm hỏng cả tài liệu.
 - Giữ marker nguồn như [[page N]] và tiêu đề/bảng khi có.
 - Chỉ trả Markdown nội dung, không frontmatter, không lời dẫn, không code fence.
 

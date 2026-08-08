@@ -5,10 +5,10 @@
 | Stage 0 · Inventory | `scripts/inventory.py` | Detects exact/near duplicates and halts on unregistered canonical choices |
 | Stage 1 · Intake | `scripts/intake.py`, `originals/`, `documents.yml`, Gate 1 | Hash + filename identity + semantic workbook digest; duplicate/no-op/initial/re-ingest decision; new version is registered only in the supplied staging root |
 | Stage 2 · Extract | `extract_nexus.py`, `extract_van.py`, `extract_markdown.py` | Nexus `.xlsx` is live; DOCX/PDF run whenever `extract/van-docs.yml` lists a registered document; OCR stays opt-in (`--ocr`) because tesseract output is not reproducible, and its text is frozen into `ocr/` so rebuilds stay deterministic; Markdown source pass-through is deterministic |
-| Stage 3 · Structure | `structure.py` → `structured/` | Independent prose pass; exact date/number/unit transform gate |
+| Stage 3 · Structure | `structure.py` → `structured/` | Independent prose pass; exact date/number/unit transform gate. Reorganises only — the prompt forbids repairing visible OCR damage, because the gate cannot tell a correct repair from a plausible invention (CLAUDE.md §4.1) |
 | Stage 4 · Wiki ingest | `build_nexus_wiki.py`, `ingest_van.py` | Reads Stage 3 output; model has no filesystem tools; `validate_page()` gates prose body and YAML declarations separately, then the script writes |
 | Re-ingest | `reingest.py`, `ingest_flow.py` | Raw diff + authoritative selective page write-set; unchanged raw/page bytes are retained; new/retired pages handled in isolated `ingest/<doc>@vN` worktree |
-| Gate 2/4 | `numeric_guard.py` | Citation-scoped exact number/date/unit checks; no rounded-value allowance; identifiers masked by real position, not by proximity |
+| Gate 2/4 | `numeric_guard.py` | Citation-scoped exact number/date/unit checks; no rounded-value allowance; identifiers masked by real position, not by proximity. `check_transform` compares values first, then units of surviving values, so a legitimate reflow is not reported as invention |
 | Gate 3a · numeric declare | `numeric_guard.check_page_declarations` | Copy-mode `{facts, unit, src}` is resolved back to the exact section `src` names; wrong section, wrong unit, missing locator and OCR-sourced numbers all fail closed at Gate 3a and again in the runtime guard |
 | Gate 3a | `lint.py` | Contract, current version, visibility, references and numeric provenance |
 | Gate 3b | `review.py` | Sonnet review is opt-in; previous Nexus run passed 8/8 |

@@ -108,6 +108,22 @@ ngay sau `8` là dấu phẩy — một khai báo đúng bị báo là "số m�
 thật. Che theo khoảng cách sẽ để định danh nuốt số đo đứng cạnh nó — `Điều 7: 8 ký tự`
 mất số 8 — và cửa sổ của cổng khai báo luôn bắt đầu bằng chính locator.
 
+`check_transform` so hai pha. Pha 1 chỉ hỏi "có trị số nào chưa từng tồn tại không" —
+đây là câu hỏi chống bịa và không bao giờ được nới. Pha 2 chỉ xét đơn vị của những trị
+số còn nguyên ở cả hai vế: đổi đơn vị thật (`30 phút` → `30 giờ`) vẫn là lỗi cứng, còn
+được/mất chú thích đơn vị là cảnh báo. So theo cặp `(trị số, đơn vị)` như bản trước thì
+hai thao tác dàn lại hoàn toàn hợp lệ — đưa số vào ô bảng, và phục hồi dấu tiếng Việt
+trên từ đơn vị — đều bị báo là "số mới", và số bịa thật lẫn vào giữa đống nhiễu đó.
+
+### 4.1 Stage 3 KHÔNG sửa lỗi nguồn
+
+Trên nguồn OCR, LLM có xu hướng sửa lỗi nó nhìn thấy: `385 ngày` → `365 ngày` theo Bộ
+luật Lao động, `437.` → `43.7.` theo mạch đánh số. Prompt Stage 3 cấm việc này. Cổng số
+không phân biệt được "sửa đúng nhờ kiến thức ngoài" với "bịa nghe hợp lý" — nếu nó cho
+bản sửa đúng đi qua thì nó cũng sẽ cho số bịa đi qua. Lỗi nguồn phải nằm nguyên trong
+`raw/` và `structured/`; nó không thành sự thật vì LUẬT OCR chặn khai `facts`, và nó
+được sửa bằng bản gốc mới do người nạp lại, không bằng suy đoán của model.
+
 `raw/` là provenance; truy vấn bảng dùng DuckDB, không đọc raw trực tiếp.
 
 Gate 3a lint current pages và đồng thời quét page lịch sử đã supersede/retire. Mọi page

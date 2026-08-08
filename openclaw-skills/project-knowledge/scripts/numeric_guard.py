@@ -69,6 +69,10 @@ MASK = [
     r"[Ss]print\s*\d+(?:\s*[-–]\s*\d+)?",  # Sprint 0, Sprint 0–7
     r"\bbậc\s*\d",                         # bậc 1
     r"\b\d+\.\d+\.",                       # số thứ tự mục: 2.4.
+    # Cùng số thứ tự mục nhưng OCR đọc dấu chấm cuối thành dấu phẩy: '42.29,'.
+    # Thắt chặt hơn bản có dấu chấm (tối đa 2 chữ số mỗi vế, phải hết từ) vì dấu
+    # phẩy còn là dấu thập phân/phân cách nghìn — không được nuốt '1.234,' hay '43,5'.
+    r"\b\d{1,2}\.\d{1,2},(?=\s|$)",        # số thứ tự mục hỏng dấu: 42.29,
     r"\b2\.\d+\.Sprint",                   # tên sheet
 ]
 
@@ -82,17 +86,27 @@ TRANSFORM_TOKEN = re.compile(
 
 # ---- ĐƠN VỊ (pha 2) --------------------------------------------------------
 # Câu trả lời viết đơn vị bằng NHIỀU cách ("h" · "giờ" · "hour"); facts lưu một chuỗi
-# chuẩn. Cần một bảng đồng nghĩa gom về DẠNG CHUẨN để so. Chỉ gom các đơn vị thực sự
-# xuất hiện trong facts Nexus (hour/task). Từ
+# chuẩn. Cần một bảng đồng nghĩa gom về DẠNG CHUẨN để so. Từ
 # KHÔNG có trong bảng -> coi như "không phải đơn vị nhận diện được" -> BỎ QUA khớp đơn
 # vị (lùi về chỉ soi trị số) — giữ cổng khỏi báo động giả trên văn xuôi thường.
+#
+# Bảng đầu tiên chỉ phủ workbook Nexus (hour/task). Văn bản hành chính tiếng Việt dùng
+# một bộ đơn vị khác hẳn — 'ngày' là đơn vị dày đặc nhất trong một bản nội quy lao động
+# (45 ngày báo trước, 12 ngày phép, 30 ngày...) mà lại không có trong bảng, nên phần
+# khớp đơn vị tự tắt cho đúng những con số quan trọng nhất. Bổ sung theo đúng nguyên
+# tắc cũ: chỉ thêm đơn vị THỰC SỰ gặp trong corpus, không thêm cho đủ bộ.
 UNIT_SYN = {
     "hour": "hour", "hours": "hour", "h": "hour", "hrs": "hour",
     "giờ": "hour", "tiếng": "hour",
     "task": "task", "tasks": "task", "việc": "task", "công việc": "task",
     "phút": "minute", "minute": "minute", "minutes": "minute", "min": "minute",
+    "ngày": "day", "day": "day", "days": "day",
+    "tuần": "week", "week": "week", "weeks": "week",
     "tháng": "month", "month": "month", "months": "month",
     "năm": "year", "year": "year", "years": "year",
+    "lần": "time", "lượt": "time",
+    "đồng": "vnd", "vnd": "vnd", "vnđ": "vnd",
+    "người": "person", "người lao động": "person",
     "ký tự": "char", "ký-tự": "char", "char": "char",
     "character": "char", "characters": "char",
 }
@@ -101,6 +115,8 @@ UNIT_SYN = {
 FACT_UNIT_CANON = {
     "hour": "hour", "task": "task", "ratio": "ratio",
     "ký tự": "char", "phút": "minute", "tháng": "month", "năm": "year",
+    "ngày": "day", "tuần": "week", "lần": "time", "đồng": "vnd",
+    "người": "person",
 }
 
 
@@ -238,26 +254,59 @@ def transform_numbers(text):
     return rows
 
 
+def _units_of(rows, number):
+    """Bộ đếm đơn vị nhận diện được của MỘT trị số (bỏ qua token không rõ đơn vị)."""
+    return Counter(u for n, u, _ in rows if n == number and u)
+
+
 def check_transform(before, after, *, allow_loss=False):
-    """Numeric transform gate.
+    """Numeric transform gate — HAI PHA: trị số trước, đơn vị sau.
 
     Stage 3 uses the strict default (no new number and no lost unit-bearing
     number). Stage 4 summaries pass ``allow_loss=True`` because omission is
     allowed, while invention/rounding is still blocked.
+
+    Vì sao tách hai pha. Bản trước so theo CẶP `(trị số, đơn vị)`, nên chỉ cần đơn vị
+    đổi cách nhận diện là cặp khoá đổi và cổng báo "số mới" — dù trị số không hề đổi.
+    Hai đường đi hoàn toàn hợp lệ vấp phải điều này:
+
+      * dàn lại thành bảng    '40 giờ'  ->  '| 40 | giờ |'   (40,hour) -> (40,None)
+      * phục hồi dấu tiếng Việt '40 gid' ->  '40 giờ'        (40,None) -> (40,hour)
+
+    Cả hai đều bị báo là bịa số, còn số bịa thật thì lẫn vào giữa đống nhiễu đó. Tách
+    ra thì mỗi pha nói đúng một chuyện: pha 1 trả lời "có con số nào chưa từng tồn tại
+    không" — đây mới là câu hỏi chống bịa, và nó KHÔNG được nới. Pha 2 chỉ xét những
+    trị số có mặt ở cả hai vế, nên đổi đơn vị thật (giờ -> phút) vẫn là lỗi cứng, còn
+    được/mất chú thích đơn vị chỉ là cảnh báo. An toàn vì trang structured không phải
+    nguồn sự thật: số chỉ thành `facts` qua Gate 3a, nơi `check_declaration()` đối
+    chiếu cả trị số lẫn đơn vị với raw/ — và với nguồn OCR thì LUẬT OCR chặn từ đầu.
     """
     src = transform_numbers(before)
     dst = transform_numbers(after)
-    src_counts = Counter((n, u) for n, u, _ in src)
-    dst_counts = Counter((n, u) for n, u, _ in dst)
     errors, warnings = [], []
-    for key, count in (dst_counts - src_counts).items():
-        errors.append(f"số mới/đổi/làm tròn `{key[0]}`"
-                      + (f" {key[1]}" if key[1] else ""))
+
+    # ---- PHA 1 · TRỊ SỐ. Bịa/làm tròn là lỗi cứng, không quan tâm đơn vị.
+    src_values = Counter(n for n, _, _ in src)
+    dst_values = Counter(n for n, _, _ in dst)
+    for number, count in (dst_values - src_values).items():
+        errors.append(f"số mới/đổi/làm tròn `{number}`")
     if not allow_loss:
-        lost = src_counts - dst_counts
-        for (number, unit), count in lost.items():
-            message = f"rơi {count}× `{number}`" + (f" {unit}" if unit else "")
-            (errors if unit else warnings).append(message)
+        for number, count in (src_values - dst_values).items():
+            units = sorted(_units_of(src, number))
+            message = f"rơi {count}× `{number}`" + (f" {'/'.join(units)}" if units else "")
+            (errors if units else warnings).append(message)
+
+    # ---- PHA 2 · ĐƠN VỊ, chỉ cho trị số còn nguyên ở cả hai vế.
+    for number in sorted(set(src_values) & set(dst_values)):
+        gained = _units_of(dst, number) - _units_of(src, number)
+        lost = _units_of(src, number) - _units_of(dst, number)
+        if gained and lost:
+            errors.append(f"đổi đơn vị `{number}`: "
+                          f"{'/'.join(sorted(lost))} -> {'/'.join(sorted(gained))}")
+        elif gained:
+            warnings.append(f"`{number}` được gắn đơn vị {'/'.join(sorted(gained))}")
+        elif lost and not allow_loss:
+            warnings.append(f"`{number}` mất chú thích đơn vị {'/'.join(sorted(lost))}")
     return errors, warnings
 
 

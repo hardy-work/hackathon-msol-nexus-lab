@@ -238,6 +238,46 @@ def test_masking() -> int:
     identifiers = numeric_guard.transform_numbers("Ban hành theo Luật 86/2015/QH13.")
     failures += not check("số hiệu văn bản không bị coi là số đo",
                           all(unit is None for _, unit, _ in identifiers), str(identifiers))
+
+    # OCR đọc dấu chấm cuối số thứ tự mục thành dấu phẩy. Che được, nhưng KHÔNG
+    # được nuốt lây dấu thập phân và dấu phân cách nghìn viết theo kiểu Việt Nam.
+    comma_clause = numeric_guard.transform_numbers("Khoản 42.29, quy định abc.")
+    failures += not check("số thứ tự mục hỏng dấu '42.29,' vẫn được che",
+                          comma_clause == [], str(comma_clause))
+    for text, want in [("Đạt 43,5 giờ.", "43.5"), ("Phạt 1.234, ghi rõ.", "1234")]:
+        rows = numeric_guard.transform_numbers(text)
+        failures += not check(f"che dấu phẩy không nuốt {text!r}",
+                              any(value == want for value, _, _ in rows), str(rows))
+    return failures
+
+
+# ------------------------------------------------ cổng biến đổi · hai pha
+def test_transform_two_phase() -> int:
+    """Pha TRỊ SỐ chống bịa; pha ĐƠN VỊ chỉ xét trị số còn ở cả hai vế.
+
+    Bản trước so theo cặp (trị số, đơn vị) nên hai thao tác dàn lại hợp lệ —
+    dàn số vào bảng, và phục hồi dấu tiếng Việt trên từ đơn vị — đều bị báo là
+    bịa số. Khoá cả hai chiều: nới đúng hai ca đó, không nới gì khác.
+    """
+    hard = [
+        ("bịa số", "Thời hạn 385 ngày.", "Thời hạn 365 ngày.", "365"),
+        ("làm tròn", "Tỉ lệ 45.5 giờ.", "Tỉ lệ 46 giờ.", "46"),
+        ("đổi đơn vị thật", "Nghỉ 30 phút.", "Nghỉ 30 giờ.", "đổi đơn vị"),
+        ("rơi số có đơn vị", "Nghỉ 45 ngày báo trước.", "Nghỉ báo trước.", "45"),
+    ]
+    failures = 0
+    for label, before, after, needle in hard:
+        errors, _ = numeric_guard.check_transform(before, after)
+        failures += not check(f"vẫn chặn — {label}",
+                              any(needle in message for message in errors), str(errors))
+    soft = [
+        ("phục hồi dấu trên từ đơn vị", "Làm 40 gid mỗi tuan.", "Làm 40 giờ mỗi tuần."),
+        ("dàn số vào bảng", "Làm 40 giờ mỗi tuần.", "| Số | Đơn vị |\n| 40 | giờ |"),
+    ]
+    for label, before, after in soft:
+        errors, warnings = numeric_guard.check_transform(before, after)
+        failures += not check(f"chỉ cảnh báo — {label}",
+                              errors == [] and warnings != [], f"{errors} / {warnings}")
     return failures
 
 
@@ -378,6 +418,8 @@ def main() -> int:
     failures += test_extract()
     print("── numeric_guard · che định danh theo vị trí ──")
     failures += test_masking()
+    print("── numeric_guard · cổng biến đổi hai pha ──")
+    failures += test_transform_two_phase()
     with tempfile.TemporaryDirectory(prefix="pk-van-") as temp:
         root, structured = build_corpus(Path(temp))
         print("── Stage 4 · cổng ghi trang wiki ──")
