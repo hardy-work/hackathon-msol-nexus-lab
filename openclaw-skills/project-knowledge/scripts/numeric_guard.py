@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""numeric_guard — MỘT cơ chế, HAI chính sách.
+"""numeric_guard — MỘT cơ chế, BA chính sách.
 
   policy=ingest   Gate 2 · lúc vào  raw/     : giá trị phải là số thật, có unit, có src
+  policy=declare  Gate 3a · lúc khai số trên trang wiki (chế độ CHÉP của luồng VĂN):
+                                               giá trị phải có mặt ĐÚNG mục mà `src` trỏ
+                                               tới, đúng đơn vị — xem §declare bên dưới
   policy=answer   Gate 4 · lúc ra câu trả lời: mọi con số phải truy được về một khai báo
                                                `facts` có nguồn — raw/*.facts.json (luồng
                                                SỐ) HOẶC frontmatter trang wiki `source`/
@@ -114,6 +117,49 @@ def _merge_units(dst, src):
         dst.setdefault(k, set()).update(v)
 
 
+def decimal_text(value):
+    """Biểu diễn thập phân chính xác, không sinh biến thể đã làm tròn."""
+    try:
+        dec = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    text = format(dec, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text or "0"
+
+
+# Dạng trình bày TƯƠNG ĐƯƠNG chính xác: 148.0 -> 148; 0.5125 -> 0.5125/51.25%.
+# Tuyệt đối không tạo 45.5 -> 46: flow coi làm tròn là sai dữ liệu.
+def numeric_forms(value, unit=None):
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return set()
+    exact = decimal_text(value)
+    if exact is None:
+        return set()
+    forms = {exact}
+    # Percentage is only equivalent for an explicitly registered ratio.
+    # A fact "43 hours" must never unlock an answer "4300".
+    if _canon_fact_unit(unit) == "ratio":
+        percent = decimal_text(Decimal(str(value)) * Decimal("100"))
+        if percent is not None:
+            forms.add(percent)
+    return forms
+
+
+def date_form(value):
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    return f"date:{value}" if DATE_TOKEN.fullmatch(value) else None
+
+
+def declared_forms(value, unit=None):
+    """Dạng chuẩn của MỘT giá trị khai báo, cùng bảng mã với `transform_numbers`."""
+    stamp = date_form(value)
+    return {stamp} if stamp else numeric_forms(value, unit)
+
+
 def _canonical_transform_number(token):
     """Canonical numeric spelling for Stage 3 comparison (format-only changes OK)."""
     if DATE_TOKEN.fullmatch(token):
@@ -138,18 +184,57 @@ def _canonical_transform_number(token):
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 
+def unit_after(tail):
+    """Đọc đơn vị NGAY SAU con số (tối đa 2 từ chữ, cho 'ký tự') -> dạng chuẩn hoặc
+    None. None = không nhận diện được đơn vị -> bỏ qua khớp đơn vị cho token này."""
+    match = re.match(r"\s*([^\W\d_]+)(?:\s+([^\W\d_]+))?", tail, re.UNICODE)
+    if not match:
+        return None
+    first = match.group(1).lower()
+    if match.group(2):
+        pair = first + " " + match.group(2).lower()
+        if pair in UNIT_SYN:
+            return UNIT_SYN[pair]
+    return UNIT_SYN.get(first)
+
+
+def masked_spans(text):
+    """Khoảng của các token ĐỊNH DANH (không phải số đo) — che theo VỊ TRÍ THẬT.
+
+    Bản trước soi một cửa sổ ±12 ký tự quanh mỗi con số rồi bỏ qua con số đó nếu cửa
+    sổ chạm bất kỳ mẫu định danh nào. Hệ quả là định danh nuốt luôn số đo đứng cạnh:
+    'Điều 7: 8 ký tự' mất số 8, 'Sprint 1 có 20 task' mất số 20 — số đo thật biến mất
+    khỏi cả hai vế nên Stage 3 im lặng bỏ sót, và khi văn bản được sắp xếp lại cho số
+    ra xa định danh thì nó bỗng thành 'số mới' và chặn oan.
+
+    Với cổng khai báo thì đây là lỗi chí mạng: cửa sổ luôn BẮT ĐẦU bằng chính locator
+    ('Điều 7'), nên số cần đối chiếu gần như luôn nằm trong 12 ký tự của nó.
+
+    `AnswerGuard.check` vốn đã che theo vị trí (re.sub toàn cục); đây là đưa hai đường
+    về cùng một luật."""
+    spans = []
+    for pattern in MASK:
+        spans.extend(match.span() for match in re.finditer(pattern, text))
+    return spans
+
+
+def _overlaps(span, spans):
+    start, end = span
+    return any(start < masked_end and masked_start < end
+               for masked_start, masked_end in spans)
+
+
 def transform_numbers(text):
     """Return [(canonical, recognized_unit, original)] for prose transformation gates."""
     rows = []
+    identifiers = masked_spans(text)
     for match in TRANSFORM_TOKEN.finditer(text):
-        token = match.group(0)
         # Ignore document/task identifiers, section references and spreadsheet cells.
-        prefix = text[max(0, match.start() - 24):match.start()]
-        whole = text[max(0, match.start() - 12):min(len(text), match.end() + 12)]
-        if any(re.search(pat, whole) for pat in MASK):
+        if _overlaps(match.span(), identifiers):
             continue
-        unit = AnswerGuard._unit_after(text[match.end():]) if "AnswerGuard" in globals() else None
-        rows.append((_canonical_transform_number(token), unit, token))
+        token = match.group(0)
+        rows.append((_canonical_transform_number(token),
+                     unit_after(text[match.end():]), token))
     return rows
 
 
@@ -174,6 +259,189 @@ def check_transform(before, after, *, allow_loss=False):
             message = f"rơi {count}× `{number}`" + (f" {unit}" if unit else "")
             (errors if unit else warnings).append(message)
     return errors, warnings
+
+
+# ------------------------------------ policy=declare · GATE 3a/WIKI · KHAI SỐ
+# Luồng SỐ an toàn vì LLM KHÔNG gõ số: trang wiki chỉ giữ `facts_ref` trỏ vào
+# raw/*.facts.json do script sinh, nên giá trị không thể lệch by construction.
+#
+# Luồng VĂN không có .facts.json (số văn xuôi phải hiểu ngữ cảnh mới rút được), nên
+# trang wiki khai `{facts, unit, src}` ở chế độ CHÉP — LLM gõ lại con số. Mất tính bất
+# biến trên, phải bù bằng một cổng riêng, nếu không Gate 4 sẽ đi xác thực câu trả lời
+# của LLM bằng chính lời khai trước đó của LLM.
+#
+# `check_transform` KHÔNG thay được cổng này: nó chỉ hỏi "số này có mặt đâu đó trong
+# nguồn không". Gán 12 (thời hạn lưu log) cho `chu_ky_doi_mat_khau` vẫn lọt, vì 12 có
+# thật ở chỗ khác trong tài liệu. Cổng này hỏi câu chặt hơn: "số này có mặt ĐÚNG chỗ
+# `src` trỏ tới không, và đơn vị ở đó có khớp không".
+SRC_SEP = "::"
+SECTION_MARKER = re.compile(
+    r"^\s{0,3}#{1,6}\s|"                       # tiêu đề markdown
+    r"(?:Điều|Chương|Mục|Khoản|Điểm)\s*\d+|"   # đơn vị văn bản pháp quy
+    r"\[\[page\s*\d+\]\]",                     # marker trang PDF
+    re.M)
+SECTION_WINDOW_MAX = 4000   # trần cửa sổ khi không tìm được ranh giới mục kế tiếp
+
+_boundaries: dict[str, object] = {}
+_raw_docs: dict[tuple[str, str], tuple[dict, str] | None] = {}
+
+
+def _corpus(root):
+    key = str(Path(root).resolve())
+    if key not in _boundaries:
+        _boundaries[key] = filesystem_boundary.ReadOnlyCorpus(Path(root))
+    return _boundaries[key]
+
+
+def split_frontmatter(text):
+    """-> (frontmatter dict, body). Không có frontmatter -> ({}, text)."""
+    match = re.match(r"^---\n(.*?)\n---\n?(.*)$", text or "", re.S)
+    if not match:
+        return {}, text or ""
+    try:
+        data = yaml.safe_load(match.group(1)) or {}
+    except yaml.YAMLError:
+        data = {}
+    return (data if isinstance(data, dict) else {}), match.group(2)
+
+
+def _raw_document(root, rel):
+    """Đọc MỘT file raw qua boundary -> (frontmatter, body), None nếu không đọc được."""
+    key = (str(Path(root).resolve()), str(rel))
+    if key not in _raw_docs:
+        try:
+            corpus = _corpus(root)
+            corpus.resolve(rel, must_exist=True)
+            _raw_docs[key] = split_frontmatter(corpus.read_text(rel))
+        except (filesystem_boundary.BoundaryError, FileNotFoundError, OSError,
+                UnicodeDecodeError):
+            _raw_docs[key] = None
+    return _raw_docs[key]
+
+
+def parse_src(src):
+    """'raw/x.md :: Điều 7' -> ('raw/x.md', 'Điều 7'). Không có '::' -> (path, None)."""
+    text = str(src or "").strip()
+    if not text:
+        return None, None
+    if SRC_SEP in text:
+        path, locator = text.split(SRC_SEP, 1)
+        return path.strip() or None, locator.strip() or None
+    return text, None
+
+
+def locate_sections(body, locator):
+    """Các cửa sổ văn bản mà `locator` trỏ tới; [] nếu không tìm thấy locator.
+
+    Cửa sổ chạy từ chỗ locator xuất hiện tới ranh giới mục KẾ TIẾP (tiêu đề, Điều/
+    Chương/Mục kế, marker `[[page N]]`) — đủ chứa câu khai số mà không nuốt sang mục
+    khác. Đây là thứ phân biệt "số có trong tài liệu" với "số có ĐÚNG chỗ được trích".
+    Khoảng trắng và hoa/thường được bỏ qua; dấu tiếng Việt thì không."""
+    tokens = str(locator or "").split()
+    if not tokens:
+        return []
+    pattern = re.compile(r"\s+".join(re.escape(token) for token in tokens), re.I)
+    windows = []
+    for match in pattern.finditer(body):
+        nxt = SECTION_MARKER.search(body, match.end())
+        end = nxt.start() if nxt else len(body)
+        windows.append(body[match.start():min(end, match.start() + SECTION_WINDOW_MAX)])
+    return windows
+
+
+def check_declaration(field, declaration, root: Path = ROOT):
+    """Kiểm MỘT khai báo số chế độ chép của trang wiki -> danh sách lỗi (rỗng = qua).
+
+    Đối xứng với `facts_ref`: ref không giải được là lỗi cứng, thì giá trị chép không
+    đối chiếu được cũng phải là lỗi cứng."""
+    value = declaration.get("facts")
+    unit = declaration.get("unit")
+    src = declaration.get("src")
+    errors = []
+    if not unit:
+        errors.append("chế độ sao chép nhưng thiếu `unit`")
+    if not src:
+        errors.append("chế độ sao chép nhưng thiếu `src`")
+        return errors
+    forms = declared_forms(value, unit)
+    if not forms:
+        errors.append(f"`facts` không phải số đo hay ngày: {value!r}")
+        return errors
+
+    raw_rel, locator = parse_src(src)
+    document = _raw_document(root, raw_rel) if raw_rel else None
+    if document is None:
+        errors.append(f"`src` không trỏ tới nguồn raw đọc được trong corpus: {src!r}")
+        return errors
+    raw_fm, body = document
+    if not frontmatter_is_current(raw_fm, Path(root)):
+        errors.append(f"`src` trỏ tới raw không phải bản current: {raw_rel}")
+        return errors
+    # LUẬT OCR thực thi ở CODE, không chỉ ở prompt: bản OCR là bản ĐOÁN nên số trong đó
+    # không được đăng ký làm sự thật. Trạng thái OCR lấy từ raw (do script ghi), KHÔNG
+    # lấy từ frontmatter trang wiki (do LLM ghi — nó có thể quên khai).
+    if raw_fm.get("ocr") in (True, "true"):
+        errors.append(f"LUẬT OCR: {raw_rel} là bản OCR (bản đoán), cấm khai số làm sự thật")
+        return errors
+
+    if locator:
+        windows = locate_sections(body, locator)
+        if not windows:
+            errors.append(f"`src` trỏ tới mục không tồn tại trong {raw_rel}: {locator!r}")
+            return errors
+        where = f"{raw_rel} :: {locator}"
+    else:
+        windows = [body]
+        where = raw_rel
+
+    seen_units: set = set()
+    for window in windows:
+        for canonical, near_unit, _ in transform_numbers(window):
+            if canonical in forms:
+                if near_unit is None:
+                    return errors          # đơn vị không nhận diện được -> không soi tiếp
+                seen_units.add(near_unit)
+    if not seen_units:
+        errors.append(
+            f"giá trị {value!r} không có mặt tại {where} — `check_transform` chỉ hỏi "
+            f"'số có trong tài liệu không', cổng này hỏi 'có đúng chỗ đã trích không'")
+        return errors
+    declared = _canon_fact_unit(unit)
+    if declared and declared not in seen_units:
+        errors.append(f"đơn vị lệch tại {where}: khai {unit!r} nhưng nguồn ghi "
+                      f"{sorted(seen_units)}")
+    return errors
+
+
+def page_ocr_source(frontmatter, root: Path = ROOT):
+    """`raw_paths` đầu tiên là bản OCR, hoặc None.
+
+    Trạng thái OCR lấy từ raw do script ghi, KHÔNG chỉ từ trường `ocr` của trang wiki:
+    trang do LLM soạn có thể quên khai, và LUẬT OCR không được phụ thuộc vào việc LLM
+    có nhớ hay không."""
+    if (frontmatter or {}).get("ocr") in (True, "true"):
+        return str((frontmatter.get("raw_paths") or ["(trang tự khai ocr)"])[0])
+    for raw_rel in (frontmatter or {}).get("raw_paths") or []:
+        document = _raw_document(root, str(raw_rel))
+        if document and document[0].get("ocr") in (True, "true"):
+            return str(raw_rel)
+    return None
+
+
+def check_page_declarations(frontmatter, root: Path = ROOT):
+    """Kiểm mọi khai báo chép của MỘT trang wiki -> danh sách lỗi."""
+    errors = []
+    declarations = {k: v for k, v in (frontmatter or {}).items()
+                    if isinstance(v, dict) and "facts" in v}
+    # Trang dựng từ nguồn OCR không được khai số, kể cả khi `src` trỏ nơi khác.
+    ocr_source = page_ocr_source(frontmatter, root) if declarations else None
+    if ocr_source:
+        return [f"LUẬT OCR: trang dựng từ nguồn OCR {ocr_source} — "
+                f"không được khai bất kỳ trường số nào"]
+    for field, declaration in declarations.items():
+        errors += [f"`{field}`: {message}"
+                   for message in check_declaration(field, declaration, root)]
+    return errors
 
 
 class AnswerGuard:
@@ -219,41 +487,11 @@ class AnswerGuard:
         # Không có "số nhỏ mặc nhiên an toàn". Mọi count, kể cả 0–20, phải tới từ
         # facts của đúng citation. Task/document identifiers được MASK riêng ở trên.
 
-    @staticmethod
-    def _decimal_text(value):
-        """Biểu diễn thập phân chính xác, không sinh biến thể đã làm tròn."""
-        try:
-            dec = Decimal(str(value))
-        except (InvalidOperation, ValueError):
-            return None
-        text = format(dec, "f")
-        if "." in text:
-            text = text.rstrip("0").rstrip(".")
-        return text or "0"
+    _decimal_text = staticmethod(decimal_text)
+    _date_form = staticmethod(date_form)
 
-    # Dạng trình bày TƯƠNG ĐƯƠNG chính xác: 148.0 -> 148; 0.5125 -> 0.5125/51.25%.
-    # Tuyệt đối không tạo 45.5 -> 46: flow coi làm tròn là sai dữ liệu.
     def _forms(self, v, unit=None):
-        if not isinstance(v, (int, float)) or isinstance(v, bool):
-            return set()
-        exact = self._decimal_text(v)
-        if exact is None:
-            return set()
-        forms = {exact}
-        # Percentage is only equivalent for an explicitly registered ratio.
-        # A fact "43 hours" must never unlock an answer "4300".
-        if _canon_fact_unit(unit) == "ratio":
-            percent = self._decimal_text(Decimal(str(v)) * Decimal("100"))
-            if percent is not None:
-                forms.add(percent)
-        return forms
-
-    @staticmethod
-    def _date_form(value):
-        if not isinstance(value, str):
-            return None
-        value = value.strip()
-        return f"date:{value}" if DATE_TOKEN.fullmatch(value) else None
+        return numeric_forms(v, unit)
 
     def _collect(self, node, bucket, ubucket):
         """Đi khắp facts.json: mỗi {value,src} -> dạng-số vào self.values (toàn cục) VÀ
@@ -311,7 +549,8 @@ class AnswerGuard:
                 if not frontmatter_is_current(fm, self.root):
                     continue
                 # LUẬT OCR: trang OCR là bản ĐOÁN — KHÔNG đăng ký số (thực thi ở CODE).
-                is_ocr = fm.get("ocr") in (True, "true")
+                # Trạng thái lấy từ raw do script ghi, không chỉ từ trường trang tự khai.
+                is_ocr = page_ocr_source(fm, self.root) is not None
                 bucket: set = set()
                 ubucket: dict = {}
                 for k, v in fm.items():
@@ -322,7 +561,13 @@ class AnswerGuard:
                         node = self._wiki_resolve(v["facts_ref"])
                         val, src = (node.get("value"), node.get("src", "")) if node else (None, "")
                         unit = node.get("unit") if node else None
-                    elif "facts" in v and v.get("src") and not is_ocr:
+                    elif "facts" in v and not is_ocr:
+                        # Chế độ chép: LLM gõ lại con số, nên phải đối chiếu ngược về
+                        # đúng mục `src` trỏ tới TRƯỚC khi cho nó làm sự thật của Gate 4.
+                        # Gate 3a đã chặn ở lúc xuất bản; đây là lớp fail-closed thứ hai
+                        # để runtime không tin một khai báo chưa kiểm.
+                        if check_declaration(k, v, self.root):
+                            continue
                         val, src = v["facts"], v["src"]
                         unit = v.get("unit")
                     else:
@@ -380,19 +625,7 @@ class AnswerGuard:
                 _merge_units(uout, self.units_by_file.get(stem, {}))
         return out, uout
 
-    @staticmethod
-    def _unit_after(tail):
-        """Đọc đơn vị NGAY SAU con số (tối đa 2 từ chữ, cho 'ký tự') -> dạng chuẩn hoặc
-        None. None = không nhận diện được đơn vị -> bỏ qua khớp đơn vị cho token này."""
-        m = re.match(r"\s*([^\W\d_]+)(?:\s+([^\W\d_]+))?", tail, re.UNICODE)
-        if not m:
-            return None
-        w1 = m.group(1).lower()
-        if m.group(2):
-            two = w1 + " " + m.group(2).lower()
-            if two in UNIT_SYN:
-                return UNIT_SYN[two]
-        return UNIT_SYN.get(w1)
+    _unit_after = staticmethod(unit_after)
 
     def check(self, text, cites=None):
         """-> danh sách con số KHÔNG truy được nguồn.
@@ -470,8 +703,14 @@ def reset(root: Path | None = None) -> None:
     """Drop the corpus-scoped guard after a new current version is built."""
     if root is None:
         _guards.clear()
-    else:
-        _guards.pop(str(Path(root).resolve()), None)
+        _boundaries.clear()
+        _raw_docs.clear()
+        return
+    key = str(Path(root).resolve())
+    _guards.pop(key, None)
+    _boundaries.pop(key, None)
+    for cached in [k for k in _raw_docs if k[0] == key]:
+        _raw_docs.pop(cached, None)
 
 
 def check_answer(text, cites=None, root: Path = ROOT):
@@ -482,11 +721,13 @@ def check_answer(text, cites=None, root: Path = ROOT):
 
 
 def check(policy, **kw):
-    """Một cửa vào cho cả hai chính sách."""
+    """Một cửa vào cho ba chính sách."""
     if policy == "ingest":
         return check_ingest(kw["name"], kw["value"], kw["unit"], kw["src"])
     if policy == "answer":
         return check_answer(kw["text"], kw.get("cites"), kw.get("root", ROOT))
+    if policy == "declare":
+        return check_page_declarations(kw["frontmatter"], kw.get("root", ROOT))
     raise ValueError(f"policy không hợp lệ: {policy}")
 
 

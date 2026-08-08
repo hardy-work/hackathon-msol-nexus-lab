@@ -17,6 +17,27 @@ Mọi bước ingest phải giữ provenance và không được bịa giá tr�
 - MEASURE: số phải là `facts_ref` hoặc `{facts, unit, src}`.
 - open-vocabulary: chỉ dùng tìm kiếm, vắng mặt không có nghĩa là không tồn tại.
 
+### 1.2 Hai chế độ khai MEASURE — và vì sao chúng được canh khác nhau
+
+`facts_ref` (luồng SỐ) trỏ vào `raw/*.facts.json` do script sinh. LLM không gõ con số
+nào, nên giá trị **không thể lệch by construction**.
+
+`facts` chép (luồng VĂN) tồn tại vì tài liệu văn xuôi không có `.facts.json` — rút số
+ra khỏi câu văn cần hiểu ngữ cảnh. Ở chế độ này **LLM gõ lại con số**, nên tính bất
+biến trên mất, và phải bù bằng `numeric_guard` policy=declare (§4, Gate 3a):
+
+- `src` phải có dạng `<đường dẫn raw> :: <mục>`, đường dẫn giải được trong corpus và
+  thuộc bản current;
+- mục phải tồn tại trong raw đó;
+- giá trị phải có mặt **đúng trong mục ấy**, không phải đâu đó trong tài liệu;
+- đơn vị nhận diện được cạnh số phải khớp `unit` đã khai;
+- nguồn `ocr: true` thì cấm khai `facts` (LUẬT OCR) — kiểm từ frontmatter của raw do
+  script ghi, không từ trường trang wiki do LLM ghi.
+
+Thiếu cổng này, Gate 4 đi xác thực câu trả lời của LLM bằng chính lời khai trước đó của
+LLM: gán `12` (thời hạn lưu log) cho `chu_ky_doi_mat_khau` vẫn lọt, vì 12 có thật ở chỗ
+khác trong tài liệu.
+
 ## 2. Danh sách DIMENSION (Nexus Plan)
 
 Nguồn gốc là `originals/nexus-plan.xlsx`, sheet `Config`.
@@ -73,8 +94,19 @@ Mọi trang phải có `page`, `name`, `raw_paths`, `visibility`; source phải 
 
 ```
 INVENTORY → INTAKE → EXTRACT → STRUCTURE → WIKI-INGEST → REVIEW → PUBLISH
-Gate 1 SHA256 · Gate 2 numeric ingest · Gate 3a lint · Gate 3b review · Gate 4 numeric answer
+Gate 1 SHA256 · Gate 2 numeric ingest · Gate 3a lint + numeric declare · Gate 3b review
+· Gate 4 numeric answer
 ```
+
+Trang wiki của luồng VĂN có HAI phần, soi bằng HAI cổng khác nhau — thân bài văn xuôi
+qua `check_transform` (tóm tắt được bỏ bớt, cấm bịa/làm tròn), frontmatter qua
+`check_page_declarations` (§1.2). Đưa frontmatter YAML vào cổng văn xuôi là sai: cổng
+đó đọc đơn vị bằng chữ đứng ngay sau con số, mà trong `facts: 8, unit: "ký tự"` thì
+ngay sau `8` là dấu phẩy — một khai báo đúng bị báo là "số mới/đổi/làm tròn".
+
+Định danh (số hiệu luật, ô Excel, mã task, `Sprint N`, `Điều N`) được che theo VỊ TRÍ
+thật. Che theo khoảng cách sẽ để định danh nuốt số đo đứng cạnh nó — `Điều 7: 8 ký tự`
+mất số 8 — và cửa sổ của cổng khai báo luôn bắt đầu bằng chính locator.
 
 `raw/` là provenance; truy vấn bảng dùng DuckDB, không đọc raw trực tiếp.
 
@@ -106,6 +138,11 @@ DuckDB mở `read_only=True`; cache, conversation và telemetry là
 operational state riêng ở `.runtime/` hoặc volume persistent, tuyệt đối không đặt
 vào `originals/`, `raw/`, `wiki/` hay `derived/`. Production nên mount corpus ở chế
 độ read-only của container/volume để có thêm enforcement ở OS.
+
+Luồng VĂN có fixture riêng `scripts/van_selftest.py`: dựng `.docx`/`.pdf` thật, chạy
+`extract_van` → cổng Stage 4 → Gate 3a → Gate 4, và khoá cả bốn luật ở §1.2 cùng LUẬT
+OCR. Trước khi có nó, đây là lane duy nhất không có selftest và cũng là lane duy nhất
+chưa từng chạy — hai cổng của nó mâu thuẫn nhau mà không ai biết.
 
 CI bắt buộc chạy fixture `scripts/ingest_flow_selftest.py` theo chuỗi intake →
 re-ingest v2 → Gate 3a → DuckDB/graph derive, cùng `scripts/lint_history_selftest.py`

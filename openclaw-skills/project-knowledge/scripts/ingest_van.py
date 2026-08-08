@@ -89,6 +89,27 @@ def load_docs():
     return {d["doc_id"]: d for d in spec["docs"]}
 
 
+def validate_page(structured, page_text, root=ROOT):
+    """Cổng Stage 4 luồng VĂN -> danh sách lỗi (rỗng = qua). Thuần, không gọi LLM.
+
+    Trang sinh ra có HAI phần với hai loại luật khác nhau, phải soi bằng hai cổng:
+
+      thân bài (văn xuôi)  -> check_transform(allow_loss=True): tóm tắt được phép bỏ
+                              bớt, nhưng cấm bịa/làm tròn số.
+      frontmatter (YAML)   -> check_page_declarations: đối chiếu ngược từng khai báo
+                              `{facts, unit, src}` về đúng mục trong raw.
+
+    Cho frontmatter đi qua cổng văn xuôi là SAI, và sai theo hướng chặn oan: trong
+    `facts: 8, unit: "ký tự"` thì ký tự ngay sau số 8 là dấu phẩy, nên cổng đọc được
+    cặp (8, không-đơn-vị) trong khi nguồn ghi (8, ký tự) — hai khoá khác nhau, và một
+    con số khai ĐÚNG bị báo là "số mới/đổi/làm tròn". Cổng khai báo bên dưới chặt hơn
+    cổng văn xuôi, nên tách ra không hề nới lỏng: nó đòi số phải nằm đúng mục `src`,
+    chứ không chỉ tồn tại đâu đó trong tài liệu."""
+    frontmatter, body = numeric_guard.split_frontmatter(page_text)
+    problems, _ = numeric_guard.check_transform(structured, body, allow_loss=True)
+    return problems + numeric_guard.check_page_declarations(frontmatter, root)
+
+
 def ingest_one(doc_id, d, contract, schema, timeout=600):
     try:
         registry = current_document(doc_id, ROOT)
@@ -127,7 +148,10 @@ def ingest_one(doc_id, d, contract, schema, timeout=600):
             "   Quy tắc: (a) CHỈ khai số CÓ THẬT trong tài liệu, `src` trỏ đúng Điều/Mục chứa nó;\n"
             "   (b) mỗi trường bắt buộc đủ `facts` + `unit` + `src`; (c) chỉ khai số ĐO thật sự\n"
             "   đáng hỏi (ngưỡng, chu kỳ, số lượng) — BỎ QUA số hiệu văn bản/mã/số Điều (định danh);\n"
-            "   (d) TUYỆT ĐỐI không tự tính/suy ra số mới. Không có số đo đáng khai thì bỏ trống mục này.") \
+            "   (d) TUYỆT ĐỐI không tự tính/suy ra số mới. Không có số đo đáng khai thì bỏ trống mục này.\n"
+            "   Cổng sẽ MỞ tài liệu ra đối chiếu: giá trị phải nằm ĐÚNG trong mục mà `src` nêu, và\n"
+            "   đơn vị phải khớp chữ đứng cạnh số ở đó. Trỏ sai mục thì bị chặn, kể cả khi con số\n"
+            "   có thật ở một mục khác. Không chắc số nằm ở mục nào thì ĐỪNG khai trường đó.") \
             .format(doc_id=doc_id, raw_path=raw_path.relative_to(ROOT).as_posix())
     prompt = PROMPT.format(
         doc_id=doc_id, title=d.get("title", doc_id), domain=d["domain"],
@@ -153,9 +177,9 @@ def ingest_one(doc_id, d, contract, schema, timeout=600):
         if not m:
             return None, dt, "không tìm thấy frontmatter (---)"
         text = text[m.start():]
-    number_errors, _ = numeric_guard.check_transform(structured, text, allow_loss=True)
-    if number_errors:
-        return None, dt, "GATE 2/WIKI chặn: " + "; ".join(number_errors)
+    problems = validate_page(structured, text, ROOT)
+    if problems:
+        return None, dt, "GATE 2/WIKI chặn: " + "; ".join(problems)
     return text + "\n", dt, None
 
 
