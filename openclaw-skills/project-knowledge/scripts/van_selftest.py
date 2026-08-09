@@ -298,8 +298,9 @@ def test_split_sections() -> int:
     failures = 0
     # Định dạng tiêu đề KHÔNG nhất quán — Stage 3 chạy nhiều khúc độc lập nên chương
     # này có `## `, chương kia là dòng trần. Và mục lục khớp y hệt, chỉ khác số trang.
+    front = "Bìa, bảng kiểm soát tài liệu và mục lục. " * 12   # > FRONT_MIN_CHARS
     body = (
-        "Bìa và bảng kiểm soát tài liệu\n\n"
+        front + "\n\n"
         "CHƯƠNG 1. NHỮNG QUY ĐỊNH CHUNG 5\n"
         "CHƯƠNG 2. HỢP ĐỒNG LAO ĐỘNG 7\n\n"
         "## CHƯƠNG 1. NHỮNG QUY ĐỊNH CHUNG\n\nĐiều 1. Giải thích từ ngữ.\n\n"
@@ -314,9 +315,19 @@ def test_split_sections() -> int:
                           "".join(text for _, _, text in sections) == body,
                           f"{sum(len(t) for _, _, t in sections)} vs {len(body)}")
     failures += not check("cắt chương: phần bìa/mục lục không bị bỏ",
-                          "Bìa và bảng kiểm soát" in sections[0][2], sections[0][2][:40])
+                          "bảng kiểm soát tài liệu" in sections[0][2], sections[0][2][:40])
     single = ingest_van.split_sections("## CHƯƠNG 1. A\n\nnội dung\n")
     failures += not check("cắt chương: một chương thì không cắt", single == [], str(single))
+
+    # `structured/` mở đầu bằng frontmatter YAML do script sinh. Nếu chương 1 bắt đầu
+    # ngay sau đó thì "phần đầu" chỉ còn metadata — cấp một mục rỗng cho Stage 4 thì
+    # Opus viết ghi chú "không có nội dung trong bản trích cấp cho Stage 4", và chữ
+    # "Stage 4" thành số bịa làm cổng chặn cả tài liệu.
+    thin = ("---\ndoc_id: x\nversion: 1\n---\n\n"
+            "## CHƯƠNG 1. A\n\nnội dung A\n\n## CHƯƠNG 2. B\n\nnội dung B\n")
+    thin_slugs = [slug for slug, _, _ in ingest_van.split_sections(thin)]
+    failures += not check("cắt chương: phần đầu chỉ có metadata thì KHÔNG thành mục",
+                          "phan-dau" not in thin_slugs, str(thin_slugs))
     return failures
 
 

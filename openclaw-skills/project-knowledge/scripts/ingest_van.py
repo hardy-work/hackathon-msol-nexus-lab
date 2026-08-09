@@ -151,6 +151,7 @@ CHAPTER_HEADING = re.compile(r"(?im)^[#\s]*(CHƯƠNG\s+(\d+)\.\s+[^\n]*?)\s*$")
 # Dòng mục lục khớp y hệt tiêu đề thật, chỉ khác ở số trang cuối dòng.
 TOC_TAIL = re.compile(r"\s\d+$")
 FRONT_SECTION = ("phan-dau", "Phần đầu: bìa, kiểm soát tài liệu, mục lục")
+FRONT_MIN_CHARS = 400
 
 
 def slugify(text):
@@ -191,7 +192,12 @@ def split_sections(body):
     if len(marks) < 2:
         return []
     sections = []
-    if marks[0][0] > 0:
+    # Chỉ tách mục đầu khi nó có nội dung THẬT. `structured/` mở đầu bằng frontmatter
+    # YAML do script sinh; nếu chương 1 bắt đầu ngay sau đó thì "phần đầu" chỉ còn vài
+    # dòng metadata. Cấp một mục rỗng cho Stage 4 thì Opus không có gì để viết, nó viết
+    # ghi chú "nội dung không có trong bản trích được cấp cho Stage 4" — và chữ
+    # "Stage 4" thành một con số bịa làm cổng chặn cả tài liệu.
+    if len(body[:marks[0][0]].strip()) >= FRONT_MIN_CHARS:
         sections.append((*FRONT_SECTION, body[:marks[0][0]]))
     for index, (start, title) in enumerate(marks):
         end = marks[index + 1][0] if index + 1 < len(marks) else len(body)
