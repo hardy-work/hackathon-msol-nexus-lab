@@ -17,6 +17,8 @@ báo, số trong đó không phải nguyên văn.
   python3 scripts/ingest_van.py --doc chinh-sach-attt
   python3 scripts/ingest_van.py --all
   python3 scripts/ingest_van.py --doc chinh-sach-attt --fresh
+  python3 scripts/ingest_van.py --doc chinh-sach-attt --fresh-page \
+      wiki/sources/chinh-sach-attt--chuong-2.md
 """
 import json
 import os
@@ -124,6 +126,11 @@ Trang tổng quan của tài liệu đã có và chỉ tóm tắt bố cục. Tr
 chương thật sự được đánh chỉ mục để tra cứu, nên nó phải CHI TIẾT hơn hẳn: đi theo
 từng Điều, giữ đủ điều kiện/ngưỡng/thủ tục để người đọc trả lời được câu hỏi cụ thể
 mà không phải mở tài liệu gốc.
+
+SCOPE GUARD: Nếu phần trích được cấp không có một Điều/khoản đánh số, không được
+nhắc đến số hiệu bị thiếu hoặc tự suy ra khoảng số từ mục lục. Chỉ ghi nội dung có
+trong đúng phần trích; nếu cần cảnh báo, nói "phần trích không có nội dung này"
+nhưng không nêu lại số hiệu vắng mặt.
 
 ===== HỢP ĐỒNG (CLAUDE.md) =====
 {contract}
@@ -408,7 +415,8 @@ def _reuse_candidate(rel, scope, *, name, doc_id, version, raw_path,
     return None
 
 
-def ingest_one(doc_id, d, contract, schema, timeout=600, *, reuse_rejected=False):
+def ingest_one(doc_id, d, contract, schema, timeout=600, *, reuse_rejected=False,
+               force_pages=()):
     try:
         registry = current_document(doc_id, ROOT)
     except (KeyError, ValueError) as exc:
@@ -470,7 +478,7 @@ def ingest_one(doc_id, d, contract, schema, timeout=600, *, reuse_rejected=False
         f"wiki/sources/{doc_id}.md", structured, name=doc_id,
         doc_id=doc_id, version=common["version"], raw_path=common["raw_path"],
         domain=common["domain"], visibility=common["visibility"]
-    ) if reuse_rejected else None
+    ) if reuse_rejected and f"wiki/sources/{doc_id}.md" not in force_pages else None
     dt = 0.0
     if text is None:
         text = build_overview_page(
@@ -502,7 +510,7 @@ def ingest_one(doc_id, d, contract, schema, timeout=600, *, reuse_rejected=False
             doc_id=doc_id, version=common["version"], raw_path=common["raw_path"],
             domain=common["domain"], visibility=common["visibility"],
             section_title=section_title
-        ) if reuse_rejected else None)
+        ) if reuse_rejected and page_rel not in force_pages else None)
         dt = 0.0
         if text is None:
             text, dt, err = render(prompt, section_text, timeout,
@@ -623,6 +631,16 @@ def main():
         plan = json.loads(plan_path.read_text(encoding="utf-8"))
     write_pages = set(plan.get("page_actions", {}).get("write", [])) if plan else None
 
+    force_pages = set()
+    if "--fresh-page" in sys.argv:
+        raw_pages = sys.argv[sys.argv.index("--fresh-page") + 1]
+        for value in raw_pages.split(","):
+            value = value.strip()
+            if not value:
+                continue
+            force_pages.add(value if value.startswith("wiki/sources/")
+                            else f"wiki/sources/{value}")
+
     if "--all" in sys.argv:
         targets = [k for k, d in docs.items() if d.get("page_type") == "source"]
     elif "--doc" in sys.argv:
@@ -631,7 +649,8 @@ def main():
         sys.exit(__doc__)
     # Resume is the safe default: only current, gate-validated pages with the
     # same doc/version/raw provenance are reused.  ``--fresh`` is explicit
-    # when a prompt/model change should regenerate every missing page.
+    # when a prompt/model change should regenerate every page; ``--fresh-page``
+    # forces only named page paths and safely reuses the rest.
     reuse_rejected = "--fresh" not in sys.argv
 
     (ROOT / "wiki/sources").mkdir(parents=True, exist_ok=True)
@@ -646,7 +665,8 @@ def main():
             print(f"{D}↷{OFF} {doc_id}: page không impacted, giữ nguyên")
             continue
         pages, dt, err = ingest_one(
-            doc_id, docs[doc_id], contract, schema, reuse_rejected=reuse_rejected)
+            doc_id, docs[doc_id], contract, schema, reuse_rejected=reuse_rejected,
+            force_pages=force_pages)
         tot += dt
         if err:
             print(f"{R}✗{OFF} {doc_id:20s} {dt:5.1f}s  {err}")
