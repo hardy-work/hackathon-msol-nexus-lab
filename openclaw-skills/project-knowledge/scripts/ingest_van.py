@@ -328,6 +328,12 @@ def ingest_one(doc_id, d, contract, schema, timeout=600, *, reuse_rejected=False
             "   đơn vị phải khớp chữ đứng cạnh số ở đó. Trỏ sai mục thì bị chặn, kể cả khi con số\n"
             "   có thật ở một mục khác. Không chắc số nằm ở mục nào thì ĐỪNG khai trường đó.") \
             .format(doc_id=doc_id, raw_path=raw_path.relative_to(ROOT).as_posix())
+    facts_rule += (
+        "\n   Numeric formatting rule: when the source lists multiple values with their own "
+        "units (for example, 45 days, 30 days, and 03 days), preserve each value and "
+        "unit separately. Do NOT combine them with `/` into a date-like token such as "
+        "`45/30/03`; that token is not in the source.\n"
+    )
     common = dict(
         doc_id=doc_id, title=d.get("title", doc_id), domain=d["domain"],
         version=int(registry["version"]), visibility=registry.get("visibility", "internal"),
