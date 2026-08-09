@@ -34,6 +34,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import models  # noqa: E402
 import build_index  # noqa: E402
+import coverage  # noqa: E402
 import numeric_guard  # noqa: E402
 import structure  # noqa: E402
 from artifact_paths import artifact_path  # noqa: E402
@@ -131,6 +132,12 @@ SCOPE GUARD: Nếu phần trích được cấp không có một Điều/khoản
 nhắc đến số hiệu bị thiếu hoặc tự suy ra khoảng số từ mục lục. Chỉ ghi nội dung có
 trong đúng phần trích; nếu cần cảnh báo, nói "phần trích không có nội dung này"
 nhưng không nêu lại số hiệu vắng mặt.
+
+COMPLETENESS MARKER: Nếu một Điều/khoản có trong phần trích nhưng không thể trình
+bày nội dung vì bản trích bị thiếu hoặc không đủ rõ, không được bỏ qua im lặng. Hãy
+thêm một dòng riêng đúng mẫu `> [Chưa bao phủ: N] lý do ngắn gọn`, trong đó `N` là
+đúng số hiệu nhìn thấy trong phần trích. Marker này được chấp nhận như trạng thái
+"đã rà soát nhưng chưa bao phủ", và sẽ hiện trong báo cáo để người dùng bổ sung.
 
 ===== HỢP ĐỒNG (CLAUDE.md) =====
 {contract}
@@ -410,7 +417,16 @@ def _reuse_candidate(rel, scope, *, name, doc_id, version, raw_path,
                 continue
         elif "section" in frontmatter or "part_of" in frontmatter:
             continue
-        if not validate_page(scope, text, ROOT):
+        if validate_page(scope, text, ROOT):
+            continue
+        # A rejected draft from a previous run must also pass completeness;
+        # canonical pages remain backward-compatible and are not reclassified
+        # here.  New/fresh output is checked below before it enters `pages`.
+        if section_title and path.parent == rejected:
+            report = coverage.check(scope, text)
+            if report["status"] != "pass":
+                continue
+        else:
             return text if text.endswith("\n") else text + "\n"
     return None
 
@@ -517,6 +533,14 @@ def ingest_one(doc_id, d, contract, schema, timeout=600, *, reuse_rejected=False
                                    name=f"{doc_id}--{slug}")
         else:
             err = None
+        if err is None and text is not None:
+            report = coverage.check(section_text, text)
+            coverage_problems = coverage.format_problems(report)
+            if coverage_problems:
+                where = dump_rejected(f"{doc_id}--{slug}", text)
+                report_path = dump_coverage_report(f"{doc_id}--{slug}", report)
+                err = ("GATE 2b/COVERAGE chặn: " + "; ".join(coverage_problems)
+                       + f" — bản bị từ chối: {where}; report: {report_path}")
         elapsed += dt
         if err or text is None:
             return None, elapsed, f"[{slug}] {err or 'không có nội dung trang'}"
@@ -541,6 +565,16 @@ def dump_rejected(name, text):
         return path.relative_to(ROOT).as_posix()
     except OSError as exc:
         return f"(không ghi được bản bị từ chối: {exc.__class__.__name__})"
+
+
+def dump_coverage_report(name, report):
+    """Persist a machine-readable completeness failure without breaking ingest."""
+    try:
+        path = ROOT / "derived/stage4-rejected" / f"{name}.coverage.json"
+        coverage.write_report(path, report)
+        return path.relative_to(ROOT).as_posix()
+    except OSError as exc:
+        return f"(không ghi được coverage report: {exc.__class__.__name__})"
 
 
 # Một tài liệu dài là 11 lượt gọi nối tiếp, nên xác suất vấp lỗi tạm thời cộng dồn —

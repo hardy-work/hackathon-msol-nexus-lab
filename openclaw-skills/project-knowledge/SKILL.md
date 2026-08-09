@@ -183,6 +183,13 @@ cùng identity/version chain; target, raw_paths lịch sử và link trong snaps
 tồn tại. Các snapshot cũ không bị ép backlink với page current, vì đó là quan hệ
 của từng thời điểm.
 
+Với luồng văn xuôi, `scripts/coverage.py` là completeness gate chạy trên output
+fresh trước khi ghi page: mọi Điều/khoản trong đúng chapter scope phải xuất hiện
+hoặc có marker rõ dạng `[Chưa bao phủ: 33.1.9]`. Khoản bị bỏ mà không có marker,
+hoặc identifier ngoài source scope, đều reject và ghi report vào
+`derived/stage4-rejected/*.coverage.json`. Gate này deterministic, không gọi LLM;
+`scripts/coverage_selftest.py` kiểm tra contract của nó.
+
 Identity/version canonical nằm trong `documents.yml`. Re-ingest phải tạo version mới,
 khai `supersedes`, chạy trong worktree `ingest/<doc>@vN`, xem `reingest-plan.json`,
 review diff rồi mới merge. Artifact raw và page không đổi được giữ nguyên path/bytes;
