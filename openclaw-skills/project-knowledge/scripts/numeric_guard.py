@@ -102,7 +102,10 @@ MASK = [
 # nó đi là mở một lỗ thật — cổng mất khả năng bắt số bịa. Tiêu chí phân biệt chắc chắn
 # nằm ở chữ ĐỨNG SAU: số hiệu mục theo sau là chữ thường ('2.1 Người lao động'), số đo
 # theo sau là ĐƠN VỊ ('43.1 giờ'). Nên phải tra UNIT_SYN, việc regex không làm được.
-CLAUSE_MARKER = re.compile(r"(?m)^[ \t>|*\-#]*\*{0,2}(\d+(?:\.\d+){1,3})\*{0,2}[.):]?(?=\s|$)")
+# OCR sometimes turns the separator in a clause identifier into a comma
+# (``29,3.``). A recognised unit immediately after the marker still keeps
+# real measures visible (for example ``43,5 giờ``).
+CLAUSE_MARKER = re.compile(r"(?m)^[ \t>|*\-#]*\*{0,2}(\d+(?:[.,]\d+){1,3})\*{0,2}[.):]?(?=\s|$)")
 # Số thứ tự DANH SÁCH markdown: '2. Bản thân Người lao động bị ốm'. Không có dấu chấm
 # bên trong nên CLAUSE_MARKER không bắt; phải đòi dấu chấm/ngoặc NGAY SAU chữ số để
 # không nuốt '40 giờ mỗi tuần' đứng đầu dòng.
@@ -287,7 +290,9 @@ def unit_after(tail):
     nhặt chữ đầu của đoạn sau làm đơn vị: footer chạy trang `Lần ban hành: 1.0` ⏎⏎
     `Ngày ban hành:` sinh ra một "số đo 1 ngày" không hề tồn tại. Số đo và đơn vị của
     nó luôn đứng cạnh nhau trong một dòng; qua dấu xuống dòng là sang ý khác."""
-    match = re.match(r"[^\S\n]*([^\W\d_]+)(?:[^\S\n]+([^\W\d_]+))?", tail, re.UNICODE)
+    match = re.match(
+        r"[^\S\n]*(?:\([^\n)]{1,32}\)[^\S\n]*)?"
+        r"([^\W\d_]+)(?:[^\S\n]+([^\W\d_]+))?", tail, re.UNICODE)
     if not match:
         return None
     first = match.group(1).lower()
@@ -326,7 +331,10 @@ def _overlaps(span, spans):
                for masked_start, masked_end in spans)
 
 
-DOTTED = re.compile(r"\d+(?:\.\d+){1,3}")
+# Clause identifiers can be OCR'd with comma separators (e.g. ``29,3.``) while
+# the LLM may render the same identifier with dots (``29.3``).  Keep both
+# spellings and canonicalise them before carrying identifiers across the gate.
+DOTTED = re.compile(r"\d+(?:[.,]\d+){1,3}")
 
 
 def known_identifiers(text):
@@ -339,7 +347,7 @@ def known_identifiers(text):
     Chỉ nhận những chuỗi ĐÃ được vế nguồn coi là định danh. Không suy đoán gì thêm:
     một con số chưa từng xuất hiện trong nguồn vẫn là số mới, và một số đo thật trong
     nguồn không nằm trong vùng che nên không lọt vào tập này."""
-    return {match.group(0)
+    return {_canonical_transform_number(match.group(0))
             for start, end in masked_spans(text)
             for match in DOTTED.finditer(text[start:end])}
 

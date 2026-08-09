@@ -488,6 +488,17 @@ def test_transform_two_phase() -> int:
                               numeric_guard._canonical_transform_number(text) == want,
                               numeric_guard._canonical_transform_number(text))
 
+    # OCR may render clause 29.3 as ``29,3.``; carry that identifier across a
+    # summary that normalises it to dots, while still exposing real measures.
+    errors, _ = numeric_guard.check_transform(
+        "29,3. Quy trình xác minh.\n03 (ba) ngày làm việc.",
+        "Quy trình 29.3.\n03 ngày làm việc.", allow_loss=True)
+    failures += not check("OCR clause comma + parenthesised unit không bị chặn",
+                          errors == [], str(errors))
+    rows = numeric_guard.transform_numbers("29,3. Quy trình\n43,5 giờ")
+    failures += not check("OCR clause marker vẫn giữ số đo cạnh bên",
+                          rows == [("43.5", "hour", "43,5")], str(rows))
+
     # Mục "## Nguồn" cuối trang (PROMPT Stage 4 yêu cầu) tự trích lại `version` của
     # CHÍNH trang đó bằng khoá tiếng Anh trong backtick. Chương không có số đo nào
     # canonical hoá về '1' thì mục này vẫn không được báo "số mới `1`" — nó là định
