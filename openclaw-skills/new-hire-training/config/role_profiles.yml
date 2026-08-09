@@ -1,0 +1,92 @@
+# Editable role-specific training configuration.
+# This file contains learning guidance only; it is not a source of policy.
+aliases:
+  dev: developer
+  backend: developer
+  frontend: developer
+  backend-developer: developer
+  frontend-developer: developer
+  engineering: developer
+  tester: qa
+  qa-engineer: qa
+  qa-tester: qa
+  kiem-thu: qa
+  quality-assurance: qa
+  quality: qa
+  pm: project-manager
+  project-management: project-manager
+  projectmanager: project-manager
+  quan-ly-du-an: project-manager
+  hr: hr-operations
+  operations: hr-operations
+  ops: hr-operations
+  nhan-su: hr-operations
+  van-hanh: hr-operations
+
+roles:
+  developer:
+    label: "Developer / Engineering"
+    title: "Trọng tâm Developer và chuẩn bị nhận task"
+    outcome: "Biết truy nguồn task/team của Nexus và nhận diện phần setup kỹ thuật cần xác nhận với Tech Lead."
+    activity: "Đề xuất: chọn một task trong KB, truy owner/status/source rồi lập checklist câu hỏi về repository và môi trường."
+    first_activity: "Đề xuất: trace một task từ nguồn đến owner/status, sau đó ghi rõ các bước kỹ thuật chưa có nguồn."
+    gaps:
+      - "quy trình setup máy, repository và kiến trúc module"
+      - "branch/PR, code review, CI/CD và coding convention"
+      - "tech-stack và tiêu chí kiểm thử cho vai trò cụ thể"
+    questions:
+      - "Repository, kiến trúc module và cách setup môi trường Developer? — `[Chưa có trong KB]`"
+      - "Quy ước branch/PR, code review và CI/CD? — `[Chưa có trong KB]`"
+
+  qa:
+    label: "QA / Quality Assurance"
+    title: "Trọng tâm QA và chuẩn bị kiểm thử"
+    outcome: "Biết truy context dự án/team và phân biệt dữ liệu đã có với quy trình QA cần hỏi lại."
+    activity: "Đề xuất: chọn một task, lập danh sách câu hỏi về acceptance criteria, môi trường và nguồn kết quả kiểm thử."
+    first_activity: "Đề xuất: trace một task từ nguồn đến status, đánh dấu các tiêu chí kiểm thử chưa được KB công bố."
+    gaps:
+      - "test strategy, test case và tiêu chí pass/fail"
+      - "môi trường test, dữ liệu test và quy trình quản lý defect"
+      - "release criteria, regression và đầu mối QA"
+    questions:
+      - "Test strategy, môi trường test và quy trình defect của Nexus? — `[Chưa có trong KB]`"
+      - "Tiêu chí release/regression và đầu mối QA? — `[Chưa có trong KB]`"
+
+  project-manager:
+    label: "Project Manager"
+    title: "Trọng tâm PM và điều phối dự án"
+    outcome: "Biết các nguồn resource, schedule, sprint, risk, issue của Nexus và nhận diện quy trình điều phối còn thiếu."
+    activity: "Đề xuất: mở Nexus Plan, trace một risk/issue/task về nguồn rồi ghi câu hỏi cần xác nhận với PM/owner."
+    first_activity: "Đề xuất: chọn một risk hoặc task, xác định nguồn và chuẩn bị câu hỏi về owner, status, escalation."
+    gaps:
+      - "quy trình Jira/Slack để log task, update và log time"
+      - "mẫu daily report, meeting follow-up và cadence báo cáo"
+      - "quyền owner/escalation và quy trình xử lý risk/issue"
+    questions:
+      - "Quy trình Jira/Slack, daily report và log time chính thức? — `[Chưa có trong KB]`"
+      - "Ai phê duyệt escalation risk/issue và theo cadence nào? — `[Chưa có trong KB]`"
+
+  hr-operations:
+    label: "HR / Operations"
+    title: "Trọng tâm HR/Operations và tuân thủ nội bộ"
+    outcome: "Nắm phạm vi Nội quy lao động, biết phần nào cần HR xác nhận và không nhầm dữ liệu dự án với chính sách HR."
+    activity: "Đề xuất: lập checklist ngày đầu từ nguồn nội bộ và đánh dấu từng điểm cần HR xác nhận bản gốc."
+    first_activity: "Đề xuất: chọn một quy định nội bộ, ghi citation và tách rõ điều bắt buộc với câu hỏi cần HR xác nhận."
+    gaps:
+      - "quy trình cấp tài khoản, hồ sơ, phúc lợi và payroll"
+      - "đầu mối HR/Operations và SLA xử lý yêu cầu nhân sự"
+      - "quy trình đào tạo bắt buộc, bảo mật và lưu hồ sơ"
+    questions:
+      - "Quy trình hồ sơ, tài khoản, phúc lợi/payroll và đầu mối HR? — `[Chưa có trong KB]`"
+      - "Đào tạo bắt buộc và quy trình lưu hồ sơ nhân sự? — `[Chưa có trong KB]`"
+
+  general:
+    label: "General onboarding"
+    title: "Trọng tâm vai trò và khoảng trống cần xác nhận"
+    outcome: "Biết dùng nguồn KB cho onboarding và nhận diện thông tin riêng của vai trò chưa được công bố."
+    activity: "Đề xuất: chọn một task hoặc quy định, truy nguồn và ghi các câu hỏi cần người phụ trách xác nhận."
+    first_activity: "Đề xuất: trả lời câu hỏi onboarding bằng citation và đánh dấu dữ liệu còn thiếu."
+    gaps:
+      - "quy trình và tiêu chí chuyên biệt của vai trò người học"
+    questions:
+      - "Quy trình chuyên biệt của vai trò người học? — `[Chưa có trong KB]`"

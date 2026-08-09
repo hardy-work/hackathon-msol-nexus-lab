@@ -23,11 +23,36 @@ Tạo một tài liệu training có thể dùng ngay từ các trang wiki hiệ
      --kb-root ../project-knowledge \
      --project nexus \
      --role developer \
+     --roles-config config/role_profiles.yml \
      --name "Nhân viên mới" \
      --output ./generated/nexus-new-hire.md
    ```
 
 6. Đọc lại output và kiểm tra: mỗi module có source reference, các con số giữ nguyên như nguồn, cảnh báo OCR được giữ nguyên, trạng thái freshness được hiển thị, và phần thiếu dữ liệu được ghi rõ. Không gọi Slack/Jira/Google Drive trong skill này.
+
+## Profile theo vai trò
+
+Generator nhận các role phổ biến `developer`, `qa`, `project-manager` và `hr-operations` (có alias như `backend-developer`, `tester`, `pm`, `hr`). Mỗi profile thêm module trọng tâm, hoạt động gợi ý và danh sách khoảng trống. Khoảng trống luôn được đánh dấu `[Chưa có trong KB]`, không được hiểu là một quy trình/policy đã tồn tại.
+
+Với các trang entity chỉ có `raw_paths`, generator truy ngược `documents.yml` để hiển thị `doc_id/version` canonical và giữ lại `raw_paths` trong citation.
+
+Artifact luôn gắn scope: `policy_fixed` cho Nội quy/chính sách cố định, `project_dynamic` cho resource/sprint/team/risk/workflow có thể thay đổi, và `role_guidance` cho hướng dẫn theo vai trò. Khi project thay đổi, kiểm tra/regenerate phần `project_dynamic`; không cần ingest lại nguồn `policy_fixed`.
+
+Chạy evaluator offline sau khi sinh handbook:
+
+```bash
+python scripts/evaluate_training.py --dir ./generated
+```
+
+Khi chỉ có project/team thay đổi, dùng artifact handbook hiện tại để giữ nguyên
+hai module `policy_fixed`:
+
+```bash
+python scripts/create_training.py \
+  --kb-root ../project-knowledge --project nexus --role developer \
+  --scope project_dynamic --previous ./generated/nexus-new-hire.md \
+  --output ./generated/nexus-new-hire.project-refresh.md
+```
 
 ## Hợp đồng đầu ra
 
@@ -56,4 +81,6 @@ Generator mặc định tạo nội dung deterministic, không cần LLM hay m�
 
 - `scripts/create_training.py`: generator deterministic cho handbook Markdown.
 - `scripts/selftest.py`: kiểm tra lọc visibility, phân loại nguồn, citation và fail-closed behavior.
+- `scripts/evaluate_training.py`: chấm cấu trúc, scope policy/project, citation, freshness và khoảng trống của artifact.
+- `config/role_profiles.yml`: profile role có thể chỉnh mà không sửa generator.
 - `references/training-contract.md`: schema module, quy tắc citation và checklist review.

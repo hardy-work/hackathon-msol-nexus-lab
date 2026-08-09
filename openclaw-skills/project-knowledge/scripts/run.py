@@ -16,6 +16,11 @@ import json
 import os
 import sys
 
+if hasattr(sys.stdout, "reconfigure"):
+    # The CLI contract is UTF-8 JSON even when Windows uses cp1252 for the
+    # console.  Evaluators consume stdout as bytes, so a code-page failure
+    # must not turn a valid answer into invalid_json.
+    sys.stdout.reconfigure(encoding="utf-8")
 _STDOUT = sys.stdout
 with contextlib.redirect_stdout(sys.stderr):
     from runtime_engine import default_runtime

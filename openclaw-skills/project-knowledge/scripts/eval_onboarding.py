@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 from runtime_engine import KnowledgeRuntime
 
 ROOT = Path(__file__).resolve().parent.parent
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
 
 
 def main() -> int:

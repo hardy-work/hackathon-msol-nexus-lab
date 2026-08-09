@@ -18,6 +18,15 @@ Each module has:
 - a practical activity that is explicitly labelled as a suggested activity;
 - one or more citations;
 - a `coverage` value: `covered`, `partial`, or `not_in_kb`.
+- a `scope` value: `policy_fixed`, `project_dynamic`, or `role_guidance`.
+
+`policy_fixed` identifies a stable company policy source; `project_dynamic` identifies
+project/team data that may be refreshed independently; `role_guidance` is learning
+guidance and missing-data disclosure, never a newly inferred policy.
+
+With `--scope project_dynamic --previous <current-handbook>`, the generator reuses
+the existing `policy_fixed` module blocks byte-for-byte and regenerates only the
+project/team/role/practice portion.
 
 ## Review checklist
 
