@@ -1,7 +1,7 @@
 """Rule engine cho skill risk-assessment — thuần deterministic, KHÔNG có LLM.
 scan.py chỉ gọi run_rules() rồi diễn giải kết quả bằng tiếng Việt.
 
-12 rule chia theo 4 layer (Person/Task/Sprint/Module). Skill này CHỈ ĐỌC +
+11 rule chia theo 4 layer (Person/Task/Sprint/Module). Skill này CHỈ ĐỌC +
 ĐÁNH GIÁ — không ghi gì vào Sheet (việc ghi risk/issue do skill khác đảm
 nhiệm), nên không cần Trend/so sánh lịch sử, mỗi lần chạy là 1 bức ảnh độc
 lập tại thời điểm gọi.
@@ -23,7 +23,6 @@ from datetime import date, datetime, timedelta
 
 DEFAULT_THRESHOLDS = {
     "overdueGraceDays": 0,
-    "stalledDays": 3,
     "estimateVarianceRatio": 1.5,
     "workHoursPerDay": 8,
     "highScoreThreshold": 6,
@@ -137,44 +136,6 @@ def rule_T2_effort_overrun(tasks: list[dict], today: str, th: dict) -> list[dict
                         "Re-estimate lại phần việc còn lại",
                         f'Trao đổi với {t.get("assignee") or "assignee"} về khó khăn phát sinh',
                         "Chia nhỏ task, tách phần khó ra xử lý riêng",
-                    ],
-                    today=today,
-                    th=th,
-                    related_assignee_task=_assignee_task_label(t),
-                )
-            )
-    return out
-
-
-# --- T3: Sub-task đứng yên >= N ngày -> Risk ----------------------------------
-def rule_T3_stalled(tasks: list[dict], today: str, th: dict) -> list[dict]:
-    out = []
-    for t in tasks:
-        if t["isDone"] or not t.get("lastUpdated"):
-            continue
-        idle_days = days_between(t["lastUpdated"], today)
-        # Ngưỡng không nên cố định cho mọi task: task dự kiến làm nhiều ngày
-        # (Plan End - Plan Start dài) đứng ở "In progress" suốt thời gian đó
-        # là bình thường, không phải bị đứng yên. Nếu biết được thời lượng dự
-        # kiến của task, lấy max(stalledDays, thời lượng đó) làm ngưỡng riêng;
-        # task không có đủ Plan Start/End thì dùng lại stalledDays mặc định.
-        duration = (
-            days_between(t["planStart"], t["planEnd"]) if t.get("planStart") and t.get("planEnd") else None
-        )
-        threshold = max(duration, th["stalledDays"]) if duration and duration > 0 else th["stalledDays"]
-        if idle_days >= threshold:
-            out.append(
-                make_item(
-                    layer="Task",
-                    rule="T3",
-                    description=f'Sub-task "{t["title"]}" đứng yên (status không đổi) đã {idle_days} ngày.',
-                    detected_from=t["detectedFrom"],
-                    probability=2,
-                    impact=2,
-                    next_action_options=[
-                        f'Hỏi {t.get("assignee") or "người phụ trách"} về tiến độ',
-                        "Xem xét reassign task",
-                        "Kiểm tra task có đang bị block bởi task khác không",
                     ],
                     today=today,
                     th=th,
@@ -653,7 +614,7 @@ def run_rules(
     today: str | None = None,
     ot_by_person: dict[str, dict] | None = None,
 ) -> dict:
-    """Entrypoint DUY NHẤT scan.py cần gọi — chạy đủ 12 rule theo đúng thứ tự
+    """Entrypoint DUY NHẤT scan.py cần gọi — chạy đủ 11 rule theo đúng thứ tự
     layer. `resource_plan_people`/`sprint_end`/`sprint_name` là optional:
     thiếu 1 trong 3 thì bỏ qua P1/P4/S2 (cần dữ liệu Resource plan + biết
     sprint đang phân tích), các rule còn lại vẫn chạy bình thường.
@@ -674,7 +635,6 @@ def run_rules(
     ]
 
     risks = [
-        *rule_T3_stalled(tasks, today, th),
         *rule_T4_not_started(tasks, today, th),
         *rule_P2_daily_overload(tasks, today, th),
         *rule_P3_unassigned_near_deadline(tasks, today, th),

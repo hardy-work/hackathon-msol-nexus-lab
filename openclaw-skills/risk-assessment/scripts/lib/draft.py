@@ -2,7 +2,7 @@
 API, không LLM (mọi câu chữ đều dựng từ template + số liệu thật).
 
 Skill này CHỈ ĐỌC + ĐÁNH GIÁ, không ghi gì vào Sheet — nên report không còn
-liệt kê từng risk/issue mới phát hiện (12 rule vẫn chạy đủ, layer vẫn là
+liệt kê từng risk/issue mới phát hiện (11 rule vẫn chạy đủ, layer vẫn là
 cách phân tích nội bộ), mà nén lại thành 1 mục "Đánh giá" (sprint/người/
 category có nguy cơ không kịp hay không, kèm đề xuất) + tally gọn của phần
 đã có sẵn trên Sheet. Chi tiết từng risk/issue vẫn nằm đủ trong JSON block
@@ -101,7 +101,7 @@ def _detail_note(passive_risks: list[dict], passive_issues: list[dict]) -> str |
         return None
     return (
         f"Ngoài ra còn {len(detail_risks)} risk + {len(passive_issues)} issue khác được phát hiện "
-        "(task trễ hạn, chưa bắt đầu, nghỉ phép, đứng yên...) — hỏi mình nếu muốn biết chi tiết cụ thể."
+        "(task trễ hạn, chưa bắt đầu, nghỉ phép...) — hỏi mình nếu muốn biết chi tiết cụ thể."
     )
 
 

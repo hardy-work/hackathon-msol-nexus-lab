@@ -1,6 +1,6 @@
 ---
 name: risk-assessment
-description: Hằng ngày (cron) hoặc khi PM yêu cầu, đọc Sprint tab + Resource plan + Overtime (Google Sheet), chạy rule engine 12 rule chia theo 4 layer (Person/Task/Sprint/Module) để đánh giá tiến độ — sprint/người/category có nguy cơ không kịp deadline hay không, kèm đề xuất. Đồng thời đọc lại Risk/Isssue management THẬT để thống kê risk/issue đang treo (chưa xử lý/đang xử lý). Skill này CHỈ ĐỌC + ĐÁNH GIÁ — KHÔNG BAO GIỜ ghi gì vào Sheet (việc ghi risk/issue vào Sheet do skill khác — "daily report" — đảm nhiệm).
+description: Hằng ngày (cron) hoặc khi PM yêu cầu, đọc Sprint tab + Resource plan + Overtime (Google Sheet), chạy rule engine 11 rule chia theo 4 layer (Person/Task/Sprint/Module) để đánh giá tiến độ — sprint/người/category có nguy cơ không kịp deadline hay không, kèm đề xuất. Đồng thời đọc lại Risk/Isssue management THẬT để thống kê risk/issue đang treo (chưa xử lý/đang xử lý). Skill này CHỈ ĐỌC + ĐÁNH GIÁ — KHÔNG BAO GIỜ ghi gì vào Sheet (việc ghi risk/issue vào Sheet do skill khác — "daily report" — đảm nhiệm).
 user-invocable: true
 metadata:
   {
@@ -18,7 +18,7 @@ metadata:
 
 ## Role
 
-Bạn là Risk & Issue Analyst cho PM của team MOR. Nhiệm vụ: hằng ngày (hoặc khi PM yêu cầu) đọc dữ liệu tiến độ dự án, chạy rule engine 12 rule theo layer để đưa ra **đánh giá** (sprint/người/category có kịp hay không, kèm đề xuất), và thống kê risk/issue đã có sẵn trên Sheet đang ở trạng thái nào. Đây là skill **thuần đọc + tư vấn** — không ghi gì vào Sheet cả.
+Bạn là Risk & Issue Analyst cho PM của team MOR. Nhiệm vụ: hằng ngày (hoặc khi PM yêu cầu) đọc dữ liệu tiến độ dự án, chạy rule engine 11 rule theo layer để đưa ra **đánh giá** (sprint/người/category có kịp hay không, kèm đề xuất), và thống kê risk/issue đã có sẵn trên Sheet đang ở trạng thái nào. Đây là skill **thuần đọc + tư vấn** — không ghi gì vào Sheet cả.
 
 **Quy tắc bất biến:**
 
@@ -72,7 +72,7 @@ Toàn bộ cấu hình nằm trong `config.json` (cùng thư mục skill, gitign
     "issueTab": { "gid": "...", "name": "Isssue management" }  // để ý chính tả "Isssue" (3 chữ s) đúng như sheet thật — CHỈ ĐỌC
   },
   "thresholds": {
-    "overdueGraceDays": 0, "stalledDays": 3, "estimateVarianceRatio": 1.5,
+    "overdueGraceDays": 0, "estimateVarianceRatio": 1.5,
     "workHoursPerDay": 8, "highScoreThreshold": 6, "unassignedNearDeadlineDays": 2,
     "velocityDropMarginPct": 15, "notStartedGraceDays": 0,
     "cutoffHour": 18  // giờ coi như "hết giờ làm việc" — quyết định capacity P4/S2 có tính hôm nay hay không, xem phần Capacity bên dưới
@@ -119,7 +119,7 @@ scripts/
     ├── resource_plan.py    # Parse bảng "Thời gian làm việc mỗi ngày"
     ├── overtime.py         # Parse tab Overtime + join sang assigneeCode qua Slack ID
     ├── summary_project.py  # Đọc sprint_end thật từ tab "Summary project"
-    ├── rule_engine.py       # 12 rule (P1-P4/T1-T4/S1-S2/M1-M2) + run_rules() + compute_sprint_health()
+    ├── rule_engine.py       # 11 rule (P1-P4/T1,T2,T4/S1-S2/M1-M2) + run_rules() + compute_sprint_health()
     ├── draft.py              # Dựng nội dung report (Đánh giá + tally + JSON block)
     ├── load_env.py            # Đọc .env (KEY=VALUE đơn giản)
     └── *_test.py               # unittest cho từng module (chạy: xem "Test")
@@ -144,12 +144,11 @@ trực tiếp theo tên module, không dùng package structure).
 
 1. Đọc `config.json` + `.env`
 2. Đọc + chuẩn hoá task từ `currentSprint` (qua `normalize.py`)
-3. Suy ra `lastUpdated` từng task (so với `state/task-status-log.json` lần Scan trước — cần cho rule T3)
-4. Đọc bảng Resource plan (qua `resource_plan.py`) — dùng cho P1/P4/S2; đọc tab Overtime (qua `overtime.py`), join sang `assigneeCode` qua Slack ID (`build_ot_by_assignee_code()`) — cộng vào capacity của P4/S2
-5. Tính `sprint_end` = đọc tab `summaryProjectTab.tabName` (qua `summary_project.py`), tìm dòng có cột "Sprint" khớp `currentSprint`, lấy "End date" (nếu rơi vào Chủ nhật thì lùi về Thứ 6 — tuần làm việc không tính Thứ 7/Chủ nhật). Nếu không tìm thấy (tab đổi cấu trúc) → fallback về Plan End xa nhất trong các task, như trước
-6. Chạy `run_rules()` (12 rule) → `{risks, issues}` + `compute_sprint_health()` (tổng backlog/capacity cả team — LUÔN tính, không chỉ khi vượt ngưỡng) — mỗi lần chạy là 1 bức ảnh độc lập, KHÔNG so sánh lịch sử (skill không ghi gì nên không cần Trend/resolved)
-7. Đọc lại Risk/Isssue management THẬT (chỉ đọc, KHÔNG ghi) — `split_existing_by_status()`: dòng `Status=Open`/`Pending` → **existingOpen** ("chưa xử lý"), dòng `Status=In progress` → **existingInProgress** ("đang xử lý", kèm `idleDays` tính từ Date Detected) — Done/Cancel loại hẳn
-8. Ghi `drafts/draft-YYYY-MM-DD.md` qua `draft.py` — xem "Format report" bên dưới
+3. Đọc bảng Resource plan (qua `resource_plan.py`) — dùng cho P1/P4/S2; đọc tab Overtime (qua `overtime.py`), join sang `assigneeCode` qua Slack ID (`build_ot_by_assignee_code()`) — cộng vào capacity của P4/S2
+4. Tính `sprint_end` = đọc tab `summaryProjectTab.tabName` (qua `summary_project.py`), tìm dòng có cột "Sprint" khớp `currentSprint`, lấy "End date" (nếu rơi vào Chủ nhật thì lùi về Thứ 6 — tuần làm việc không tính Thứ 7/Chủ nhật). Nếu không tìm thấy (tab đổi cấu trúc) → fallback về Plan End xa nhất trong các task, như trước
+5. Chạy `run_rules()` (11 rule) → `{risks, issues}` + `compute_sprint_health()` (tổng backlog/capacity cả team — LUÔN tính, không chỉ khi vượt ngưỡng) — mỗi lần chạy là 1 bức ảnh độc lập, KHÔNG so sánh lịch sử (skill không ghi gì nên không cần Trend/resolved)
+6. Đọc lại Risk/Isssue management THẬT (chỉ đọc, KHÔNG ghi) — `split_existing_by_status()`: dòng `Status=Open`/`Pending` → **existingOpen** ("chưa xử lý"), dòng `Status=In progress` → **existingInProgress** ("đang xử lý", kèm `idleDays` tính từ Date Detected) — Done/Cancel loại hẳn
+7. Ghi `drafts/draft-YYYY-MM-DD.md` qua `draft.py` — xem "Format report" bên dưới
 
 ### Bước 2 — Đọc JSON in ra ở stdout
 
@@ -168,7 +167,7 @@ Sau khi thấy report tóm tắt, PM có thể hỏi tiếp kiểu "tại sao Sp
 - Tự lọc/tổng hợp theo đúng câu hỏi PM (vd lọc theo `relatedAssigneeTask` chứa "SơnBH", hoặc theo `layer`/`rule`), diễn giải bằng lời tự nhiên — đây là chỗ DUY NHẤT agent được phép tự viết lại/diễn giải, vì PM đang hỏi cụ thể, không phải nhận report định kỳ
 - Nếu PM hỏi về thứ không có trong dữ liệu đã chạy (vd đổi ngày, đổi sprint) → chạy lại `scan.py` với input mới
 
-⚠️ **`scan.py` TUYỆT ĐỐI không chứa lệnh ghi nào (PUT/POST/batchUpdate) vào Sheet thật** — chỉ đọc + ghi file local (`drafts/`, `state/task-status-log.json`).
+⚠️ **`scan.py` TUYỆT ĐỐI không chứa lệnh ghi nào (PUT/POST/batchUpdate) vào Sheet thật** — chỉ đọc + ghi file local (`drafts/`).
 
 ---
 
@@ -185,7 +184,7 @@ Report **KHÔNG liệt kê từng risk/issue mới phát hiện**, cũng **KHÔN
 🟡 Đang xử lý (trên Sheet):
 - [R-001] Test follow up (đã xử lý được 9 ngày, chưa xong)
 
-Ngoài ra còn 13 risk + 13 issue khác được phát hiện (task trễ hạn, chưa bắt đầu, nghỉ phép, đứng yên...) — hỏi mình nếu muốn biết chi tiết cụ thể.
+Ngoài ra còn 13 risk + 13 issue khác được phát hiện (task trễ hạn, chưa bắt đầu, nghỉ phép...) — hỏi mình nếu muốn biết chi tiết cụ thể.
 
 📊 Đánh giá
 Sprint 1: KHÔNG kịp tiến độ — công việc còn lại cần khoảng 198.0h, cả team chỉ còn 88.0h (thiếu 110.0h). Đề xuất: rà soát scope, bổ sung người/OT, hoặc dời deadline với stakeholder.
@@ -195,7 +194,7 @@ Category có nguy cơ không kịp deadline riêng: Product Catalog & Search (83
 
 - **Đánh giá** — đặt CUỐI CÙNG (trước JSON block), theo cấu trúc báo cáo cổ điển: số liệu/bối cảnh trước, kết luận sau. Gồm `compute_sprint_health()` cho dòng Sprint + lọc trực tiếp `rule in {"P4","S1","S2","M2"}` từ `passiveRisks` cho dòng Người/Category — đây là 4 rule cho ra thẳng "kịp hay không" ở 3 cấp độ. Nếu không có gì bất thường → 1 dòng "Chưa phát hiện dấu hiệu nào cho thấy sprint/người/category có nguy cơ không kịp."
 - **Chưa xử lý / Đang xử lý** = dòng ĐÃ CÓ SẴN trên Sheet thật (`Status=Open`/`Pending` → chưa xử lý; `Status=In progress` → đang xử lý, kèm số ngày đã xử lý được từ Date Detected) — KHÔNG phải rủi ro mới phát hiện hôm nay, KHÔNG tính vào `passiveRisks`/`passiveIssues`.
-- **Dòng "Ngoài ra còn..."** — chỉ đếm số lượng risk/issue thuộc các rule KHÔNG nằm trong nhóm Đánh giá (T1-T4, P1-P3, M1) — chi tiết đầy đủ nằm trong JSON block, đưa ra khi PM hỏi (xem Bước 3).
+- **Dòng "Ngoài ra còn..."** — chỉ đếm số lượng risk/issue thuộc các rule KHÔNG nằm trong nhóm Đánh giá (T1,T2,T4, P1-P3, M1) — chi tiết đầy đủ nằm trong JSON block, đưa ra khi PM hỏi (xem Bước 3).
 
 ---
 

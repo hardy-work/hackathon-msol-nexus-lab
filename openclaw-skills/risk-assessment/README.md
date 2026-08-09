@@ -6,7 +6,7 @@ Skill giúp PM **đánh giá tiến độ dự án hằng ngày** từ dữ li�
 
 Rủi ro/issue chia 2 nguồn:
 - **Đã có sẵn trên Sheet** — đọc trực tiếp Risk/Isssue management, chia theo Status: `Open`/`Pending` = "chưa xử lý", `In progress` = "đang xử lý" (`Done`/`Cancel` bỏ qua, coi như đã đóng).
-- **Rule engine tự đánh giá** — 12 rule chia theo 4 layer **Người → Task → Sprint → Category** (layer chỉ là cách phân tích nội bộ, không hiện ra ngoài report), có cascade thật (vd 1 người nghỉ → tự tìm ra đúng sub-task/module bị ảnh hưởng). Report mặc định chỉ hiện phần tóm tắt "Đánh giá" (sprint/người/category có kịp không); chi tiết từng risk/issue chỉ đưa ra khi PM hỏi thêm.
+- **Rule engine tự đánh giá** — 11 rule chia theo 4 layer **Người → Task → Sprint → Category** (layer chỉ là cách phân tích nội bộ, không hiện ra ngoài report), có cascade thật (vd 1 người nghỉ → tự tìm ra đúng sub-task/module bị ảnh hưởng). Report mặc định chỉ hiện phần tóm tắt "Đánh giá" (sprint/người/category có kịp không); chi tiết từng risk/issue chỉ đưa ra khi PM hỏi thêm.
 
 Chưa cấu hình gì cả — cứ gõ thẳng yêu cầu, skill sẽ tự hỏi bạn link Google Sheet nếu cần.
 
@@ -19,7 +19,7 @@ Chưa cấu hình gì cả — cứ gõ thẳng yêu cầu, skill sẽ tự hỏ
 
 ## Quy trình
 
-1. `python scripts/scan.py` đọc Sprint tab + Resource plan + Overtime, áp 12 rule (P1-P4/T1-T4/S1-S2/M1-M2) + tính sức khỏe sprint (`compute_sprint_health`), đọc lại Risk/Isssue management thật (chỉ đọc), ghi report vào `drafts/`. **Không bao giờ ghi vào Sheet.**
+1. `python scripts/scan.py` đọc Sprint tab + Resource plan + Overtime, áp 11 rule (P1-P4/T1,T2,T4/S1-S2/M1-M2) + tính sức khỏe sprint (`compute_sprint_health`), đọc lại Risk/Isssue management thật (chỉ đọc), ghi report vào `drafts/`. **Không bao giờ ghi vào Sheet.**
 2. Skill trình bày report trong chat — lấy nguyên văn từ field `narrative` mà `scan.py` in ra (mục Đánh giá + Chưa xử lý/Đang xử lý + tally).
 3. PM hỏi thêm chi tiết cụ thể → agent tự tra trong field `passiveRisks`/`passiveIssues` của JSON block (đã chạy sẵn, không cần chạy lại `scan.py`) để trả lời.
 
@@ -31,7 +31,7 @@ Copy `config.example.json` → `config.json`, điền `fileId`/`currentSprint`/c
 
 ## Rule engine
 
-Toàn bộ logic (đọc/chuẩn hoá Sprint tab, Resource plan, Overtime, 12 rule, sức khỏe sprint) nằm ở `scripts/lib/` — Python thuần chuẩn thư viện, không cài package ngoài. Mỗi module có test riêng cùng thư mục (`<tên>_test.py`). Chạy từng file:
+Toàn bộ logic (đọc/chuẩn hoá Sprint tab, Resource plan, Overtime, 11 rule, sức khỏe sprint) nằm ở `scripts/lib/` — Python thuần chuẩn thư viện, không cài package ngoài. Mỗi module có test riêng cùng thư mục (`<tên>_test.py`). Chạy từng file:
 
 ```bash
 cd scripts/lib
