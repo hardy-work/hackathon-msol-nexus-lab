@@ -1,0 +1,19 @@
+{
+  "event": {
+    "type": "app_mention",
+    "channel": "C-EVENT",
+    "ts": "1730000000.000100",
+    "thread_ts": "1730000000.000100",
+    "user": "U-PM",
+    "text": "<@U-BOT> context thread này là gì?"
+  },
+  "replies": [
+    {
+      "ts": "1730000001.000200",
+      "thread_ts": "1730000000.000100",
+      "channel": "C-EVENT",
+      "user": "U-DEV",
+      "text": "Đã cập nhật tài liệu onboarding."
+    }
+  ]
+}
