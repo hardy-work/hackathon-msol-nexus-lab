@@ -154,11 +154,23 @@ FRONT_SECTION = ("phan-dau", "Phần đầu: bìa, kiểm soát tài liệu, m�
 FRONT_MIN_CHARS = 400
 
 
+# Tên trang chương = <doc_id>--<slug>.md, và doc_id đã dài 45 ký tự (slug tên + dấu
+# thời gian UTC + hash). Cộng tiền tố worktree nạp (`.ingest-worktrees/ingest-<doc_id>@v1/
+# openclaw-skills/project-knowledge/`) thì đường dẫn tuyệt đối vượt 260 ký tự của Windows
+# — cắt 60 làm `chuong-5-an-toan-ve-sinh-lao-dong-tai-noi-lam-viec` đủ để tràn. Cắt 28
+# và bỏ mảnh từ dở ở cuối: tên vẫn đọc được, và còn dư chỗ cho doc_id dài hơn tài liệu
+# này (đường dẫn dài nhất hiện tại 244/260).
+SLUG_MAX = 28
+
+
 def slugify(text):
     text = unicodedata.normalize("NFD", text)
     text = "".join(c for c in text if unicodedata.category(c) != "Mn")
     text = text.replace("đ", "d").replace("Đ", "D").lower()
-    return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", text)).strip("-")[:60]
+    slug = re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", text)).strip("-")
+    if len(slug) <= SLUG_MAX:
+        return slug
+    return slug[:SLUG_MAX].rsplit("-", 1)[0]
 
 
 def chapter_marks(body):
@@ -312,11 +324,17 @@ def dump_rejected(name, text):
     Cùng lý do như derived/stage3-rejected/: chẩn đoán một dòng "số mới `29.3`" mà
     không có văn bản trong tay là đoán mò, và cách duy nhất để nhìn là chạy lại cả
     tài liệu bằng Opus. Ghi vào derived/ vì đây là trạng thái vận hành tái tạo được."""
-    out_dir = ROOT / "derived/stage4-rejected"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{name}.md"
-    path.write_text(text, encoding="utf-8")
-    return path.relative_to(ROOT).as_posix()
+    # Đây là công cụ CHẨN ĐOÁN — nó không bao giờ được làm hỏng lượt chạy. Bản đầu
+    # ném FileNotFoundError khi đường dẫn vượt 260 ký tự của Windows (worktree nạp có
+    # tiền tố dài sẵn), và một lượt Stage 4 chín phút chết ở dòng ghi log lỗi.
+    try:
+        out_dir = ROOT / "derived/stage4-rejected"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / f"{name}.md"
+        path.write_text(text, encoding="utf-8")
+        return path.relative_to(ROOT).as_posix()
+    except OSError as exc:
+        return f"(không ghi được bản bị từ chối: {exc.__class__.__name__})"
 
 
 def render(prompt, scope, timeout, name="page"):

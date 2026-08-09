@@ -322,7 +322,7 @@ def test_split_sections() -> int:
     sections = ingest_van.split_sections(body)
     slugs = [slug for slug, _, _ in sections]
     failures += not check("cắt chương: bỏ dòng mục lục, giữ tiêu đề thân bài",
-                          slugs == ["phan-dau", "chuong-1-nhung-quy-dinh-chung",
+                          slugs == ["phan-dau", "chuong-1-nhung-quy-dinh",
                                     "chuong-2-hop-dong-lao-dong"], str(slugs))
     failures += not check("cắt chương: nối lại khớp nguyên văn",
                           "".join(text for _, _, text in sections) == body,
@@ -331,6 +331,15 @@ def test_split_sections() -> int:
                           "bảng kiểm soát tài liệu" in sections[0][2], sections[0][2][:40])
     single = ingest_van.split_sections("## CHƯƠNG 1. A\n\nnội dung\n")
     failures += not check("cắt chương: một chương thì không cắt", single == [], str(single))
+
+    # Tên trang = <doc_id>--<slug>.md; doc_id đã 45 ký tự và worktree nạp có tiền tố
+    # dài, nên slug dài làm đường dẫn tuyệt đối vượt 260 ký tự của Windows.
+    long_slug = ingest_van.slugify("CHƯƠNG 5. AN TOÀN, VỆ SINH LAO ĐỘNG TẠI NƠI LÀM VIỆC")
+    failures += not check("slug bị cắt ngắn cho vừa giới hạn đường dẫn",
+                          len(long_slug) <= ingest_van.SLUG_MAX, f"{len(long_slug)}: {long_slug}")
+    failures += not check("slug cắt ở ranh giới từ, không đứt giữa chữ",
+                          not long_slug.endswith("-") and long_slug == "chuong-5-an-toan-ve-sinh",
+                          long_slug)
 
     # `structured/` mở đầu bằng frontmatter YAML do script sinh. Nếu chương 1 bắt đầu
     # ngay sau đó thì "phần đầu" chỉ còn metadata — cấp một mục rỗng cho Stage 4 thì
