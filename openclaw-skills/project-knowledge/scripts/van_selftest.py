@@ -437,6 +437,20 @@ def test_transform_two_phase() -> int:
         failures += not check(f"chỉ cảnh báo — {label}",
                               errors == [] and warnings != [], f"{errors} / {warnings}")
 
+    # Định danh của vế NGUỒN cũng là định danh ở vế ĐÍCH. `37.4.` trong nguồn được che
+    # (số thứ tự mục có chấm cuối); bản tóm tắt nhắc lại thành `37.4` giữa câu và vế
+    # kia không che, nên cổng đọc ra "số mới 37.4" — bất đối xứng, không phải bịa số.
+    source = ("Điều 37. Mức bồi thường.\n37.4. Khấu trừ tối đa 30% lương.\n"
+              "37.5. Trường hợp khác.\nLàm 40 giờ/tuần.")
+    quoted = "Điều 37 xen kẽ 37.4–37.5. Làm 40 giờ/tuần."
+    errors, _ = numeric_guard.check_transform(source, quoted, allow_loss=True)
+    failures += not check("tham chiếu khoản nhắc lại không thành số mới",
+                          errors == [], str(errors))
+    invented = "Điều 37 xen kẽ 37.4–37.5. Làm 45 giờ/tuần."
+    errors, _ = numeric_guard.check_transform(source, invented, allow_loss=True)
+    failures += not check("mang định danh sang KHÔNG mở đường cho số đo bịa",
+                          any("45" in message for message in errors), str(errors))
+
     # Cùng một giá trị vừa xuất hiện có đơn vị vừa xuất hiện trần. Rơi bản TRẦN thì
     # bản có đơn vị vẫn còn — không được gán nhãn đơn vị của instance khác rồi nâng
     # thành lỗi cứng.

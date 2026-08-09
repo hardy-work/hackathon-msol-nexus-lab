@@ -278,15 +278,38 @@ def _overlaps(span, spans):
                for masked_start, masked_end in spans)
 
 
-def transform_numbers(text):
-    """Return [(canonical, recognized_unit, original)] for prose transformation gates."""
+DOTTED = re.compile(r"\d+(?:\.\d+){1,3}")
+
+
+def known_identifiers(text):
+    """Chuỗi số nằm TRONG vùng đã che của một văn bản — tập định danh của nó.
+
+    `37.4.` trong nguồn được che (số thứ tự mục có chấm cuối). Bản tóm tắt nhắc lại
+    nó giữa câu, không dấu chấm cuối — cùng một định danh, nhưng vế kia không che nên
+    cổng đọc ra một "số mới 37.4". Đây là BẤT ĐỐI XỨNG giữa hai vế, không phải bịa số.
+
+    Chỉ nhận những chuỗi ĐÃ được vế nguồn coi là định danh. Không suy đoán gì thêm:
+    một con số chưa từng xuất hiện trong nguồn vẫn là số mới, và một số đo thật trong
+    nguồn không nằm trong vùng che nên không lọt vào tập này."""
+    return {match.group(0)
+            for start, end in masked_spans(text)
+            for match in DOTTED.finditer(text[start:end])}
+
+
+def transform_numbers(text, identifiers=()):
+    """Return [(canonical, recognized_unit, original)] for prose transformation gates.
+
+    `identifiers`: chuỗi số mà VẾ KIA đã coi là định danh — bỏ qua luôn ở vế này."""
     rows = []
-    identifiers = masked_spans(text)
+    masked = masked_spans(text)
+    known = set(identifiers)
     for match in TRANSFORM_TOKEN.finditer(text):
         # Ignore document/task identifiers, section references and spreadsheet cells.
-        if _overlaps(match.span(), identifiers):
+        if _overlaps(match.span(), masked):
             continue
         token = match.group(0)
+        if token.rstrip(".,") in known:
+            continue
         rows.append((_canonical_transform_number(token),
                      unit_after(text[match.end():]), token))
     return rows
@@ -320,7 +343,9 @@ def check_transform(before, after, *, allow_loss=False):
     chiếu cả trị số lẫn đơn vị với raw/ — và với nguồn OCR thì LUẬT OCR chặn từ đầu.
     """
     src = transform_numbers(before)
-    dst = transform_numbers(after)
+    # Định danh của vế nguồn cũng là định danh ở vế đích: `37.4.` là số thứ tự mục dù
+    # bản tóm tắt nhắc lại nó thành `37.4` giữa câu.
+    dst = transform_numbers(after, known_identifiers(before))
     errors, warnings = [], []
 
     # ---- PHA 1 · TRỊ SỐ. Bịa/làm tròn là lỗi cứng, không quan tâm đơn vị.
