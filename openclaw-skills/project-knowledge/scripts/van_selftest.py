@@ -672,6 +672,27 @@ def test_ingest_cost_guards(root: Path, structured: str) -> int:
     failures += not check("quota không retry gây tốn thêm token",
                           len(calls) == 1 and "monthly spend limit" in failure,
                           f"calls={len(calls)}, failure={failure}")
+
+    old_run = structure.subprocess.run
+    structure_calls = []
+
+    class QuotaProcess:
+        returncode = 1
+        stderr = ""
+        stdout = "You've hit your monthly spend limit"
+
+    def structure_quota(*_args, **_kwargs):
+        structure_calls.append(1)
+        return QuotaProcess()
+
+    structure.subprocess.run = structure_quota
+    try:
+        _, structure_failure = structure.call_with_retry("x", 1, "quota-selftest")
+    finally:
+        structure.subprocess.run = old_run
+    failures += not check("Stage 3 quota không retry",
+                          len(structure_calls) == 1 and "monthly spend limit" in structure_failure,
+                          f"calls={len(structure_calls)}, failure={structure_failure}")
     return failures
 
 

@@ -154,6 +154,16 @@ def missing_page_markers(before: str, after: str) -> list[str]:
 # là kết luận về nội dung chứ không phải sự cố.
 RETRIES = 3
 RETRY_BACKOFF = 15
+NON_RETRYABLE_CLI = (
+    "monthly spend limit", "not logged in", "authentication", "unauthorized",
+    "invalid api key", "invalid api_key", "permission denied", "credit balance",
+)
+
+
+def _retryable_failure(message: str) -> bool:
+    """Retry transient Claude failures, never quota/auth failures."""
+    lowered = (message or "").lower()
+    return not any(marker in lowered for marker in NON_RETRYABLE_CLI)
 
 
 def call_with_retry(chunk: str, budget: int, tag: str) -> tuple[str | None, str]:
@@ -169,17 +179,20 @@ def call_with_retry(chunk: str, budget: int, tag: str) -> tuple[str | None, str]
             last = f"quá {budget}s cho {len(chunk):,} ký tự"
         else:
             if proc.returncode != 0:
-                last = f"mã lỗi {proc.returncode}: {(proc.stderr or '').strip()[:200] or 'stderr rỗng'}"
+                detail = (proc.stderr or proc.stdout or '').strip()[:200] or 'stderr rỗng'
+                last = f"mã lỗi {proc.returncode}: {detail}"
             else:
                 piece = re.sub(r"^```(?:markdown)?\n|\n```$", "",
                                (proc.stdout or "").strip()).strip()
                 if piece:
                     return piece, ""
                 last = "đầu ra rỗng"
-        if attempt < RETRIES:
+        if attempt < RETRIES and _retryable_failure(last):
             print(f"⟳ {tag or 'tài liệu'}: {last} — thử lại {attempt}/{RETRIES - 1}",
                   file=sys.stderr)
             time.sleep(RETRY_BACKOFF * attempt)
+        elif attempt < RETRIES:
+            break
     return None, f"{tag}: Claude hỏng sau {RETRIES} lần thử — {last}"
 
 
