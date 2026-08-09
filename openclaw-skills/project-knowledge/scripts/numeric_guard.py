@@ -65,6 +65,10 @@ MASK = [
     # pháp quy tiếng Việt viết tiêu đề chương in hoa toàn bộ ("CHƯƠNG 2. HỢP ĐỒNG LAO
     # ĐỘNG"), và bản chỉ khớp "Chương" để lọt số chương thành số đo.
     r"(?i:Điều|Chương|Mục|Khoản|Điểm)\s*\d+(?:\s*[-–]\s*\d+)?",
+    # Số hiệu tiêu chuẩn: ISO 9001, TCVN 5687:2010. Mẫu ô Excel bên dưới đòi chữ DÍNH
+    # số nên không bắt dạng có khoảng trắng, và một tài liệu nhắc ISO 9001 hai lần
+    # (mở bài + phần chi tiết) đủ để pha đếm trị số báo "số mới 9001".
+    r"(?i:ISO/IEC|ISO|IEC|TCVN|QCVN)\s*\d+(?::\d{4})?",
     r"\[\[page \d+\]\]",                   # marker trang do extract_van chèn
     r"\bv\d+(?:\.\d+)*",                   # phiên bản: v2.1
     # Nhãn kiểm soát tài liệu tiếng Việt, đứng trong footer chạy trang. Con số sau

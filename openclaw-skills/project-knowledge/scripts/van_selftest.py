@@ -263,6 +263,13 @@ def test_masking() -> int:
         failures += not check(f"số chương/điều được che bất kể hoa thường: {text!r}",
                               rows == [], str(rows))
 
+    # Số hiệu tiêu chuẩn có khoảng trắng — mẫu ô Excel đòi chữ dính số nên bỏ sót.
+    # Một trang nhắc ISO 9001 hai lần đủ để pha đếm trị số báo "số mới 9001".
+    for text in ("viện dẫn ISO 9001", "theo TCVN 5687:2010", "QCVN 06"):
+        rows = numeric_guard.transform_numbers(text)
+        failures += not check(f"số hiệu tiêu chuẩn không phải số đo: {text!r}",
+                              rows == [], str(rows))
+
     identifiers = numeric_guard.transform_numbers("Ban hành theo Luật 86/2015/QH13.")
     failures += not check("số hiệu văn bản không bị coi là số đo",
                           all(unit is None for _, unit, _ in identifiers), str(identifiers))
