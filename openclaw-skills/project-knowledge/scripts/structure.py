@@ -161,7 +161,7 @@ def call_with_retry(chunk: str, budget: int, tag: str) -> tuple[str | None, str]
     for attempt in range(1, RETRIES + 1):
         try:
             proc = subprocess.run(
-                [models.CLAUDE, "-p", "--model", models.LIGHT, "--tools="],
+                [models.CLAUDE, "-p", "--no-session-persistence", "--model", models.LIGHT, "--tools="],
                 input=PROMPT.format(body=chunk), capture_output=True, text=True,
                 encoding="utf-8", timeout=budget, cwd=ROOT,
             )

@@ -98,7 +98,7 @@ def ingest_one(slug, info, contract, schema, timeout=300):
     t0 = time.time()
     # prompt qua STDIN, KHÔNG qua argv: Windows giới hạn dòng lệnh ~32KB, prompt kèm
     # raw/ dễ vượt -> WinError 206. stdin không có trần đó. encoding utf-8 cho tiếng Việt.
-    out = subprocess.run([models.CLAUDE, "-p", "--model", models.HEAVY,
+    out = subprocess.run([models.CLAUDE, "-p", "--no-session-persistence", "--model", models.HEAVY,
                           "--tools="],
                          input=prompt, capture_output=True, text=True,
                          encoding="utf-8", timeout=timeout, cwd=ROOT)

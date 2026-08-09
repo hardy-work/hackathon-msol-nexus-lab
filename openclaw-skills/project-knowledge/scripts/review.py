@@ -135,7 +135,7 @@ def run_once(prompt, timeout=240):
     """Một phiên soát -> dict chuẩn hoá {verdict, findings, checked, err}."""
     try:
         out = subprocess.run(
-            [models.CLAUDE, "-p", "--model", models.REVIEW, "--tools="],
+            [models.CLAUDE, "-p", "--no-session-persistence", "--model", models.REVIEW, "--tools="],
             input=prompt, capture_output=True, text=True,
             encoding="utf-8", timeout=timeout, cwd=ROOT)
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
