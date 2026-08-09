@@ -444,7 +444,10 @@ def _render_once(prompt, scope, timeout, name):
         # và khi CLI hỏng với stderr rỗng thì err là chuỗi rỗng — `if err:` không bắt,
         # `None` được nhét vào danh sách trang, và lượt chạy sập ở bước ghi file với
         # `TypeError: data must be str, not NoneType`.
-        detail = (out.stderr or "").strip()[:200] or "stderr rỗng"
+        # Claude print mode may put quota/auth failures on stdout while leaving
+        # stderr empty. Preserve that signal instead of reporting an opaque
+        # ``code 1, stderr empty`` infrastructure error.
+        detail = (out.stderr or out.stdout or "").strip()[:200] or "stderr rỗng"
         return None, dt, f"{INFRA}mã lỗi {out.returncode}: {detail}"
     text = (out.stdout or "").strip()
     text = re.sub(r"^```(?:markdown|yaml)?\n|\n```$", "", text).strip()
