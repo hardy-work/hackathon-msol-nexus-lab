@@ -36,6 +36,10 @@ không lấy từ câu chữ người dùng.
 
 ## Local tools
 
+Trước khi nối vào botchat hiện tại, đọc [`INTEGRATION_NOTE.md`](INTEGRATION_NOTE.md).
+Botchat vẫn là nơi nhận Slack event/fetch replies; skill này chỉ validate và lưu
+thread vào DB riêng, không đăng ký Slack event và không gọi LLM.
+
 ```bash
 python scripts/import_fixture.py --fixture tests/fixtures/thread.json --print-context
 python scripts/ingest_event.py --event tests/fixtures/app_mention.json --print-context
