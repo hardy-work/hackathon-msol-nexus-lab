@@ -263,6 +263,19 @@ def test_masking() -> int:
         failures += not check(f"số chương/điều được che bất kể hoa thường: {text!r}",
                               rows == [], str(rows))
 
+    # Văn bản pháp quy liệt kê số điều khoản thành DÃY. Che cả dãy bằng regex sẽ nuốt
+    # số đo đứng ngay sau locator, nên phép che phải DỪNG khi gặp số có đơn vị.
+    for text in ("Chương gồm các Điều 3, 4, 5, 6 và 7.", "Xem các Điều 39–48 và 50.",
+                 "Theo Khoản 1, 2 và 3."):
+        rows = numeric_guard.transform_numbers(text)
+        failures += not check(f"dãy số điều khoản được che: {text[:30]!r}",
+                              rows == [], str(rows))
+    for text, want in [("theo Điều 12, 30 ngày báo trước.", ("30", "day")),
+                       ("theo Điều 5 và 45 ngày báo trước.", ("45", "day"))]:
+        rows = numeric_guard.transform_numbers(text)
+        failures += not check(f"che dãy DỪNG ở số đo: {text[:30]!r}",
+                              [(v, u) for v, u, _ in rows] == [want], str(rows))
+
     # Số hiệu tiêu chuẩn có khoảng trắng — mẫu ô Excel đòi chữ dính số nên bỏ sót.
     # Một trang nhắc ISO 9001 hai lần đủ để pha đếm trị số báo "số mới 9001".
     for text in ("viện dẫn ISO 9001", "theo TCVN 5687:2010", "QCVN 06"):

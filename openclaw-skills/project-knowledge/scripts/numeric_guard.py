@@ -105,6 +105,32 @@ CLAUSE_MARKER = re.compile(r"(?m)^[ \t>|*\-#]*\*{0,2}(\d+(?:\.\d+){1,3})\*{0,2}[
 LIST_MARKER = re.compile(r"(?m)^[ \t>|*\-#]*\*{0,2}(\d{1,3})\*{0,2}[.)](?=\s|$)")
 
 
+# Văn bản pháp quy liệt kê số điều khoản thành DÃY: "Chương gồm các Điều 3, 4, 5, 6 và 7".
+# MASK chỉ che số ĐẦU ("Điều 3"); phần còn lại đứng trần và hoá thành bốn "số mới".
+#
+# Không thể che cả dãy bằng regex: "theo Điều 12, 30 ngày báo trước" cũng khớp, và ở đó
+# `30` là số ĐO thật. Nên phải đi từng số một và DỪNG ngay khi gặp số có đơn vị đứng sau
+# — ranh giới giữa "còn đang liệt kê điều khoản" và "đã sang nội dung" nằm ở đó.
+CLAUSE_LIST = re.compile(
+    r"(?i:Điều|Chương|Mục|Khoản|Điểm)\s*(\d+(?:\s*[-–]\s*\d+)?)"
+    r"((?:\s*(?:,|và|hoặc)\s*\d+(?:\s*[-–]\s*\d+)?)*)")
+LIST_NUMBER = re.compile(r"\d+")
+
+
+def clause_list_spans(text):
+    """Khoảng của các số trong một DÃY tham chiếu điều khoản."""
+    spans = []
+    for match in CLAUSE_LIST.finditer(text):
+        spans.append(match.span(1))
+        tail, base = match.group(2), match.end(1)
+        for number in LIST_NUMBER.finditer(tail):
+            start, end = base + number.start(), base + number.end()
+            if unit_after(text[end:]) is not None:
+                break          # đã sang số đo — dừng, không che tiếp
+            spans.append((start, end))
+    return spans
+
+
 def clause_marker_spans(text):
     """Khoảng của số hiệu mục/số thứ tự đầu dòng — bỏ qua nếu ngay sau là ĐƠN VỊ."""
     spans = []
@@ -278,6 +304,7 @@ def masked_spans(text):
     for pattern in MASK:
         spans.extend(match.span() for match in re.finditer(pattern, text))
     spans.extend(clause_marker_spans(text))
+    spans.extend(clause_list_spans(text))
     return spans
 
 
