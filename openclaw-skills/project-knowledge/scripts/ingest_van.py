@@ -279,7 +279,8 @@ def ingest_one(doc_id, d, contract, schema, timeout=600):
         raw_path=raw_path.relative_to(ROOT).as_posix())
 
     pages, elapsed = [], 0.0
-    text, dt, err = render(PROMPT.format(raw=structured, **common), structured, timeout)
+    text, dt, err = render(PROMPT.format(raw=structured, **common), structured,
+                           timeout, name=doc_id)
     elapsed += dt
     if err:
         return None, elapsed, err
@@ -291,7 +292,7 @@ def ingest_one(doc_id, d, contract, schema, timeout=600):
     for slug, section_title, section_text in sections:
         prompt = SECTION_PROMPT.format(raw=section_text, slug=slug,
                                        section_title=section_title, **common)
-        text, dt, err = render(prompt, section_text, timeout)
+        text, dt, err = render(prompt, section_text, timeout, name=f"{doc_id}--{slug}")
         elapsed += dt
         if err:
             return None, elapsed, f"[{slug}] {err}"
@@ -299,7 +300,20 @@ def ingest_one(doc_id, d, contract, schema, timeout=600):
     return pages, elapsed, None
 
 
-def render(prompt, scope, timeout):
+def dump_rejected(name, text):
+    """Cổng chặn thì KHÔNG ghi wiki/ — nhưng bản bị từ chối phải xem được.
+
+    Cùng lý do như derived/stage3-rejected/: chẩn đoán một dòng "số mới `29.3`" mà
+    không có văn bản trong tay là đoán mò, và cách duy nhất để nhìn là chạy lại cả
+    tài liệu bằng Opus. Ghi vào derived/ vì đây là trạng thái vận hành tái tạo được."""
+    out_dir = ROOT / "derived/stage4-rejected"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{name}.md"
+    path.write_text(text, encoding="utf-8")
+    return path.relative_to(ROOT).as_posix()
+
+
+def render(prompt, scope, timeout, name="page"):
     """Gọi Opus, dọn đầu ra, soi cổng với ĐÚNG phạm vi nguồn của trang đó."""
     t0 = time.time()
     out = subprocess.run(
@@ -320,7 +334,8 @@ def render(prompt, scope, timeout):
         text = text[m.start():]
     problems = validate_page(scope, text, ROOT)
     if problems:
-        return None, dt, "GATE 2/WIKI chặn: " + "; ".join(problems)
+        where = dump_rejected(name, text)
+        return None, dt, f"GATE 2/WIKI chặn: {'; '.join(problems)} — bản bị từ chối: {where}"
     return text + "\n", dt, None
 
 
