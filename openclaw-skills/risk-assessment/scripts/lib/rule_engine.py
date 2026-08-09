@@ -442,6 +442,32 @@ def rule_P3_unassigned_near_deadline(tasks: list[dict], today: str, th: dict) ->
 
 
 # --- Helper dùng chung cho P4 và S2 (Sprint layer) ----------------------------
+def _regular_start(today: str, th: dict, now_hour: int | None = None) -> str:
+    """Mốc bắt đầu tính giờ làm bình thường (không tính OT) — phụ thuộc giờ
+    đồng hồ THẬT lúc gọi so với `th["cutoffHour"]` (mặc định 18h): gọi TRƯỚC
+    cutoff -> hôm nay CHƯA dùng hết giờ -> tính từ hôm nay; gọi SAU cutoff ->
+    hôm nay coi như đã dùng hết -> tính từ ngày mai. `now_hour` cho phép tiêm
+    giờ giả để test, bỏ trống thì dùng giờ thật.
+    """
+    now_hour = datetime.now().hour if now_hour is None else now_hour
+    cutoff_hour = th.get("cutoffHour", 18)
+    if now_hour < cutoff_hour:
+        return today
+    return (date.fromisoformat(today) + timedelta(days=1)).isoformat()
+
+
+def _capacity_gap_days(daily_hours: dict, start: str, end: str) -> list[str]:
+    """Ngày trong khoảng [start, end] không có effort nào được allocate
+    (giá trị None/0/rỗng trong `daily_hours`) -- dùng để giải thích root
+    cause khi capacity của 1 người bị thiếu (rule P4).
+    """
+    return sorted(d for d, h in daily_hours.items() if start <= d <= end and not h)
+
+
+def _fmt_dmy(iso_date: str) -> str:
+    return datetime.fromisoformat(iso_date).strftime("%d/%m")
+
+
 def compute_person_capacity(
     daily_hours: dict,
     ot_daily_hours: dict,
@@ -453,30 +479,13 @@ def compute_person_capacity(
     """Capacity = giờ làm bình thường (từ mốc `regular_start` tới hết sprint)
     + giờ OT (từ HÔM NAY tới hết sprint), cộng lại.
 
-    `regular_start` phụ thuộc giờ đồng hồ THẬT lúc gọi, so với
-    `th["cutoffHour"]` (mặc định 18h — coi như hết giờ làm việc thông
-    thường):
-      - Gọi TRƯỚC cutoff (vd buổi sáng/trong giờ làm) -> hôm nay CHƯA dùng
-        hết giờ -> `regular_start` = hôm nay (tính đủ cả hôm nay).
-      - Gọi SAU cutoff (vd buổi tối) -> hôm nay coi như đã dùng hết ->
-        `regular_start` = ngày mai (như cũ).
-
-    `now_hour` cho phép tiêm giờ giả để test (không phụ thuộc đồng hồ máy
-    thật) — bỏ trống thì dùng giờ thật (`datetime.now().hour`).
-
     OT vẫn LUÔN tính từ hôm nay bất kể giờ nào gọi — vì OT là làm thêm ngoài
     giờ hành chính, không phụ thuộc đã hết giờ làm thông thường hay chưa.
 
     Ngày không có trong `daily_hours`/`ot_daily_hours` (ngoài phạm vi bảng)
     hoặc giá trị None/rỗng (cuối tuần/chưa điền/chưa đăng ký OT) đều tính 0.
     """
-    now_hour = datetime.now().hour if now_hour is None else now_hour
-    cutoff_hour = th.get("cutoffHour", 18)
-    if now_hour < cutoff_hour:
-        regular_start = today
-    else:
-        regular_start = (date.fromisoformat(today) + timedelta(days=1)).isoformat()
-
+    regular_start = _regular_start(today, th, now_hour)
     regular = sum(h for d, h in daily_hours.items() if regular_start <= d <= sprint_end and h)
     overtime = sum(h for d, h in (ot_daily_hours or {}).items() if today <= d <= sprint_end and h)
     return regular + overtime
@@ -548,10 +557,21 @@ def rule_P4_sprint_backlog_overload(
     now_hour: int | None = None,
 ) -> list[dict]:
     out = []
+    daily_hours_by_code = {p["assigneeCode"]: p["dailyHours"] for p in resource_plan_people}
+    regular_start = _regular_start(today, th, now_hour)
     by_person = compute_capacity_backlog_by_person(tasks, resource_plan_people, today, sprint_end, sprint_name, th, ot_by_person, now_hour)
     for code, cb in by_person.items():
         if cb["backlog"] > cb["capacity"]:
             deficit = cb["backlog"] - cb["capacity"]
+            gap_days = _capacity_gap_days(daily_hours_by_code.get(code, {}), regular_start, sprint_end)
+            base_desc = (
+                f'{code}, sprint {sprint_name}: tồn đọng {cb["backlog"]:.1f}h trong khi capacity còn lại '
+                f'tới hết sprint chỉ {cb["capacity"]:.1f}h (thiếu {deficit:.1f}h)'
+            )
+            if gap_days:
+                gap_desc = base_desc + f' — do các ngày sau chưa có effort được allocate: {", ".join(_fmt_dmy(d) for d in gap_days)}.'
+            else:
+                gap_desc = base_desc + "."
             out.append(
                 make_item(
                     layer="Person",
@@ -560,7 +580,7 @@ def rule_P4_sprint_backlog_overload(
                     # để dedupe so khớp được (trước đây detected_from có thêm
                     # ", sprint {sprint_name}" không xuất hiện ở đâu cả trên
                     # sheet thật -> risk cứ báo lặp lại dù đã ghi rồi).
-                    description=f'{code}, sprint {sprint_name}: tồn đọng {cb["backlog"]:.1f}h trong khi capacity còn lại tới hết sprint chỉ {cb["capacity"]:.1f}h (thiếu {deficit:.1f}h).',
+                    description=gap_desc,
                     detected_from=f"{code}, sprint {sprint_name}",
                     probability=3,
                     impact=3 if deficit >= 16 else 2,

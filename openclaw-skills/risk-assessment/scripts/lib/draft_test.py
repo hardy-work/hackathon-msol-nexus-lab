@@ -61,7 +61,7 @@ class BuildDraftTest(unittest.TestCase):
             existing_open=[], existing_in_progress=[], passive_risks=[], passive_issues=[],
             sprint_health=health,
         )
-        self.assertIn("Sprint 1: **Đang bám sát kế hoạch**", out)
+        self.assertIn("Sprint 1 **đang bám sát kế hoạch**", out)
         self.assertIn("dư 20.0h", out)
         self.assertIn("Duy trì nhịp độ hiện tại", out)
 
@@ -72,7 +72,7 @@ class BuildDraftTest(unittest.TestCase):
             existing_open=[], existing_in_progress=[], passive_risks=[], passive_issues=[],
             sprint_health=health,
         )
-        self.assertIn("Sprint 1: **KHÔNG kịp tiến độ**", out)
+        self.assertIn("Sprint 1 có nguy cơ **KHÔNG kịp tiến độ**", out)
         self.assertIn("thiếu 110.0h", out)
         self.assertIn("Đề xuất: rà soát scope", out)
 
@@ -88,7 +88,7 @@ class BuildDraftTest(unittest.TestCase):
             existing_open=[], existing_in_progress=[], passive_risks=items, passive_issues=[],
             sprint_health=None,
         )
-        self.assertIn("Người có nguy cơ không kịp việc của mình:", out)
+        self.assertIn("⚠️ *Vấn đề:*", out)
         self.assertIn("**SơnBH** (thiếu 8.0h)", out)
         self.assertIn("**ĐôNT** (thiếu 16.0h)", out)
 
@@ -102,7 +102,7 @@ class BuildDraftTest(unittest.TestCase):
             existing_open=[], existing_in_progress=[], passive_risks=items, passive_issues=[],
             sprint_health=None,
         )
-        self.assertIn("Category có nguy cơ không kịp deadline riêng:", out)
+        self.assertIn("có nguy cơ không kịp deadline riêng", out)
         self.assertIn("**Product Catalog & Search** (83% thời gian/42% xong)", out)
 
     def test_s1_item_shown_verbatim(self):

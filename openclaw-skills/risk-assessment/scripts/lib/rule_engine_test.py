@@ -199,6 +199,37 @@ class RuleP4SprintBacklogOverloadTest(unittest.TestCase):
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0]["rule"], "P4")
 
+    def test_description_includes_gap_days_when_allocation_missing(self):
+        # 2026-08-05 (trong khoảng regular_start->sprint_end) không có giá
+        # trị allocate (None) -> phải nêu rõ ngày đó trong description.
+        tasks = [
+            base_task(id="T1", detectedFrom="T1", assignee="KiênĐT", sprint="Sprint 1", isDone=False, remainingHours=24),
+        ]
+        resource_plan = [
+            {"member": "Đỗ Trung Kiên", "assigneeCode": "KiênĐT", "dailyHours": {
+                "2026-08-04": 8.0, "2026-08-05": None,
+            }},
+        ]
+        out = rule_P4_sprint_backlog_overload(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS, now_hour=20)
+        self.assertEqual(len(out), 1)
+        self.assertIn("chưa có effort được allocate: 05/08", out[0]["description"])
+
+    def test_description_has_no_gap_note_when_all_days_allocated(self):
+        # Deficit thuần tuý do backlog quá nhiều, không phải do thiếu ngày
+        # allocate -> KHÔNG được nêu "chưa có effort" (dễ gây hiểu nhầm).
+        tasks = [
+            base_task(id="T1", detectedFrom="T1", assignee="SơnBH", sprint="Sprint 1", isDone=False, remainingHours=40),
+        ]
+        resource_plan = [
+            {"member": "Bùi Hồng Sơn", "assigneeCode": "SơnBH", "dailyHours": {
+                "2026-08-04": 8.0, "2026-08-05": 4.0,
+            }},
+        ]
+        out = rule_P4_sprint_backlog_overload(tasks, resource_plan, TODAY, "2026-08-05", "Sprint 1", THRESHOLDS, now_hour=20)
+        self.assertEqual(len(out), 1)
+        self.assertNotIn("chưa có effort được allocate", out[0]["description"])
+        self.assertTrue(out[0]["description"].endswith("(thiếu 36.0h)."))
+
     def test_backlog_within_capacity_does_not_fire(self):
         tasks = [
             base_task(id="T1", detectedFrom="T1", assignee="SơnBH", sprint="Sprint 1", isDone=False, remainingHours=8),
