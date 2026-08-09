@@ -424,7 +424,10 @@ def _render_once(prompt, scope, timeout, name):
     t0 = time.time()
     try:
         out = subprocess.run(
-            [models.CLAUDE, "-p", "--model", models.HEAVY, "--allowedTools", ""],
+            # `--tools=` is the portable spelling for "no built-in tools".
+            # Passing `--allowedTools`, "" works on POSIX shells but the
+            # Windows Claude CLI treats the empty argv as a missing value.
+            [models.CLAUDE, "-p", "--model", models.HEAVY, "--tools="],
             input=prompt, capture_output=True, text=True,
             encoding="utf-8", timeout=timeout, cwd=ROOT)
     except subprocess.TimeoutExpired:

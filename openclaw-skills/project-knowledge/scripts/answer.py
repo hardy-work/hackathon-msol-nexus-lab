@@ -1244,7 +1244,7 @@ def tier3(kb, q, pages, graph_context="", timeout=120):
     try:
         # prompt qua STDIN (nhiều trang wiki dễ vượt trần dòng lệnh ~32KB của Windows).
         out = subprocess.run(
-            [models.CLAUDE, "-p", "--model", models.LIGHT, "--allowedTools", ""],
+            [models.CLAUDE, "-p", "--model", models.LIGHT, "--tools="],
             input=TIER3_PROMPT.format(q=q, ctx=ctx, graph=graph_context or "(không có)"),
             capture_output=True, text=True,
             encoding="utf-8", timeout=timeout, cwd=kb.root)

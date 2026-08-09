@@ -121,7 +121,7 @@ def classify(query: str, timeout: int | None = None) -> Decision:
         timeout = max(1, int(os.getenv("PROJECT_KNOWLEDGE_ROUTER_TIMEOUT_SECONDS", "60")))
     try:
         proc = subprocess.run(
-            [models.CLAUDE, "-p", "--model", models.CHEAP, "--allowedTools", ""],
+            [models.CLAUDE, "-p", "--model", models.CHEAP, "--tools="],
             input=ROUTER_PROMPT.format(query=query),
             capture_output=True,
             text=True,
