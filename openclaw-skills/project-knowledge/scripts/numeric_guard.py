@@ -364,9 +364,10 @@ def transform_numbers(text, identifiers=()):
         if _overlaps(match.span(), masked):
             continue
         token = match.group(0)
-        if token.rstrip(".,") in known:
+        canonical = _canonical_transform_number(token)
+        if canonical in known:
             continue
-        rows.append((_canonical_transform_number(token),
+        rows.append((canonical,
                      unit_after(text[match.end():]), token))
     return rows
 
