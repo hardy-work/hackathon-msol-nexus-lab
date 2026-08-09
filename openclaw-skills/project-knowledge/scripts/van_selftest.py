@@ -241,12 +241,18 @@ def test_masking() -> int:
     # từng Điều nên viết dạng này là tự nhiên. Che theo VỊ TRÍ, không theo hình dạng:
     # số đo nằm TRONG câu, nên '45.5 giờ' giữa câu vẫn phải được soi.
     for text in ("**2.1** Người lao động phải tuân thủ.", "2.1 Nội dung",
-                 "- 43.7 Cấm gây gổ.", "### 1.2. Giải thích từ ngữ"):
+                 "- 43.7 Cấm gây gổ.", "### 1.2. Giải thích từ ngữ",
+                 # Số thứ tự DANH SÁCH markdown — không có dấu chấm bên trong.
+                 "2. **Bản thân Người lao động bị ốm**, thoả mãn điều kiện",
+                 "4. Các trường hợp khác được cấp có thẩm quyền chấp thuận",
+                 "10) Trường hợp bất khả kháng"):
         rows = numeric_guard.transform_numbers(text)
         failures += not check(f"số hiệu mục đầu dòng được che: {text[:26]!r}",
                               rows == [], str(rows))
     for text, want in [("Tổng cộng 45.5 giờ làm việc.", ("45.5", "hour")),
-                       ("40 giờ mỗi tuần.", ("40", "hour"))]:
+                       ("40 giờ mỗi tuần.", ("40", "hour")),
+                       # Có dấu chấm như số thứ tự, nhưng ngay sau là ĐƠN VỊ -> số đo.
+                       ("12. ngày phép", ("12", "day"))]:
         rows = numeric_guard.transform_numbers(text)
         failures += not check(f"số đo vẫn được soi: {text[:26]!r}",
                               [(v, u) for v, u, _ in rows] == [want], str(rows))

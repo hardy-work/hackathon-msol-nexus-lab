@@ -95,14 +95,19 @@ MASK = [
 # nằm ở chữ ĐỨNG SAU: số hiệu mục theo sau là chữ thường ('2.1 Người lao động'), số đo
 # theo sau là ĐƠN VỊ ('43.1 giờ'). Nên phải tra UNIT_SYN, việc regex không làm được.
 CLAUSE_MARKER = re.compile(r"(?m)^[ \t>|*\-#]*\*{0,2}(\d+(?:\.\d+){1,3})\*{0,2}[.):]?(?=\s|$)")
+# Số thứ tự DANH SÁCH markdown: '2. Bản thân Người lao động bị ốm'. Không có dấu chấm
+# bên trong nên CLAUSE_MARKER không bắt; phải đòi dấu chấm/ngoặc NGAY SAU chữ số để
+# không nuốt '40 giờ mỗi tuần' đứng đầu dòng.
+LIST_MARKER = re.compile(r"(?m)^[ \t>|*\-#]*\*{0,2}(\d{1,3})\*{0,2}[.)](?=\s|$)")
 
 
 def clause_marker_spans(text):
-    """Khoảng của số hiệu mục đầu dòng — bỏ qua nếu ngay sau là một ĐƠN VỊ."""
+    """Khoảng của số hiệu mục/số thứ tự đầu dòng — bỏ qua nếu ngay sau là ĐƠN VỊ."""
     spans = []
-    for match in CLAUSE_MARKER.finditer(text):
-        if unit_after(text[match.end():]) is None:
-            spans.append(match.span(1))
+    for pattern in (CLAUSE_MARKER, LIST_MARKER):
+        for match in pattern.finditer(text):
+            if unit_after(text[match.end():]) is None:
+                spans.append(match.span(1))
     return spans
 
 
