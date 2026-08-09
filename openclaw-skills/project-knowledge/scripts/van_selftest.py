@@ -459,6 +459,23 @@ def test_transform_two_phase() -> int:
         failures += not check(f"chỉ cảnh báo — {label}",
                               errors == [] and warnings != [], f"{errors} / {warnings}")
 
+    # Bản TÓM TẮT (allow_loss=True) được nhắc lại một giá trị nhiều lần: trang wiki nêu
+    # "mỗi năm 1 lần" ở thân bài rồi nhắc lại trong ghi chú OCR. So theo BỘI SỐ thì bản
+    # thứ hai thành "số mới". Nhưng chép nguyên văn (Stage 3) thì bội số CÓ nghĩa.
+    origin = "Diễn tập mỗi năm 1 lần theo mục 23. Nghỉ 12 ngày phép."
+    repeat = "Diễn tập mỗi năm 1 lần. Ghi chú: tần suất 1 lần/năm."
+    errors, _ = numeric_guard.check_transform(origin, repeat, allow_loss=True)
+    failures += not check("tóm tắt nhắc lại một giá trị KHÔNG phải bịa",
+                          errors == [], str(errors))
+    errors, _ = numeric_guard.check_transform(origin, "Diễn tập mỗi năm 2 lần.",
+                                              allow_loss=True)
+    failures += not check("tóm tắt vẫn bị chặn khi ĐỔI giá trị",
+                          any("`2`" in message for message in errors), str(errors))
+    errors, _ = numeric_guard.check_transform(
+        origin, "Diễn tập mỗi năm 1 lần. Lại 1 lần nữa. Nghỉ 12 ngày phép.")
+    failures += not check("chép nguyên văn vẫn bắt được nhân đôi giá trị",
+                          any("`1`" in message for message in errors), str(errors))
+
     # Định danh của vế NGUỒN cũng là định danh ở vế ĐÍCH. `37.4.` trong nguồn được che
     # (số thứ tự mục có chấm cuối); bản tóm tắt nhắc lại thành `37.4` giữa câu và vế
     # kia không che, nên cổng đọc ra "số mới 37.4" — bất đối xứng, không phải bịa số.

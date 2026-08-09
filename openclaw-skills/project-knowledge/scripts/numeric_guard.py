@@ -360,7 +360,17 @@ def check_transform(before, after, *, allow_loss=False):
     # ---- PHA 1 · TRỊ SỐ. Bịa/làm tròn là lỗi cứng, không quan tâm đơn vị.
     src_values = Counter(n for n, _, _ in src)
     dst_values = Counter(n for n, _, _ in dst)
-    for number, count in (dst_values - src_values).items():
+    if allow_loss:
+        # Bản TÓM TẮT: nhắc lại một giá trị không phải là bịa. Trang wiki nêu "mỗi năm
+        # 1 lần" ở thân bài rồi nhắc lại trong ghi chú OCR — so theo BỘI SỐ thì bản thứ
+        # hai thành "số mới" và cả trang bị chặn. Câu hỏi đúng ở đây là "có giá trị nào
+        # KHÔNG CÓ trong nguồn không", nên so theo TẬP. Đổi giá trị vẫn bị bắt: `11 lần`
+        # là một trị số khác và không có trong nguồn.
+        invented = set(dst_values) - set(src_values)
+    else:
+        # Stage 3 chép lại nguyên văn: bội số có nghĩa, thừa một bản cũng là sai lệch.
+        invented = dst_values - src_values
+    for number in invented:
         errors.append(f"số mới/đổi/làm tròn `{number}`")
     if not allow_loss:
         for number, count in (src_values - dst_values).items():
