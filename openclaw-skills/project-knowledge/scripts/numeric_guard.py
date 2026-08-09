@@ -85,6 +85,27 @@ MASK = [
     r"\b2\.\d+\.Sprint",                   # tên sheet
 ]
 
+# Số thứ tự mục MỞ ĐẦU MỘT DÒNG, không có dấu chấm cuối: '2.1 Nội dung', '- 43.7',
+# '**2.4** ...'. Trang wiki theo chương liệt kê từng Điều nên viết dạng này là tự nhiên,
+# và MASK ở trên chỉ bắt dạng có chấm cuối.
+#
+# Riêng luật này KHÔNG thể là regex thuần. Che theo vị trí đầu dòng thôi là chưa đủ: một
+# số ĐO cũng mở đầu dòng được ('43.1 giờ' trong ô bảng hoặc trong câu trả lời), và che
+# nó đi là mở một lỗ thật — cổng mất khả năng bắt số bịa. Tiêu chí phân biệt chắc chắn
+# nằm ở chữ ĐỨNG SAU: số hiệu mục theo sau là chữ thường ('2.1 Người lao động'), số đo
+# theo sau là ĐƠN VỊ ('43.1 giờ'). Nên phải tra UNIT_SYN, việc regex không làm được.
+CLAUSE_MARKER = re.compile(r"(?m)^[ \t>|*\-#]*\*{0,2}(\d+(?:\.\d+){1,3})\*{0,2}[.):]?(?=\s|$)")
+
+
+def clause_marker_spans(text):
+    """Khoảng của số hiệu mục đầu dòng — bỏ qua nếu ngay sau là một ĐƠN VỊ."""
+    spans = []
+    for match in CLAUSE_MARKER.finditer(text):
+        if unit_after(text[match.end():]) is None:
+            spans.append(match.span(1))
+    return spans
+
+
 DATE_TOKEN = re.compile(
     r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b"
 )
@@ -115,7 +136,10 @@ UNIT_SYN = {
     "năm": "year", "year": "year", "years": "year",
     "lần": "time", "lượt": "time",
     "đồng": "vnd", "vnd": "vnd", "vnđ": "vnd",
-    "người": "person", "người lao động": "person",
+    # KHÔNG có 'người'. Nó gần như không bao giờ là đơn vị đo trong corpus này, nhưng
+    # 'Người lao động' là cụm dày đặc nhất của một bản nội quy — nhận nó làm đơn vị thì
+    # mọi số hiệu mục đứng trước ('2.1 Người lao động có nghĩa vụ…') hoá thành số đo
+    # '2.1 person', và số hiệu mục thì không được che nữa.
     "ký tự": "char", "ký-tự": "char", "char": "char",
     "character": "char", "characters": "char",
 }
@@ -125,7 +149,6 @@ FACT_UNIT_CANON = {
     "hour": "hour", "task": "task", "ratio": "ratio",
     "ký tự": "char", "phút": "minute", "tháng": "month", "năm": "year",
     "ngày": "day", "tuần": "week", "lần": "time", "đồng": "vnd",
-    "người": "person",
 }
 
 
@@ -245,6 +268,7 @@ def masked_spans(text):
     spans = []
     for pattern in MASK:
         spans.extend(match.span() for match in re.finditer(pattern, text))
+    spans.extend(clause_marker_spans(text))
     return spans
 
 

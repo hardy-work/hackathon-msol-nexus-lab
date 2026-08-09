@@ -237,6 +237,20 @@ def test_masking() -> int:
         failures += not check(f"che theo vị trí: {text!r} vẫn thấy {want_value} {want_unit}",
                               any(value == want_value and unit == want_unit
                                   for value, unit, _ in rows), str(rows))
+    # Số hiệu mục MỞ ĐẦU DÒNG, không dấu chấm cuối — trang wiki theo chương liệt kê
+    # từng Điều nên viết dạng này là tự nhiên. Che theo VỊ TRÍ, không theo hình dạng:
+    # số đo nằm TRONG câu, nên '45.5 giờ' giữa câu vẫn phải được soi.
+    for text in ("**2.1** Người lao động phải tuân thủ.", "2.1 Nội dung",
+                 "- 43.7 Cấm gây gổ.", "### 1.2. Giải thích từ ngữ"):
+        rows = numeric_guard.transform_numbers(text)
+        failures += not check(f"số hiệu mục đầu dòng được che: {text[:26]!r}",
+                              rows == [], str(rows))
+    for text, want in [("Tổng cộng 45.5 giờ làm việc.", ("45.5", "hour")),
+                       ("40 giờ mỗi tuần.", ("40", "hour"))]:
+        rows = numeric_guard.transform_numbers(text)
+        failures += not check(f"số đo vẫn được soi: {text[:26]!r}",
+                              [(v, u) for v, u, _ in rows] == [want], str(rows))
+
     # Văn bản pháp quy tiếng Việt viết tiêu đề chương IN HOA TOÀN BỘ.
     for text in ("CHƯƠNG 2. HỢP ĐỒNG LAO ĐỘNG", "Chương 2. Hợp đồng", "ĐIỀU 45. Kỷ luật"):
         rows = numeric_guard.transform_numbers(text)
