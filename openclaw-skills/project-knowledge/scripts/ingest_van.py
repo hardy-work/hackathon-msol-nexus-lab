@@ -126,8 +126,9 @@ các chương khác của tài liệu.
 5. Con số: phải là số CÓ THẬT trong chương này và ghi rõ trích từ Điều nào. Không tự
    cộng/suy ra số mới. Số hiệu văn bản, mã tài liệu, số Điều/Chương là ĐỊNH DANH.
 {ocr_rule}
-6. Kết bài có một mục "## Nguồn" ghi: doc_id, raw_paths, và trang tổng quan
-   `wiki/sources/{doc_id}.md`.
+6. Kết bài có một mục "## Nguồn" ghi ĐÚNG BA dòng: doc_id, raw_paths, và trang tổng
+   quan `wiki/sources/{doc_id}.md`. KHÔNG thêm dòng `version` hay bất kỳ số nào khác
+   vào mục này — nó không phải nội dung chương, không cần trích dẫn lại.
 """
 
 

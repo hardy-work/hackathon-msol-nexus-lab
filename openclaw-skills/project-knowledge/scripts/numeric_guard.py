@@ -76,6 +76,10 @@ MASK = [
     # dấu ('Lan ban hanh') vì footer là chỗ OCR hỏng nặng nhất.
     r"(?:Phiên|Phien)\s*(?:bản|ban)\s*:?\s*[\d.]+",
     r"(?:Lần|Lan)\s*(?:ban\s*hành|ban\s*hanh)\s*:?\s*[\d.]+",
+    # Mục "## Nguồn" cuối trang (do PROMPT Stage 4 yêu cầu) tự trích lại
+    # `version` của CHÍNH trang đó — cùng loại định danh phiên bản như hai dòng
+    # trên, chỉ khác là viết bằng khoá tiếng Anh trong dấu backtick.
+    r"(?i:version)`?\s*:?\s*\d+(?:\.\d+)*",
     r"§[\d.]+",                            # tham chiếu mục: §5.3
     r"\b[A-Z]{1,3}\d+(?::[A-Z]{1,3}\d+)?", # ô Excel: H14, B3:B11
     r"\b[A-Z]{1,10}-\d+\b",                # mã task: AU-1, NEX-123

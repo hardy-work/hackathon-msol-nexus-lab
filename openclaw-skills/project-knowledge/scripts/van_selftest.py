@@ -488,6 +488,18 @@ def test_transform_two_phase() -> int:
                               numeric_guard._canonical_transform_number(text) == want,
                               numeric_guard._canonical_transform_number(text))
 
+    # Mục "## Nguồn" cuối trang (PROMPT Stage 4 yêu cầu) tự trích lại `version` của
+    # CHÍNH trang đó bằng khoá tiếng Anh trong backtick. Chương không có số đo nào
+    # canonical hoá về '1' thì mục này vẫn không được báo "số mới `1`" — nó là định
+    # danh phiên bản, cùng loại với 'Lần ban hành: 1.0'.
+    source_no_measure = "Chương này quy định nghĩa vụ bảo mật, không có ngưỡng đo lường."
+    footer = ("Xem chi tiết ở Điều 33.\n\n## Nguồn\n\n"
+              "- `doc_id`: `tai-lieu-abc`\n- `version`: 1\n"
+              "- Trang tổng quan: [tai-lieu-abc.md](tai-lieu-abc.md)")
+    errors, _ = numeric_guard.check_transform(source_no_measure, footer, allow_loss=True)
+    failures += not check("mục '## Nguồn' tự trích version KHÔNG bị báo số mới",
+                          errors == [], str(errors))
+
     # Bản TÓM TẮT (allow_loss=True) được nhắc lại một giá trị nhiều lần: trang wiki nêu
     # "mỗi năm 1 lần" ở thân bài rồi nhắc lại trong ghi chú OCR. So theo BỘI SỐ thì bản
     # thứ hai thành "số mới". Nhưng chép nguyên văn (Stage 3) thì bội số CÓ nghĩa.
