@@ -2,4 +2,10 @@
 # Add one registered document here only after its original + current version
 # exists in documents.yml.  raw_paths are versioned automatically from the
 # registry; the extractor keeps old raw artifacts for re-ingest review.
-docs: []
+docs:
+  - doc_id: noi-quy-lao-dong-20260808T041339Z-aa1429cc79
+    original: originals/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.pdf
+    title: "Nội quy lao động MOR"
+    domain: mor-software
+    page_type: source
+    lang: vi
