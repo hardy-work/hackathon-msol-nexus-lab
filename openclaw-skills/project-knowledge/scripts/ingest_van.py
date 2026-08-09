@@ -247,7 +247,45 @@ def validate_page(structured, page_text, root=ROOT):
     return problems + numeric_guard.check_page_declarations(frontmatter, root)
 
 
-def ingest_one(doc_id, d, contract, schema, timeout=600):
+def _reuse_candidate(rel, scope, *, name, section_title=None):
+    """Return a previously generated page only after running the current gates.
+
+    Long documents are intentionally all-or-nothing, but an interrupted Claude
+    run may already have produced valid drafts in ``derived/stage4-rejected``.
+    Resume mode can reuse those drafts without weakening validation; stale or
+    invalid drafts are ignored and regenerated normally.
+    """
+    candidates = []
+    canonical = ROOT / rel
+    if canonical.is_file():
+        candidates.append(canonical)
+    rejected = ROOT / "derived/stage4-rejected"
+    if section_title:
+        for path in sorted(rejected.glob(f"{name.split('--', 1)[0]}--*.md")):
+            try:
+                frontmatter, _ = numeric_guard.split_frontmatter(
+                    path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                continue
+            if frontmatter.get("section") == section_title:
+                candidates.append(path)
+    else:
+        candidates.append(rejected / f"{name}.md")
+    seen = set()
+    for path in candidates:
+        if path in seen or not path.is_file():
+            continue
+        seen.add(path)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if not validate_page(scope, text, ROOT):
+            return text if text.endswith("\n") else text + "\n"
+    return None
+
+
+def ingest_one(doc_id, d, contract, schema, timeout=600, *, reuse_rejected=False):
     try:
         registry = current_document(doc_id, ROOT)
     except (KeyError, ValueError) as exc:
@@ -298,8 +336,15 @@ def ingest_one(doc_id, d, contract, schema, timeout=600):
         raw_path=raw_path.relative_to(ROOT).as_posix())
 
     pages, elapsed = [], 0.0
-    text, dt, err = render(PROMPT.format(raw=structured, **common), structured,
-                           timeout, name=doc_id)
+    text = _reuse_candidate(
+        f"wiki/sources/{doc_id}.md", structured, name=doc_id
+    ) if reuse_rejected else None
+    dt = 0.0
+    if text is None:
+        text, dt, err = render(PROMPT.format(raw=structured, **common), structured,
+                               timeout, name=doc_id)
+    else:
+        err = None
     elapsed += dt
     # `text is None` phải chặn ở đây kể cả khi `err` rỗng: một thông báo lỗi rỗng từng
     # cho `None` lọt vào danh sách trang và làm sập lượt chạy ở bước ghi file.
@@ -313,11 +358,21 @@ def ingest_one(doc_id, d, contract, schema, timeout=600):
     for slug, section_title, section_text in sections:
         prompt = SECTION_PROMPT.format(raw=section_text, slug=slug,
                                        section_title=section_title, **common)
-        text, dt, err = render(prompt, section_text, timeout, name=f"{doc_id}--{slug}")
+        page_rel = f"wiki/sources/{doc_id}--{slug}.md"
+        text = (_reuse_candidate(
+            page_rel, section_text, name=f"{doc_id}--{slug}",
+            section_title=section_title
+        ) if reuse_rejected else None)
+        dt = 0.0
+        if text is None:
+            text, dt, err = render(prompt, section_text, timeout,
+                                   name=f"{doc_id}--{slug}")
+        else:
+            err = None
         elapsed += dt
         if err or text is None:
             return None, elapsed, f"[{slug}] {err or 'không có nội dung trang'}"
-        pages.append((f"wiki/sources/{doc_id}--{slug}.md", text))
+        pages.append((page_rel, text))
     return pages, elapsed, None
 
 
@@ -416,6 +471,7 @@ def main():
         targets = [sys.argv[sys.argv.index("--doc") + 1]]
     else:
         sys.exit(__doc__)
+    reuse_rejected = "--reuse-rejected" in sys.argv
 
     (ROOT / "wiki/sources").mkdir(parents=True, exist_ok=True)
     tot = 0.0
@@ -428,7 +484,8 @@ def main():
         if write_pages is not None and page_rel not in write_pages:
             print(f"{D}↷{OFF} {doc_id}: page không impacted, giữ nguyên")
             continue
-        pages, dt, err = ingest_one(doc_id, docs[doc_id], contract, schema)
+        pages, dt, err = ingest_one(
+            doc_id, docs[doc_id], contract, schema, reuse_rejected=reuse_rejected)
         tot += dt
         if err:
             print(f"{R}✗{OFF} {doc_id:20s} {dt:5.1f}s  {err}")
