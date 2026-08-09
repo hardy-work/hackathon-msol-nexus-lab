@@ -22,15 +22,20 @@ _ASSESSMENT_RULES = {"P4", "S1", "S2", "M2"}
 
 _DEFICIT_RE = re.compile(r"thiếu ([\d.,]+)h")
 _CATEGORY_LAG_RE = re.compile(r"đã trôi qua (\d+)% thời gian nhưng chỉ (\d+)% sub-task hoàn thành")
+_GAP_DAYS_RE = re.compile(r"do các ngày sau chưa có effort được allocate: ([\d/,\s]+)\.")
 
 
 def _short_person_deficit(item: dict) -> str:
-    """Rút số giờ thiếu ra từ description (P4) — không tính lại, chỉ đọc lại
-    đúng số rule_engine.py đã tính, tránh lệch số giữa 2 nơi.
+    """Rút số giờ thiếu + ngày gap (nếu có) ra từ description (P4) — không
+    tính lại, chỉ đọc lại đúng số rule_engine.py đã tính, tránh lệch số
+    giữa 2 nơi.
     """
     m = _DEFICIT_RE.search(item["description"])
     deficit = m.group(1) if m else "?"
     who = item.get("relatedAssigneeTask") or item["detectedFrom"]
+    gap_m = _GAP_DAYS_RE.search(item["description"])
+    if gap_m:
+        return f"**{who}** thiếu {deficit}h — do các ngày sau chưa có effort được allocate: {gap_m.group(1)}"
     return f"**{who}** (thiếu {deficit}h)"
 
 
@@ -50,46 +55,62 @@ def _format_existing_item(item: dict) -> str:
 
 
 def _format_assessment(sprint_health: dict | None, passive_risks: list[dict]) -> list[str]:
+    """Thứ tự trình bày: Vấn đề (cụ thể ai/category nào đang gặp gì, kèm
+    root cause nếu có) -> Phân tích (số liệu effort/khối lượng cả team) ->
+    Kết luận (kịp hay không + đề xuất) — bối cảnh cụ thể trước, số liệu tổng
+    quan sau, kết luận cuối cùng.
+    """
+    p4_items = [i for i in passive_risks if i["rule"] == "P4"]
+    s1_items = [i for i in passive_risks if i["rule"] == "S1"]
+    m2_items = [i for i in passive_risks if i["rule"] == "M2"]
+
+    problem_lines = []
+    for i in p4_items:
+        problem_lines.append(f"- {_short_person_deficit(i)}.")
+    for i in s1_items:
+        problem_lines.append(f"- {i['description']}")
+    for i in m2_items:
+        problem_lines.append(f"- Category {_short_category_lag(i)} có nguy cơ không kịp deadline riêng.")
+
     lines = ["📊 *Đánh giá*"]
-    has_content = False
+
+    if not sprint_health and not problem_lines:
+        lines.append("Chưa phát hiện dấu hiệu nào cho thấy sprint/người/category có nguy cơ không kịp.")
+        return lines
+
+    if problem_lines:
+        lines.append("⚠️ *Vấn đề:*")
+        lines.extend(problem_lines)
 
     if sprint_health:
-        has_content = True
         name = sprint_health["sprintName"]
         backlog = sprint_health["totalBacklog"]
         capacity = sprint_health["totalCapacity"]
         if sprint_health["onTrack"]:
             surplus = capacity - backlog
             lines.append(
-                f"{name}: **Đang bám sát kế hoạch** — công việc còn lại cần khoảng {backlog:.1f}h, "
-                f"cả team còn {capacity:.1f}h (dư {surplus:.1f}h). Duy trì nhịp độ hiện tại, không cần can thiệp gấp."
+                f"📈 *Phân tích:* {name} còn tồn đọng {backlog:.1f}h công việc, "
+                f"cả team còn {capacity:.1f}h khả dụng đến hết sprint (dư {surplus:.1f}h)."
+            )
+            lines.append(
+                f"✅ *Kết luận:* {name} **đang bám sát kế hoạch**. "
+                "Duy trì nhịp độ hiện tại, không cần can thiệp gấp."
             )
         else:
             deficit = backlog - capacity
             lines.append(
-                f"{name}: **KHÔNG kịp tiến độ** — công việc còn lại cần khoảng {backlog:.1f}h, "
-                f"cả team chỉ còn {capacity:.1f}h (thiếu {deficit:.1f}h). "
+                f"📈 *Phân tích:* {name} còn tồn đọng {backlog:.1f}h công việc, "
+                f"cả team chỉ còn {capacity:.1f}h khả dụng đến hết sprint (thiếu {deficit:.1f}h)."
+            )
+            lines.append(
+                f"✅ *Kết luận:* {name} có nguy cơ **KHÔNG kịp tiến độ**. "
                 "Đề xuất: rà soát scope, bổ sung người/OT, hoặc dời deadline với stakeholder."
             )
-
-    p4_items = [i for i in passive_risks if i["rule"] == "P4"]
-    if p4_items:
-        has_content = True
-        refs = ", ".join(_short_person_deficit(i) for i in p4_items)
-        lines.append(f"Người có nguy cơ không kịp việc của mình: {refs}.")
-
-    for item in (i for i in passive_risks if i["rule"] == "S1"):
-        has_content = True
-        lines.append(item["description"])
-
-    m2_items = [i for i in passive_risks if i["rule"] == "M2"]
-    if m2_items:
-        has_content = True
-        refs = ", ".join(_short_category_lag(i) for i in m2_items)
-        lines.append(f"Category có nguy cơ không kịp deadline riêng: {refs}.")
-
-    if not has_content:
-        lines.append("Chưa phát hiện dấu hiệu nào cho thấy sprint/người/category có nguy cơ không kịp.")
+    elif problem_lines:
+        lines.append(
+            "✅ *Kết luận:* Cần PM xem xét các vấn đề trên — chưa đủ dữ liệu Resource plan/Summary "
+            "project để đánh giá tổng thể toàn sprint."
+        )
 
     return lines
 
