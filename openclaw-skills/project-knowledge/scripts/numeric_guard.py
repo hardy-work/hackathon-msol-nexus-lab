@@ -57,6 +57,7 @@ def check_ingest(name, value, unit, src):
 # ------------------------------------------------- policy=answer · GATE 4
 # Số KHÔNG phải giá trị đo lường — che đi trước khi soi.
 MASK = [
+    r"\[\[[^\]\n]+\]\]",                 # wiki link targets are identifiers, not measurements
     # ĐỊNH DANH văn bản (luồng VĂN) — KHÔNG phải số đo, giống ô Excel / phiên bản.
     # Đặt TRƯỚC mẫu ô Excel: nếu không, '[A-Z]{1,3}\d+' nuốt 'QH13' và bỏ sót năm.
     r"\b\d+/\d{4}/[A-ZĐ]+\d*(?:[-–][A-ZĐ]+\d*)*", # số hiệu luật: 86/2015/QH13, 72/2013/NĐ-CP

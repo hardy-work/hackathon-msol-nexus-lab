@@ -16,8 +16,10 @@ báo, số trong đó không phải nguyên văn.
 
   python3 scripts/ingest_van.py --doc chinh-sach-attt
   python3 scripts/ingest_van.py --all
+  python3 scripts/ingest_van.py --doc chinh-sach-attt --fresh
 """
 import json
+import os
 import re
 import unicodedata
 import subprocess
@@ -37,6 +39,38 @@ from document_registry import current as current_document  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 G, R, D, OFF = "\033[32m", "\033[31m", "\033[2m", "\033[0m"
+
+# Wiki ingest is deliberately cheaper than the generic ``HEAVY`` lane.  The
+# caller can still opt into Opus with ``PROJECT_KNOWLEDGE_WIKI_MODEL=opus`` (or
+# the legacy heavy-model variable), while a long document defaults to Sonnet.
+WIKI_MODEL = (os.getenv("PROJECT_KNOWLEDGE_WIKI_MODEL")
+              or os.getenv("PROJECT_KNOWLEDGE_HEAVY_MODEL", "sonnet"))
+
+# The full repository contract is useful for humans and gates, but repeating it
+# in every chapter prompt spends thousands of input tokens without adding a new
+# fact.  The deterministic validators below remain authoritative; this compact
+# prompt only tells the model how to format a candidate that those validators
+# will check.
+PROMPT_CONTRACT_SUMMARY = """
+Generate only one Markdown `source` page; the caller writes the file. Do not use
+tools, read files, or add commentary/code fences. Required frontmatter fields:
+page, name, doc_id, version, domain, visibility, raw_paths; a chapter page also
+has section and part_of. Do not add project. The body is a faithful Vietnamese
+structured summary of only the supplied source scope, preserving chapter/article
+structure and all conditions, thresholds, and procedures that are mentioned.
+Never invent, calculate, round, or combine numbers. If several values have
+separate units (45 days, 30 days, 03 days), keep them separate; never write
+45/30/03. OCR numbers must be labelled as OCR and never declared as facts.
+End with the exact requested `## Nguồn` provenance lines.
+""".strip()
+
+PROMPT_SCHEMA_SUMMARY = """
+This is a `source` page. `domain` must be the supplied valid dimension value;
+visibility is public, internal, or restricted. `raw_paths` must point to the
+supplied registered raw artifact. Numeric frontmatter declarations are allowed
+only for non-OCR sources and must contain facts, unit, and src that point to the
+exact source location. For OCR sources, declare no facts.
+""".strip()
 
 PROMPT = """Bạn đang thực hiện STAGE 4 (WIKI-INGEST) của hệ thống LLM-wiki.
 Nhiệm vụ: viết trang `wiki/sources/{doc_id}.md` — trang loại `source` cho MỘT tài liệu.
@@ -247,7 +281,75 @@ def validate_page(structured, page_text, root=ROOT):
     return problems + numeric_guard.check_page_declarations(frontmatter, root)
 
 
-def _reuse_candidate(rel, scope, *, name, section_title=None):
+def _overview_teaser(section_text, limit=280):
+    """Extract a short verbatim teaser for the deterministic overview.
+
+    This is intentionally not a generated interpretation: it only reuses the
+    first meaningful paragraph from the already validated Stage 3 artifact.
+    The chapter page remains the detailed retrieval source.
+    """
+    text = re.sub(r"\[\[page\s+\d+\]\]", " ", section_text)
+    text = re.sub(r"(?im)^\s*#{0,6}\s*CHƯƠNG\s+\d+\.[^\n]*$", "", text)
+    for paragraph in re.split(r"\n\s*\n", text):
+        one_line = " ".join(paragraph.split())
+        if len(one_line) < 40:
+            continue
+        if one_line.startswith("---") or one_line.startswith("doc_id:"):
+            continue
+        one_line = one_line.replace("|", "\\|")
+        return one_line if len(one_line) <= limit else one_line[:limit].rstrip() + "…"
+    return "Nội dung chi tiết được lập chỉ mục tại trang chương tương ứng."
+
+
+def build_overview_page(*, doc_id, title, domain, version, visibility,
+                        raw_path, sections, is_ocr):
+    """Build a lossless navigation page without a second LLM call.
+
+    Chapter pages carry the facts and procedures.  The overview is deliberately
+    deterministic: headings come from ``structured/`` and teasers are verbatim
+    excerpts, so removing an expensive summarisation call cannot introduce a
+    new claim or number.
+    """
+    frontmatter = {
+        "page": "source",
+        "name": title,
+        "doc_id": doc_id,
+        "version": version,
+        "domain": domain,
+        "visibility": visibility,
+        "raw_paths": [raw_path],
+    }
+    header = yaml.safe_dump(frontmatter, allow_unicode=True, sort_keys=False).strip()
+    body = [
+        f"# {title}",
+        "",
+        "## Tổng quan",
+        "",
+        "Đây là trang điều hướng của tài liệu nguồn. Nội dung chi tiết được tách theo "
+        "từng chương để tra cứu; các đoạn giới thiệu dưới đây được trích từ bản "
+        "structured đã kiểm tra, không phải diễn giải mới.",
+    ]
+    if is_ocr:
+        body += [
+            "",
+            "Nguồn là bản OCR; các con số trong nội dung cần được đối chiếu với bản gốc.",
+        ]
+    body += ["", "## Nội dung chính", ""]
+    for slug, section_title, section_text in sections:
+        body.append(f"- [[{doc_id}--{slug}]] — **{section_title}**: "
+                    f"{_overview_teaser(section_text)}")
+    body += [
+        "",
+        "## Nguồn",
+        "",
+        f"- doc_id: {doc_id}",
+        f"- raw_paths: {raw_path}",
+    ]
+    return f"---\n{header}\n---\n\n" + "\n".join(body) + "\n"
+
+
+def _reuse_candidate(rel, scope, *, name, doc_id, version, raw_path,
+                     domain, visibility, section_title=None):
     """Return a previously generated page only after running the current gates.
 
     Long documents are intentionally all-or-nothing, but an interrupted Claude
@@ -278,7 +380,28 @@ def _reuse_candidate(rel, scope, *, name, section_title=None):
         seen.add(path)
         try:
             text = path.read_text(encoding="utf-8")
+            frontmatter, _ = numeric_guard.split_frontmatter(text)
         except (OSError, UnicodeDecodeError):
+            continue
+        # A cache hit is safe only for the same registered source version and
+        # raw artifact.  This prevents a cheaper resume path from masking a
+        # changed document or accidentally mixing another chapter's page.
+        try:
+            page_version = int(frontmatter.get("version", -1))
+        except (TypeError, ValueError):
+            continue
+        if (frontmatter.get("page") != "source"
+                or str(frontmatter.get("doc_id")) != str(doc_id)
+                or page_version != int(version)
+                or frontmatter.get("domain") != domain
+                or frontmatter.get("visibility") != visibility
+                or list(frontmatter.get("raw_paths") or []) != [raw_path]):
+            continue
+        if section_title:
+            if (frontmatter.get("section") != section_title
+                    or frontmatter.get("part_of") != f"wiki/sources/{doc_id}.md"):
+                continue
+        elif "section" in frontmatter or "part_of" in frontmatter:
             continue
         if not validate_page(scope, text, ROOT):
             return text if text.endswith("\n") else text + "\n"
@@ -337,18 +460,27 @@ def ingest_one(doc_id, d, contract, schema, timeout=600, *, reuse_rejected=False
     common = dict(
         doc_id=doc_id, title=d.get("title", doc_id), domain=d["domain"],
         version=int(registry["version"]), visibility=registry.get("visibility", "internal"),
-        contract=contract, schema=schema, ocr_note=ocr_note,
+        contract=PROMPT_CONTRACT_SUMMARY, schema=PROMPT_SCHEMA_SUMMARY, ocr_note=ocr_note,
         ocr_rule=ocr_rule, facts_rule=facts_rule,
         raw_path=raw_path.relative_to(ROOT).as_posix())
 
+    sections = split_sections(structured) if len(structured) >= SECTION_MIN_CHARS else []
     pages, elapsed = [], 0.0
     text = _reuse_candidate(
-        f"wiki/sources/{doc_id}.md", structured, name=doc_id
+        f"wiki/sources/{doc_id}.md", structured, name=doc_id,
+        doc_id=doc_id, version=common["version"], raw_path=common["raw_path"],
+        domain=common["domain"], visibility=common["visibility"]
     ) if reuse_rejected else None
     dt = 0.0
     if text is None:
-        text, dt, err = render(PROMPT.format(raw=structured, **common), structured,
-                               timeout, name=doc_id)
+        text = build_overview_page(
+            doc_id=doc_id, title=common["title"], domain=common["domain"],
+            version=common["version"], visibility=common["visibility"],
+            raw_path=common["raw_path"], sections=sections, is_ocr=is_ocr)
+        problems = validate_page(structured, text, ROOT)
+        err = (f"GATE 2/WIKI overview deterministic chặn: {'; '.join(problems)}"
+               if problems else None)
+        dt = 0.0
     else:
         err = None
     elapsed += dt
@@ -367,6 +499,8 @@ def ingest_one(doc_id, d, contract, schema, timeout=600, *, reuse_rejected=False
         page_rel = f"wiki/sources/{doc_id}--{slug}.md"
         text = (_reuse_candidate(
             page_rel, section_text, name=f"{doc_id}--{slug}",
+            doc_id=doc_id, version=common["version"], raw_path=common["raw_path"],
+            domain=common["domain"], visibility=common["visibility"],
             section_title=section_title
         ) if reuse_rejected else None)
         dt = 0.0
@@ -414,7 +548,7 @@ def render(prompt, scope, timeout, name="page"):
     for attempt in range(1, RETRIES + 1):
         text, dt, failure = _render_once(prompt, scope, timeout, name)
         elapsed += dt
-        if failure is None or not failure.startswith(INFRA):
+        if failure is None or not _retryable_failure(failure):
             return text, elapsed, failure
         last = failure
         if attempt < RETRIES:
@@ -424,6 +558,18 @@ def render(prompt, scope, timeout, name="page"):
 
 
 INFRA = "hạ tầng: "
+NON_RETRYABLE_INFRA = (
+    "monthly spend limit", "not logged in", "authentication", "unauthorized",
+    "invalid api key", "invalid api_key", "permission denied", "credit balance",
+)
+
+
+def _retryable_failure(failure):
+    """Only retry transient infrastructure errors, never quota/auth failures."""
+    if not failure or not failure.startswith(INFRA):
+        return False
+    lowered = failure.lower()
+    return not any(marker in lowered for marker in NON_RETRYABLE_INFRA)
 
 
 def _render_once(prompt, scope, timeout, name):
@@ -433,7 +579,7 @@ def _render_once(prompt, scope, timeout, name):
             # `--tools=` is the portable spelling for "no built-in tools".
             # Passing `--allowedTools`, "" works on POSIX shells but the
             # Windows Claude CLI treats the empty argv as a missing value.
-            [models.CLAUDE, "-p", "--no-session-persistence", "--model", models.HEAVY, "--tools="],
+            [models.CLAUDE, "-p", "--no-session-persistence", "--model", WIKI_MODEL, "--tools="],
             input=prompt, capture_output=True, text=True,
             encoding="utf-8", timeout=timeout, cwd=ROOT)
     except subprocess.TimeoutExpired:
@@ -483,7 +629,10 @@ def main():
         targets = [sys.argv[sys.argv.index("--doc") + 1]]
     else:
         sys.exit(__doc__)
-    reuse_rejected = "--reuse-rejected" in sys.argv
+    # Resume is the safe default: only current, gate-validated pages with the
+    # same doc/version/raw provenance are reused.  ``--fresh`` is explicit
+    # when a prompt/model change should regenerate every missing page.
+    reuse_rejected = "--fresh" not in sys.argv
 
     (ROOT / "wiki/sources").mkdir(parents=True, exist_ok=True)
     tot = 0.0

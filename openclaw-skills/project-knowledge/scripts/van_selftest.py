@@ -642,6 +642,39 @@ def test_stage4_rejects(root: Path, structured: str) -> int:
     return failures
 
 
+def test_ingest_cost_guards(root: Path, structured: str) -> int:
+    """Token-saving paths must remain fail-closed and provenance-bound."""
+    failures = 0
+    sections = [("chuong-1-demo", "CHƯƠNG 1. Demo", structured)]
+    overview = ingest_van.build_overview_page(
+        doc_id=DOC_ID, title="Chính sách an toàn thông tin", domain="nexus",
+        version=1, visibility="internal", raw_path=f"raw/{DOC_ID}.md",
+        sections=sections, is_ocr=False)
+    problems = ingest_van.validate_page(structured, overview, root)
+    failures += not check("overview deterministic qua Gate 2",
+                          problems == [], "; ".join(problems))
+    failures += not check("overview deterministic giữ liên kết chapter",
+                          f"[[{DOC_ID}--chuong-1-demo]]" in overview,
+                          overview[:200])
+
+    old = ingest_van._render_once
+    calls = []
+
+    def quota(*_args, **_kwargs):
+        calls.append(1)
+        return None, 0.0, ingest_van.INFRA + "code 1: monthly spend limit"
+
+    ingest_van._render_once = quota
+    try:
+        _, _, failure = ingest_van.render("x", "x", 1, "quota-selftest")
+    finally:
+        ingest_van._render_once = old
+    failures += not check("quota không retry gây tốn thêm token",
+                          len(calls) == 1 and "monthly spend limit" in failure,
+                          f"calls={len(calls)}, failure={failure}")
+    return failures
+
+
 # --------------------------------------------------------------- LUẬT OCR
 def test_ocr_rule() -> int:
     """Trang dựng từ nguồn OCR không được khai số — kể cả khi trang KHÔNG tự khai `ocr`.
@@ -736,6 +769,8 @@ def main() -> int:
         print("── Stage 4 · cổng ghi trang wiki ──")
         failures += test_stage4_accepts_correct_page(root, structured)
         failures += test_stage4_rejects(root, structured)
+        print("-- Stage 4 · token optimization fail-closed --")
+        failures += test_ingest_cost_guards(root, structured)
         print("── LUẬT OCR ──")
         failures += test_ocr_rule()
         print("── Gate 3a · lint-numbers ──")
