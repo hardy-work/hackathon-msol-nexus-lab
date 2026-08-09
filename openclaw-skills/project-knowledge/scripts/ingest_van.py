@@ -300,8 +300,10 @@ def ingest_one(doc_id, d, contract, schema, timeout=600):
     text, dt, err = render(PROMPT.format(raw=structured, **common), structured,
                            timeout, name=doc_id)
     elapsed += dt
-    if err:
-        return None, elapsed, err
+    # `text is None` phải chặn ở đây kể cả khi `err` rỗng: một thông báo lỗi rỗng từng
+    # cho `None` lọt vào danh sách trang và làm sập lượt chạy ở bước ghi file.
+    if err or text is None:
+        return None, elapsed, err or "không có nội dung trang"
     pages.append((f"wiki/sources/{doc_id}.md", text))
 
     # Tài liệu dài: thêm một trang cho mỗi CHƯƠNG. Trang tổng quan vẫn giữ nguyên vai
@@ -312,8 +314,8 @@ def ingest_one(doc_id, d, contract, schema, timeout=600):
                                        section_title=section_title, **common)
         text, dt, err = render(prompt, section_text, timeout, name=f"{doc_id}--{slug}")
         elapsed += dt
-        if err:
-            return None, elapsed, f"[{slug}] {err}"
+        if err or text is None:
+            return None, elapsed, f"[{slug}] {err or 'không có nội dung trang'}"
         pages.append((f"wiki/sources/{doc_id}--{slug}.md", text))
     return pages, elapsed, None
 
@@ -337,16 +339,48 @@ def dump_rejected(name, text):
         return f"(không ghi được bản bị từ chối: {exc.__class__.__name__})"
 
 
+# Một tài liệu dài là 11 lượt gọi nối tiếp, nên xác suất vấp lỗi tạm thời cộng dồn —
+# đúng như Stage 3. Thử lại chỉ cho lỗi HẠ TẦNG; cổng chặn thì KHÔNG, vì đó là kết luận
+# về nội dung và thử lại một kết luận cho tới khi nó đổi ý chính là cách phá cổng.
+RETRIES = 3
+RETRY_BACKOFF = 15
+
+
 def render(prompt, scope, timeout, name="page"):
-    """Gọi Opus, dọn đầu ra, soi cổng với ĐÚNG phạm vi nguồn của trang đó."""
+    """Gọi Opus (thử lại khi hạ tầng hỏng), dọn đầu ra, soi cổng với ĐÚNG phạm vi nguồn."""
+    elapsed, last = 0.0, "không rõ"
+    for attempt in range(1, RETRIES + 1):
+        text, dt, failure = _render_once(prompt, scope, timeout, name)
+        elapsed += dt
+        if failure is None or not failure.startswith(INFRA):
+            return text, elapsed, failure
+        last = failure
+        if attempt < RETRIES:
+            print(f"⟳ {name}: {last} — thử lại {attempt}/{RETRIES - 1}", file=sys.stderr)
+            time.sleep(RETRY_BACKOFF * attempt)
+    return None, elapsed, last
+
+
+INFRA = "hạ tầng: "
+
+
+def _render_once(prompt, scope, timeout, name):
     t0 = time.time()
-    out = subprocess.run(
-        [models.CLAUDE, "-p", "--model", models.HEAVY, "--allowedTools", ""],
-        input=prompt, capture_output=True, text=True,
-        encoding="utf-8", timeout=timeout, cwd=ROOT)
+    try:
+        out = subprocess.run(
+            [models.CLAUDE, "-p", "--model", models.HEAVY, "--allowedTools", ""],
+            input=prompt, capture_output=True, text=True,
+            encoding="utf-8", timeout=timeout, cwd=ROOT)
+    except subprocess.TimeoutExpired:
+        return None, time.time() - t0, f"{INFRA}quá {timeout}s"
     dt = time.time() - t0
     if out.returncode != 0:
-        return None, dt, (out.stderr or "").strip()[:200]
+        # Thông báo lỗi phải LUÔN khác rỗng. Bản trước trả `(out.stderr or "").strip()`
+        # và khi CLI hỏng với stderr rỗng thì err là chuỗi rỗng — `if err:` không bắt,
+        # `None` được nhét vào danh sách trang, và lượt chạy sập ở bước ghi file với
+        # `TypeError: data must be str, not NoneType`.
+        detail = (out.stderr or "").strip()[:200] or "stderr rỗng"
+        return None, dt, f"{INFRA}mã lỗi {out.returncode}: {detail}"
     text = (out.stdout or "").strip()
     text = re.sub(r"^```(?:markdown|yaml)?\n|\n```$", "", text).strip()
     # Output LLM không tất định: đôi khi thêm lời dẫn trước frontmatter. Cắt từ dòng
@@ -354,7 +388,7 @@ def render(prompt, scope, timeout, name="page"):
     if not text.startswith("---"):
         m = re.search(r"(?m)^---\s*$", text)
         if not m:
-            return None, dt, "không tìm thấy frontmatter (---)"
+            return None, dt, f"{INFRA}không tìm thấy frontmatter (---)"
         text = text[m.start():]
     problems = validate_page(scope, text, ROOT)
     if problems:
