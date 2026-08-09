@@ -247,7 +247,12 @@ def _canonical_transform_number(token):
     """Canonical numeric spelling for Stage 3 comparison (format-only changes OK)."""
     if DATE_TOKEN.fullmatch(token):
         return f"date:{token}"
-    raw = token.strip()
+    # Bỏ dấu câu ở CUỐI trước khi diễn giải. `TRANSFORM_TOKEN` nuốt luôn dấu chấm kết
+    # câu, nên cùng một con số cho hai kết quả khác nhau tuỳ chỗ nó đứng trong câu:
+    # `29,3.` có hai dấu -> coi là phân cách nghìn -> `293`, còn `29,3` một dấu phẩy ->
+    # thập phân -> `29.3`. Nguồn viết `29,3.` cuối câu và trang wiki trích lại `"29,3"`
+    # trong ngoặc kép: cùng một chuỗi ký tự, hai trị số, và cổng báo số bịa.
+    raw = token.strip().rstrip(".,")
     # Multiple separators of one kind are thousands separators. With one
     # separator, preserve decimal semantics unless exactly three trailing digits.
     if raw.count(",") + raw.count(".") > 1:
@@ -257,7 +262,10 @@ def _canonical_transform_number(token):
         raw = left + right if len(right) == 3 and len(left) >= 1 else left + "." + right
     elif "." in raw:
         left, right = raw.split(".", 1)
-        if len(right) == 3 and len(left) > 3:
+        # Cùng quy tắc với dấu phẩy: một dấu chấm + đúng 3 chữ số sau là phân
+        # cách nghìn kiểu Việt Nam (`1.234` = 1234), không phải thập phân ba
+        # chữ số — mẫu đó không xuất hiện thật trong tài liệu.
+        if len(right) == 3 and len(left) >= 1:
             raw = left + right
     try:
         dec = Decimal(raw)

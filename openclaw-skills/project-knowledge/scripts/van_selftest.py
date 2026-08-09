@@ -472,6 +472,22 @@ def test_transform_two_phase() -> int:
         failures += not check(f"chỉ cảnh báo — {label}",
                               errors == [] and warnings != [], f"{errors} / {warnings}")
 
+    # Trị số KHÔNG được đổi theo dấu câu đứng sau. TRANSFORM_TOKEN nuốt cả dấu chấm
+    # kết câu, nên `29,3.` từng đọc thành 293 (hai dấu -> phân cách nghìn) còn `29,3`
+    # trong ngoặc kép đọc thành 29.3 — cùng chuỗi ký tự, hai trị số, cổng báo số bịa.
+    for with_stop, bare in [("29,3.", "29,3"), ("1.234.", "1.234"),
+                            ("45.5.", "45.5"), ("12.", "12")]:
+        failures += not check(
+            f"dấu câu cuối không đổi trị số: {with_stop!r} == {bare!r}",
+            numeric_guard._canonical_transform_number(with_stop)
+            == numeric_guard._canonical_transform_number(bare),
+            f"{numeric_guard._canonical_transform_number(with_stop)} != "
+            f"{numeric_guard._canonical_transform_number(bare)}")
+    for text, want in [("2.000.000", "2000000"), ("43,5", "43.5"), ("1.234", "1234")]:
+        failures += not check(f"cách đọc số thật không đổi: {text!r} -> {want}",
+                              numeric_guard._canonical_transform_number(text) == want,
+                              numeric_guard._canonical_transform_number(text))
+
     # Bản TÓM TẮT (allow_loss=True) được nhắc lại một giá trị nhiều lần: trang wiki nêu
     # "mỗi năm 1 lần" ở thân bài rồi nhắc lại trong ghi chú OCR. So theo BỘI SỐ thì bản
     # thứ hai thành "số mới". Nhưng chép nguyên văn (Stage 3) thì bội số CÓ nghĩa.
