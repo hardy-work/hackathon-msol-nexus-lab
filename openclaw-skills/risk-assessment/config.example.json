@@ -18,7 +18,6 @@
   },
   "thresholds": {
     "overdueGraceDays": 0,
-    "stalledDays": 3,
     "estimateVarianceRatio": 1.5,
     "workHoursPerDay": 8,
     "highScoreThreshold": 6,
