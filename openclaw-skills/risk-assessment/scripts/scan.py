@@ -37,36 +37,6 @@ def load_config() -> dict | None:
         return json.load(f)
 
 
-def load_task_status_log() -> dict:
-    log_path = SKILL_DIR / "state" / "task-status-log.json"
-    if log_path.exists():
-        with open(log_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-
-def apply_status_log(tasks: list[dict], today: str) -> list[dict]:
-    """Sprint tab KHÔNG có cột lưu ngày status đổi lần cuối, nên phải tự suy
-    ra bằng cách so sánh với lần Scan gần nhất — cần cho rule T3 (đứng yên).
-    """
-    log = load_task_status_log()
-    next_log = {}
-    for t in tasks:
-        prev = log.get(t["detectedFrom"])
-        if prev and prev["status"] == t["status"]:
-            t["lastUpdated"] = prev["since"]
-        else:
-            t["lastUpdated"] = today
-        next_log[t["detectedFrom"]] = {"status": t["status"], "since": t["lastUpdated"]}
-
-    state_dir = SKILL_DIR / "state"
-    state_dir.mkdir(exist_ok=True)
-    (state_dir / "task-status-log.json").write_text(
-        json.dumps(next_log, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    return tasks
-
-
 def _find_col_index(header: list, name: str) -> int | None:
     for i, c in enumerate(header):
         if str(c).strip() == name:
@@ -106,9 +76,11 @@ def read_output_tab(file_id: str, tab_name: str, token: str) -> list[dict]:
     combined_idx = _find_col_index(header, "Related Assignee/Task")
     assignee_idx = _find_col_index(header, "Related Assignee")
     task_idx = _find_col_index(header, "Task")
+    if task_idx is None:
+        task_idx = _find_col_index(header, "Related Task")
     if combined_idx is None and (assignee_idx is None or task_idx is None):
         raise ValueError(
-            f'Không tìm thấy cột "Related Assignee/Task" (hoặc cặp "Related Assignee" + "Task") trong tab "{tab_name}"'
+            f'Không tìm thấy cột "Related Assignee/Task" (hoặc cặp "Related Assignee" + "Task"/"Related Task") trong tab "{tab_name}"'
         )
 
     def cell(row: list, idx: int | None) -> str:
@@ -194,7 +166,6 @@ def run_scan() -> dict:
         )
 
         today = date.today().isoformat()
-        tasks = apply_status_log(tasks, today)
 
         rp_config = config["resourcePlan"]
         rp_rows = get_values(file_id, f"'{rp_config['tabName']}'!A1:AZ40", token)
