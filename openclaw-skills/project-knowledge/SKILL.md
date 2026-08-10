@@ -45,7 +45,7 @@ Skill trả JSON gồm:
 - `status`: `in_kb`, `confident_no`, `not_in_kb`, `forbidden` hoặc `error`;
 - `answer`: câu trả lời tiếng Việt;
 - `confidence`: `high`, `medium` hoặc `none`;
-- `citations`: danh sách trang/ô nguồn;
+- `citations`: provenance dành cho người đọc, gồm tên file nguồn, ngày cập nhật và người cập nhật; không hiển thị đường dẫn `wiki/`/`raw/` nội bộ;
 - `reason`: giải thích ngắn về coverage, gate hoặc giới hạn dữ liệu;
 - `tier`: bậc truy vấn đã trả lời;
 - `project`: project đang tra cứu;
@@ -263,6 +263,37 @@ publisher là lớp ngoài; nó không biến artifact review thành source of t
 credential Google vào query skill. Proposal hợp lệ có thể chạy thẳng
 `scripts/ingest_runner.py` trong isolated worktree; runner dừng ở `ready_to_publish`
 cho tới khi deployment layer publish atomically và gọi explicit runtime reload.
+
+### Mẫu phản hồi Slack cho ingest
+
+Phản hồi phải ngắn, chính thức và luôn phân biệt `ready_to_publish` với `published`:
+
+```text
+[NẠP TÀI LIỆU – KẾT QUẢ XỬ LÝ]
+
+- Tài liệu: [tên file]
+- Người nạp: [tên] ([Slack User ID])
+- Proposal ID: [proposal_id]
+- Kiểm tra: Quyền ✓ | Hash ✓ | Pipeline ✓ | Citation ✓
+- Trạng thái: [PUBLISHED / READY_TO_PUBLISH / FAILED]
+- Corpus version: [version hoặc —]
+- Runtime: [Đã reload / Chưa reload]
+
+Kết luận: [một câu phù hợp với trạng thái].
+
+[READY_TO_PUBLISH]
+Bạn có muốn NexusBot tiếp tục publish tài liệu vào LLM Wiki và reload runtime để tài liệu được sử dụng chính thức không?
+
+[FAILED]
+Bạn có muốn NexusBot thử lại quá trình nạp tài liệu không?
+```
+
+Với `PUBLISHED`, kết luận phải xác nhận tài liệu đã khả dụng trong LLM Wiki và không
+cần hỏi lại. Không được dùng các câu “đã nạp xong”, “đã merge vào main local” hoặc
+“đã publish” nếu proposal chưa có trạng thái `published`, corpus version mới và
+`runtime_reloaded=true`. “Local” chỉ được dùng khi cần giải thích rằng pipeline chạy
+trên bản sao Git nội bộ của LLM server; không được trình bày như thao tác trên máy
+người dùng hoặc như một lần push lên `origin/main`.
 
 ## Ranh giới tích hợp Agent
 

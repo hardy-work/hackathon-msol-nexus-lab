@@ -23,6 +23,7 @@ def cache_key(project: str, query: str, version: str, access_fingerprint: str,
         "access": access_fingerprint,
         "llm": bool(llm),
         "history": history or [],
+        "citation_format": "source-v1",
     }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 

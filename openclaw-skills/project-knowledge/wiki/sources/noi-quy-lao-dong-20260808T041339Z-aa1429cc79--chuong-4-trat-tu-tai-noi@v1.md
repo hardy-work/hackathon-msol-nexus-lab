@@ -1,14 +1,17 @@
 ---
 page: source
-name: "Nội quy lao động MOR — CHƯƠNG 4. TRẬT TỰ TẠI NƠI LÀM VIỆC"
+name: Nội quy lao động MOR — CHƯƠNG 4. TRẬT TỰ TẠI NƠI LÀM VIỆC
 doc_id: noi-quy-lao-dong-20260808T041339Z-aa1429cc79
 version: 1
 domain: mor-software
 visibility: internal
 raw_paths:
-  - raw/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.md
-section: "CHƯƠNG 4. TRẬT TỰ TẠI NƠI LÀM VIỆC"
+- raw/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.md
+section: CHƯƠNG 4. TRẬT TỰ TẠI NƠI LÀM VIỆC
 part_of: wiki/sources/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.md
+retired: true
+retired_in: 2
+retired_by: wiki/sources/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.md
 ---
 
 # CHƯƠNG 4. TRẬT TỰ TẠI NƠI LÀM VIỆC

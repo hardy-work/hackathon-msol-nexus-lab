@@ -31,11 +31,11 @@
 | Demo showcase | `demo/run_demo.sh`, `scripts/demo_showcase.py` | Freshness-aware, one-process, offline 7-step story; human and JSON output |
 | Action boundary | `suggested_actions` | Approval/permission proposal only; action skill owns writes/RBAC |
 
-## Data gaps that code cannot invent
+## Phạm vi dữ liệu hiện tại
 
-- Workbook có vocabulary `tech_stack` nhưng chưa có mapping người–tech-stack.
-- Risk, Issue và Backlog đang không có dòng nghiệp vụ thực.
-- Dependency/blocker giữa task chưa có trong nguồn, nên graph không tự suy ra.
+- Workbook hiện có vocabulary `tech_stack`; chưa có mapping người–tech-stack.
+- Snapshot hiện tại chưa có dòng nghiệp vụ thực trong Risk, Issue và Backlog.
+- Nguồn hiện tại chưa khai báo dependency/blocker giữa task; graph không tự suy ra quan hệ này.
 - Meeting note cần được đưa qua một ingest adapter riêng trước khi trở thành
   Project Knowledge source.
 

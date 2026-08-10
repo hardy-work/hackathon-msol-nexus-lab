@@ -1,14 +1,19 @@
 ---
 page: source
-name: "Nội quy lao động MOR — CHƯƠNG 7. BẢO VỆ TÀI SẢN, BÍ MẬT KINH DOANH, BÍ MẬT CÔNG NGHỆ VÀ SỞ HỮU TRÍ TUỆ CỦA CÔNG TY"
+name: Nội quy lao động MOR — CHƯƠNG 7. BẢO VỆ TÀI SẢN, BÍ MẬT KINH DOANH, BÍ MẬT CÔNG
+  NGHỆ VÀ SỞ HỮU TRÍ TUỆ CỦA CÔNG TY
 doc_id: noi-quy-lao-dong-20260808T041339Z-aa1429cc79
 version: 1
 domain: mor-software
 visibility: internal
 raw_paths:
-  - raw/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.md
-section: "CHƯƠNG 7. BẢO VỆ TÀI SẢN, BÍ MẬT KINH DOANH, BÍ MẬT CÔNG NGHỆ VÀ SỞ HỮU TRÍ TUỆ CỦA CÔNG TY"
+- raw/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.md
+section: CHƯƠNG 7. BẢO VỆ TÀI SẢN, BÍ MẬT KINH DOANH, BÍ MẬT CÔNG NGHỆ VÀ SỞ HỮU TRÍ
+  TUỆ CỦA CÔNG TY
 part_of: wiki/sources/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.md
+retired: true
+retired_in: 2
+retired_by: wiki/sources/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.md
 ---
 
 # Nội quy lao động MOR — Chương 7. Bảo vệ tài sản, bí mật kinh doanh, bí mật công nghệ và sở hữu trí tuệ của Công ty

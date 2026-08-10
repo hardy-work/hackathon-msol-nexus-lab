@@ -1,5 +1,6 @@
 # GATE 1 — sha256 của originals/ (tầng bất biến). KHÔNG sửa tay.
-# Sinh bởi scripts/gate1_integrity.py. Đổi original -> chạy --reinit CÓ CHỦ Ý.
+# Sinh bởi scripts/intake.py sau khi source được đăng ký trên staging branch.
 
 df3369a7bfbe56eb8d2222053f8e23c744d7dfee70640e37166175cbad2d6d58  nexus-plan.xlsx
 6330165083547fb7d52bddd79220a5a81038dbbdce638dc0c9c311c2ee79416c  noi-quy-lao-dong-20260808T041339Z-aa1429cc79.pdf
+6e8a709d14ca5288bd9b9dde34709c4f4205cfd0735b59eeb1987106af2b816f  noi-quy-lao-dong-20260808T041339Z-aa1429cc79@v2.md
