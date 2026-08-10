@@ -110,6 +110,54 @@ def main() -> int:
         assert not lint.errors, lint.errors
         document_registry.load(root)
 
+    with tempfile.TemporaryDirectory(prefix="pk-reingest-renderer-change-") as temp:
+        root = Path(temp)
+        (root / "originals").mkdir()
+        (root / "raw").mkdir()
+        (root / "wiki/sources").mkdir(parents=True)
+        old_original = root / "originals/rules.pdf"
+        new_original = root / "originals/rules@v2.md"
+        old_original.write_bytes(b"old-pdf")
+        new_original.write_bytes(b"new-markdown")
+        (root / "raw/rules.md").write_text(
+            "---\ndoc_id: rules\nversion: 1\n---\nold\n", encoding="utf-8"
+        )
+        (root / "raw/rules@v2.md").write_text(
+            "---\ndoc_id: rules\nversion: 2\n---\nnew\n", encoding="utf-8"
+        )
+        registry = {"documents": [
+            {"doc_id": "rules", "version": 1, "original": "originals/rules.pdf",
+             "kind": "pdf", "extractor": "van", "sha256": digest(b"old-pdf"),
+             "current": False, "supersedes": None, "raw_paths": ["raw/rules.md"]},
+            {"doc_id": "rules", "version": 2, "original": "originals/rules@v2.md",
+             "kind": "text/markdown", "extractor": "markdown",
+             "sha256": digest(b"new-markdown"), "current": True, "supersedes": 1,
+             "raw_paths": ["raw/rules@v2.md"]},
+        ]}
+        (root / "documents.yml").write_text(
+            yaml.safe_dump(registry, sort_keys=False), encoding="utf-8"
+        )
+        for name in ("rules.md", "rules--chapter.md"):
+            (root / "wiki/sources" / name).write_text(
+                "---\npage: source\nname: Rules\ndoc_id: rules\nversion: 1\n"
+                "raw_paths: [raw/rules.md]\n---\nold\n", encoding="utf-8"
+            )
+
+        plan = reingest.build_plan(root, "rules", 1, 2)
+        assert plan["removed_pages"] == ["wiki/sources/rules--chapter.md"]
+        assert [item["page"] for item in plan["impacted_pages"]] == [
+            "wiki/sources/rules.md"
+        ]
+        reingest.archive_retired_pages(root, plan)
+        reingest.archive_one_to_one_pages(root, plan)
+        (root / "wiki/sources/rules.md").write_text(
+            "---\npage: source\nname: Rules\ndoc_id: rules\nversion: 2\n"
+            "raw_paths: [raw/rules@v2.md]\n---\nnew\n", encoding="utf-8"
+        )
+        lint.errors.clear()
+        lint.lint_history(root)
+        assert not lint.errors, lint.errors
+
     print("✓ re-ingest self-test: selective page write-set + new/retired pages")
     return 0
 

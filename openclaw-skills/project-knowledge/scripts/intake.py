@@ -306,6 +306,7 @@ def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, An
         from_version = int(decision["from_version"])
         if int(current["version"]) != from_version:
             raise ValueError("registry đã đổi current version sau lúc tạo intake decision")
+        extractor = extractor_for(doc_id, file_kind(source))
         original = _original_path(doc_id, version, source)
         raw_paths = [_versioned_path(str(path), version) for path in current.get("raw_paths") or []]
         new_document = dict(current)
@@ -315,6 +316,7 @@ def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, An
             "sha256": sha256(source),
             "source_name": source.name,
             "kind": file_kind(source),
+            "extractor": extractor,
             "status": "canonical",
             "current": True,
             "supersedes": from_version,

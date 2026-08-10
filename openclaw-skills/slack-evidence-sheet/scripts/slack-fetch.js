@@ -1,12 +1,11 @@
 // Đọc 1 thread Slack, lấy email người gửi, tải toàn bộ file đính kèm về máy.
 // Dùng: node scripts/slack-fetch.js <threadUrl|channelId:ts> <outDir>
-// Cần: SLACK_BOT_TOKEN (scope: channels:history hoặc groups:history, files:read,
-//       users:read, users:read.email)
+// Cần: SLACK_BOT_TOKEN do service environment của NexusBot inject (scope:
+// channels:history hoặc groups:history, files:read, users:read, users:read.email).
 //
 // Vì sao gọi thẳng Slack Web API thay vì dùng tool `slack` của OpenClaw: Slack chỉ
 // đẩy file của message TAG bot tới bot, các file khác trong thread không truyền tới.
 // Gọi conversations.replies thì lấy được đủ cả thread.
-require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
@@ -15,7 +14,7 @@ const [target, outDir = './downloads'] = process.argv.slice(2);
 const TOKEN = process.env.SLACK_BOT_TOKEN;
 
 if (!target || !TOKEN) {
-  console.error('Dùng: node slack-fetch.js <threadUrl|channelId:ts> <outDir>  (cần SLACK_BOT_TOKEN)');
+  console.error('Dùng: node slack-fetch.js <threadUrl|channelId:ts> <outDir>  (NexusBot gateway cần inject SLACK_BOT_TOKEN)');
   process.exit(1);
 }
 

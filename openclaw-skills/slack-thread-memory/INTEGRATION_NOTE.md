@@ -1,64 +1,62 @@
-# Note tích hợp với botchat Slack
+# Tích hợp với botchat Slack của NexusBot
 
-## Ranh giới bắt buộc
+## Quyết định kiến trúc
 
-`botchat adapter` hiện tại vẫn là đầu mối duy nhất nhận Slack event, xác thực
-mention và gọi Slack Web API để lấy replies. `slack-thread-memory` **không** đăng
-ký event handler, không tự poll Slack và không gọi LLM.
+OpenClaw Slack adapter vẫn là nơi duy nhất đăng ký `app_mention` và gọi LLM.
+Skill này không đăng ký Slack event, không poll Slack, không gọi LLM và không
+được deploy như một adapter/service riêng.
 
-Adapter trong skill này chỉ làm hai việc:
-
-1. Validate payload thuộc đúng một `channel_id + thread_ts`.
-2. Upsert raw message/summary vào DB riêng của Slack conversation.
-
-Không nối skill này vào `project-knowledge` và không ghi Slack message vào
-`documents.yml`, `raw/`, `wiki/`, `derived/` hoặc conversation DB của project
-knowledge.
-
-## Luồng nên dùng khi tích hợp
+Runtime plugin `openclaw-plugin/` được link vào **cùng gateway** và đăng ký
+typed hooks của OpenClaw:
 
 ```text
-Slack app_mention
-    ↓
-botchat adapter hiện tại
-    ├─ xác định channel + thread_ts từ event
-    ├─ gọi conversations.replies cho đúng thread
-    └─ gọi normalize_event(...) + ThreadStore
-            ↓
-      lấy context của đúng thread
-            ↓
-      botchat gọi LLM một lần
-            ↓
-      lưu reply của bot vào cùng thread store
+Slack adapter duy nhất
+    ├─ message_received → append inbound message vào ThreadStore
+    ├─ before_prompt_build (awaited)
+    │    ├─ ThreadStore.context(thread_id)
+    │    └─ return prependContext cho đúng lượt LLM hiện tại
+    └─ message_sent → append câu trả lời NexusBot vào cùng ThreadStore
 ```
 
-Trong code production nên import trực tiếp `normalize_event` và `ThreadStore`;
-không cần spawn subprocess cho mỗi message. CLI `ingest_event.py` chủ yếu để
-replay/kiểm thử local.
+`before_prompt_build` là hook có kết quả được gateway await; không dùng
+`message:preprocessed` fire-and-forget để sửa bản copy của context. Như vậy
+không có `app_mention` thứ hai, không có LLM caller thứ hai và mọi tác
+vụ dùng cùng một Slack token trong service environment của NexusBot.
 
-## Checklist tránh xung đột
+## Ranh giới dữ liệu
 
-- [ ] Chỉ có một nơi đăng ký Slack `app_mention` handler: botchat adapter hiện tại.
-- [ ] Không để cả hai lớp cùng gọi LLM cho cùng một event.
-- [ ] Gateway truyền replies đã fetch; không truyền channel history toàn bộ.
-- [ ] `thread_ts` lấy từ Slack event, không lấy từ câu chữ hoặc link do người dùng tự nhập.
-- [ ] Mọi reply phải cùng `channel_id` và `thread_ts`; khác scope thì reject.
-- [ ] Dùng cùng một DB riêng qua `SLACK_THREAD_MEMORY_STATE_DIR`.
-- [ ] Nếu gateway đã có conversation store cũ, không merge tự động; chọn Slack
-  ThreadStore làm nơi lưu Slack history hoặc viết migration có chủ đích.
-- [ ] Khi retry event, dùng upsert; không tạo thêm lượt gọi LLM.
-- [ ] Project Wiki chỉ được thêm vào prompt như nguồn riêng nếu flow botchat cho phép;
-  Slack history không tự động promote thành wiki fact.
+- Canonical id là `channel_id:thread_ts`; scope lấy từ session key/context của
+  gateway, không lấy từ câu chữ người dùng.
+- Chỉ lưu context hội thoại của Slack vào DB riêng `SLACK_THREAD_MEMORY_STATE_DIR`.
+- Không ghi Slack message vào `documents.yml`, `raw/`, `structured/`, `wiki/`,
+  `derived/` hoặc `project-knowledge` conversation DB.
+- Context được đánh dấu là dữ liệu hội thoại không tin cậy; không coi chat là
+  wiki fact nếu không có flow ingest explicit.
+- Retry cùng message là upsert idempotent; thread khác không thể đọc context.
+- Credential Slack không nằm trong skill `.env`; `slack-fetch.js` dùng token
+  được gateway NexusBot inject.
 
-## Smoke test trước khi nối thật
+## Cài đặt gateway
+
+Từ thư mục skill, cài plugin dạng link vào gateway đang chạy:
+
+```bash
+openclaw plugins install --link openclaw-plugin
+```
+
+Sau đó restart đúng gateway profile của NexusBot và kiểm tra plugin ở trạng
+thái loaded. Không sửa file `openclaw/dist/...` vì sẽ bị ghi đè khi nâng cấp.
+
+## Kiểm thử
 
 ```bash
 python scripts/selftest.py
-python scripts/ingest_event.py \
-  --event tests/fixtures/app_mention.json \
-  --db .runtime/slack-thread-memory.sqlite3 \
-  --print-context
+node --test tests/runtime_scope.test.mjs tests/runtime_thread_store.test.mjs
 ```
 
-Sau khi nối gateway, kiểm tra 3 tình huống: retry cùng event không tăng số message,
-message ở thread khác bị reject, và một thread mới không thấy context của thread cũ.
+Node test cần Node có `node:sqlite` (Node 22+); trên máy local thiếu module này
+thì chạy test ở LLM server, đúng service environment của gateway.
+
+Smoke test production cần xác nhận: mention đầu tiên lưu inbound/outbound,
+mention thứ hai trong cùng thread nhận được context cũ, retry không nhân đôi
+message, và mention ở thread khác không nhìn thấy lịch sử thread trước.

@@ -1,0 +1,13 @@
+{
+  "id": "nexus-slack-thread-memory",
+  "name": "Nexus Slack Thread Memory",
+  "description": "Thread-scoped memory hook for the existing OpenClaw Slack adapter.",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
