@@ -14,7 +14,7 @@ handy-schedule trong khi còn 4 phát hiện). Bản này siết bằng ba lớp
   3. CHECKLIST lỗi đã biết (khái quát quá đà · số không nguồn · overclaim coverage · lẫn
      "không thấy" với "không có").
 
-Ba nguyên tắc cũ giữ nguyên: phiên MỚI không ký ức · KHÔNG công cụ (`--allowedTools ""`)
+Ba nguyên tắc cũ giữ nguyên: phiên MỚI không ký ức · KHÔNG công cụ (`--tools=`)
 · nguồn bị CẮT thì trả UNVERIFIABLE, KHÔNG kết luận trang sai.
 
   python3 scripts/review.py --page wiki/entities/qc-lan.md
@@ -135,7 +135,7 @@ def run_once(prompt, timeout=240):
     """Một phiên soát -> dict chuẩn hoá {verdict, findings, checked, err}."""
     try:
         out = subprocess.run(
-            [models.CLAUDE, "-p", "--model", models.REVIEW, "--allowedTools", ""],
+            [models.CLAUDE, "-p", "--no-session-persistence", "--model", models.REVIEW, "--tools="],
             input=prompt, capture_output=True, text=True,
             encoding="utf-8", timeout=timeout, cwd=ROOT)
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:

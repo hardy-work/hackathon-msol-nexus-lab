@@ -109,3 +109,9 @@
 - Review lại `wiki/entities/tung-dv.md` bằng `claude-sonnet-5`, K=3: **PASS 3/3**.
 - Kết hợp 7 trang PASS ở lượt full trước với trang đã sửa: toàn bộ 8 trang Gate 3b đạt,
   không còn finding đa số.
+
+## 2026-08-08 · noi-quy-lao-dong-20260808T041339Z-aa1429cc79 · Stage 4 WIKI-INGEST (source VĂN) · OK
+- Sinh/cập nhật 1 trang wiki; `build_index.py` đồng bộ lại `index.md`.
+
+## 2026-08-09 · noi-quy-lao-dong-20260808T041339Z-aa1429cc79 · Stage 4 WIKI-INGEST (source VĂN) · OK
+- Sinh/cập nhật 1 trang wiki; `build_index.py` đồng bộ lại `index.md`.

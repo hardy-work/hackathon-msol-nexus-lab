@@ -20,9 +20,11 @@ mốc thời gian (giữ tính tái lập byte: xoá raw/ dựng lại y hệt �
 
   python3 scripts/extract_van.py                       # trích mọi doc (PDF scan chỉ CẢNH BÁO)
   python3 scripts/extract_van.py --doc chinh-sach-attt # một doc
-  python3 scripts/extract_van.py --ocr                 # OCR luôn PDF scan (chậm, không tất định)
+  python3 scripts/extract_van.py --ocr                 # OCR tesseract (nhanh, kém với tiếng Việt)
+  python3 scripts/extract_van.py --ocr-vision          # đọc bằng mô hình thị giác, 2 lượt đối chiếu
 """
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -170,6 +172,103 @@ def ocr_pdf(path, lang="vie+eng", dpi=300):
                               "pages": doc.page_count, "ocr": True}
 
 
+# -------------------------------------------------- OCR bằng mô hình thị giác
+# Vì sao cần nhánh này. Trên một bản nội quy lao động scan (38 trang, ~125 DPI, chữ
+# in rõ, người đọc được ngay) tesseract vẫn:
+#   · giết dấu tiếng Việt hàng loạt — 'giờ'→'gid', 'lần'→'lan', 'cộng dồn'→'cộng d6n'
+#   · đọc sai chữ số trên một dòng hoàn toàn sạch — '365 ngày' thành '385 ngày'
+# Không cách xử lý ảnh nào cứu được (600dpi, nhị phân hoá, tăng tương phản, làm nét,
+# đổi psm — bảy biến thể, không cái nào ra '365'). Hỏng dấu làm đơn vị không nhận diện
+# được, nên số đo quan trọng nhất của tài liệu biến mất khỏi mọi cổng; hỏng chữ số thì
+# không cổng nào phía sau bắt được vì sai nằm ở NGUỒN.
+#
+# Đọc bằng mô hình thị giác lấy đúng '365' và đủ dấu. Nhưng nó vẫn là bản ĐOÁN, nên
+# LUẬT OCR giữ nguyên: meta['ocr']=True, số ở đây CẤM thành facts. Cái nó thay đổi là
+# chất lượng bản đoán — từ mức phải vứt lên mức người duyệt được.
+#
+# HAI LƯỢT ĐỌC ĐỘC LẬP. Một mô hình đọc ảnh vẫn có thể sai. Chạy hai lượt riêng rồi
+# đối chiếu: khác nhau về câu chữ thì bỏ qua (cách xuống dòng, khoảng trắng), nhưng
+# khác nhau về BẤT KỲ CHỮ SỐ NÀO thì đánh dấu trang đó cần người xem. Đây là điều kiện
+# yếu hơn "đúng" nhưng kiểm được: hai lượt độc lập cùng sai y hệt một chữ số là hiếm,
+# còn hai lượt lệch nhau thì chắc chắn có ít nhất một lượt sai.
+VISION_DPI = 200
+VISION_WORKERS = 4
+VISION_TIMEOUT = 300
+
+VISION_PROMPT = """Đọc ảnh page.png trong thư mục hiện tại và chép lại TOÀN BỘ văn bản trên trang.
+
+LUẬT CỨNG:
+- Chép NGUYÊN XI: đủ dấu tiếng Việt, đúng từng chữ số, đúng từng dấu câu.
+- Không sửa lỗi chính tả, không chuẩn hoá, không suy luận nội dung còn thiếu.
+- Không tóm tắt, không bỏ header/footer, không bỏ số thứ tự khoản.
+- Giữ đúng thứ tự dòng như trên trang. Bảng thì chép thành dòng, giữ đủ ô.
+- Chỉ trả văn bản của trang. Không lời dẫn, không nhận xét, không code fence.
+"""
+
+VISION_DIGITS = re.compile(r"\d")
+
+
+def _vision_read_page(png_dir):
+    import models
+
+    proc = subprocess.run(
+        [models.CLAUDE, "-p", "--model", models.LIGHT, "--allowedTools", "Read"],
+        input=VISION_PROMPT, capture_output=True, text=True, encoding="utf-8",
+        timeout=VISION_TIMEOUT, cwd=png_dir,
+    )
+    if proc.returncode != 0:
+        raise Halt(f"đọc ảnh lỗi: {(proc.stderr or '').strip()[:200]}")
+    return re.sub(r"^```\w*\n|\n```$", "", (proc.stdout or "").strip()).strip()
+
+
+def _digits_of(text):
+    """Chuỗi mọi chữ số theo thứ tự — chữ ký số học của một trang."""
+    return "".join(VISION_DIGITS.findall(text))
+
+
+def _vision_one_page(args):
+    index, page, dpi = args
+    with tempfile.TemporaryDirectory(prefix="pkvis-") as td:
+        # Thư mục làm việc chỉ chứa ĐÚNG một ảnh: model được cấp Read nhưng không có
+        # gì khác trong tầm với. Nó không thấy corpus, không thấy trang khác.
+        page.get_pixmap(dpi=dpi).save(str(Path(td) / "page.png"))
+        first = _vision_read_page(td)
+        second = _vision_read_page(td)
+    agree = _digits_of(first) == _digits_of(second)
+    return index, first, second, agree
+
+
+def ocr_pdf_vision(path, dpi=VISION_DPI, workers=VISION_WORKERS):
+    """Đọc PDF scan bằng mô hình thị giác, hai lượt độc lập, đối chiếu chữ số."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    import fitz
+
+    doc = fitz.open(str(path))
+    jobs = [(i, doc[i], dpi) for i in range(doc.page_count)]
+    results = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for index, first, second, agree in pool.map(_vision_one_page, jobs):
+            results[index] = (first, second, agree)
+    lines, divergent = [], []
+    for i in range(doc.page_count):
+        first, _second, agree = results[i]
+        if not agree:
+            divergent.append(i + 1)
+        lines += [f"[[page {i + 1}]]", first, ""]
+    meta = {"extractor": f"vision-2pass ({models_light()}, {dpi}dpi)",
+            "pages": doc.page_count, "ocr": True}
+    if divergent:
+        meta["vision_divergent_pages"] = divergent
+    return "\n".join(lines), meta
+
+
+def models_light():
+    import models
+
+    return models.LIGHT
+
+
 # ------------------------------------------------------------- ghi raw
 ROUTER = {".docx": extract_docx, ".pdf": extract_pdf}
 
@@ -193,6 +292,10 @@ def write_raw(doc_id, spec, body, meta, registry):
             fm.append(f"{k}: {meta[k]}")
     if meta.get("ocr"):
         fm.append("ocr: true   # OCR = bản ĐOÁN. Số ở đây CẤM làm verbatim ở Stage 4.")
+    if meta.get("vision_divergent_pages"):
+        pages = ", ".join(str(n) for n in meta["vision_divergent_pages"])
+        fm.append(f"vision_divergent_pages: [{pages}]"
+                  "   # hai lượt đọc lệch CHỮ SỐ — cần người đối chiếu bản gốc")
     if spec.get("title"):
         fm.append(f'title: "{spec["title"]}"')
     fm += [
@@ -244,10 +347,28 @@ def main(argv):
             # đọc lại nó TẤT ĐỊNH (khớp flow ocr→exVan) — nhờ vậy raw/ của tài liệu scan
             # vẫn dựng lại được sau `run_all` mà KHÔNG phải OCR lại (chậm/không tất định).
             cached = ROOT / "ocr" / f"{doc_id}.ocr.txt"
+            sidecar = ROOT / "ocr" / f"{doc_id}.ocr.json"
             if cached.exists():
                 body = cached.read_text(encoding="utf-8")
                 meta = {"extractor": "OCR đã lưu (ocr/)",
                         "pages": len(re.findall(r"\[\[page \d+\]\]", body)), "ocr": True}
+                # Cảnh báo lệch hai lượt phải sống sót qua rebuild: nó là lý do người
+                # phải đối chiếu bản gốc, và mất nó thì raw/ trông sạch hơn sự thật.
+                if sidecar.exists():
+                    meta.update(json.loads(sidecar.read_text(encoding="utf-8")))
+            elif "--ocr-vision" in argv:
+                print(f"{D}  {doc_id}: đọc {path.name} bằng thị giác, 2 lượt "
+                      f"({e.args[0].split(',')[0]})…{OFF}")
+                body, meta = ocr_pdf_vision(path)
+                cached.parent.mkdir(exist_ok=True)
+                cached.write_text(body, encoding="utf-8")
+                sidecar.write_text(json.dumps(
+                    {"extractor": meta["extractor"],
+                     "vision_divergent_pages": meta.get("vision_divergent_pages", [])},
+                    ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                if meta.get("vision_divergent_pages"):
+                    print(f"{Y}  ⚠ hai lượt đọc lệch chữ số ở trang "
+                          f"{meta['vision_divergent_pages']} — cần người đối chiếu{OFF}")
             elif "--ocr" in argv:
                 print(f"{D}  {doc_id}: OCR {path.name} ({e.args[0].split(',')[0]})…{OFF}")
                 body, meta = ocr_pdf(path)

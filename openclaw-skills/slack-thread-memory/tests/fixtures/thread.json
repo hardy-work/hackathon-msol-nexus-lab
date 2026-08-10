@@ -1,0 +1,25 @@
+{
+  "channel_id": "C-DEMO",
+  "channel_name": "nexus-demo",
+  "thread_ts": "1720000000.000100",
+  "messages": [
+    {
+      "ts": "1720000000.000100",
+      "user": "U-PM",
+      "text": "<@U-BOT> tổng hợp context của thread này giúp mình"
+    },
+    {
+      "ts": "1720000001.000200",
+      "thread_ts": "1720000000.000100",
+      "user": "U-DEV",
+      "text": "Phần ingest đã chạy đủ 10/10 chương."
+    },
+    {
+      "ts": "1720000002.000300",
+      "thread_ts": "1720000000.000100",
+      "user": "U-BOT",
+      "bot_id": "B-BOT",
+      "text": "Mình đã ghi nhận thông tin trong thread này."
+    }
+  ]
+}

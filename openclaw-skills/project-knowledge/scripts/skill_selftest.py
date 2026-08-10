@@ -10,6 +10,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RUN = Path(__file__).resolve().parent / "run.py"
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
 CASES = [
     ("ĐôNT làm vai trò gì trong dự án Nexus?", "in_kb"),
     ("Ai phụ trách API Login trong Sprint 1?", "in_kb"),
@@ -41,6 +44,7 @@ def main() -> int:
         proc = subprocess.run(
             [sys.executable, str(RUN), "--project", "nexus", "--query", query, "--no-cache"],
             cwd=ROOT, text=True, capture_output=True, check=False,
+            encoding="utf-8",
             env=env,
         )
         try:

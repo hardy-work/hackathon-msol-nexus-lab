@@ -1,5 +1,3 @@
-# Human-owned document identity/version registry. Originals and raw artifacts are
-# append-only; changing the canonical version requires a reviewed ingest branch.
 documents:
   - doc_id: nexus-plan
     version: 1
@@ -22,3 +20,16 @@ documents:
       - raw/nexus-risk.md
       - raw/nexus-sprint1.md
       - raw/nexus-summary.md
+  - doc_id: noi-quy-lao-dong-20260808T041339Z-aa1429cc79
+    version: 1
+    original: originals/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.pdf
+    source_name: Noi quy lao dong_v1.0.pdf
+    kind: pdf
+    sha256: 6330165083547fb7d52bddd79220a5a81038dbbdce638dc0c9c311c2ee79416c
+    status: canonical
+    current: true
+    supersedes: null
+    visibility: internal
+    extractor: van
+    raw_paths:
+      - raw/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.md

@@ -5,7 +5,8 @@
   lint-schema   mọi trang đủ trường bắt buộc; giá trị DIMENSION nằm trong enum
   lint-refs     mọi raw_paths tồn tại; mọi liên kết [[x]] có đích; liên kết HAI CHIỀU
   lint-history  page version cũ phải có superseded_by, hoặc retired_by nếu source identity đã biến mất
-  lint-numbers  mọi MEASURE là facts_ref trỏ tới key có thật, HOẶC facts+unit+src
+  lint-numbers  mọi MEASURE là facts_ref trỏ tới key có thật, HOẶC facts chép được
+                numeric_guard đối chiếu ngược về đúng mục mà `src` trỏ tới
 
 Đỏ ở đây = HALT. Không xuất bản. Đây là chỗ chặn LLM bịa.
 Chạy:  python3 scripts/lint.py
@@ -17,6 +18,7 @@ from pathlib import Path
 
 import yaml
 import document_registry
+import numeric_guard
 from artifact_paths import frontmatter_is_current, is_current_raw_path, payload_is_current
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -416,7 +418,7 @@ def lint_history(root=ROOT):
 NUMWORD = re.compile(r"(?<![\w.])\d[\d.,]*\s*(?:h|giờ|man-day|người)\b", re.I)
 
 
-def lint_numbers(pages, facts):
+def lint_numbers(pages, facts, root=ROOT):
     for rel, pg in pages.items():
         for k, v in pg["fm"].items():
             if not isinstance(v, dict):
@@ -425,12 +427,16 @@ def lint_numbers(pages, facts):
                 if resolve_ref(facts, v["facts_ref"]) is None:
                     err("lint-numbers", rel, f"`{k}`: facts_ref không giải được → {v['facts_ref']}")
             elif "facts" in v:
-                if not v.get("unit"):
-                    err("lint-numbers", rel, f"`{k}`: chế độ sao chép nhưng thiếu `unit`")
-                if not v.get("src"):
-                    err("lint-numbers", rel, f"`{k}`: chế độ sao chép nhưng thiếu `src`")
+                pass   # chế độ chép được soi bằng numeric_guard bên dưới, chặt hơn
             else:
                 err("lint-numbers", rel, f"`{k}`: dict số phải có `facts_ref` hoặc `facts`")
+
+        # Chế độ CHÉP (luồng VĂN): LLM gõ lại con số, nên `src` phải giải được và giá
+        # trị phải có mặt ĐÚNG mục nó trỏ tới. Trước đây chỉ kiểm `src` khác rỗng —
+        # bất đối xứng với facts_ref (giải không được là lỗi cứng) và đủ để một giá trị
+        # gán nhầm mục đi thẳng vào kho rồi thành "sự thật" mà Gate 4 dùng để duyệt.
+        for message in numeric_guard.check_page_declarations(pg["fm"], root):
+            err("lint-numbers", rel, message)
 
         # số gõ tay lẫn trong thân bài — LLM không được tự viết con số
         for hit in NUMWORD.findall(pg["body"]):

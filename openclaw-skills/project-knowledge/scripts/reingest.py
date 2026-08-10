@@ -70,13 +70,20 @@ def _by_artifact(root: Path, paths: list[str]) -> dict[str, str]:
 
 
 def _artifact_paths(root: Path, document: dict) -> list[str]:
-    """Include implicit facts companions for legacy md-only registry entries."""
+    """Include implicit facts companions for legacy md-only registry entries.
+
+    `raw_paths` dùng dấu gạch chéo. `Path.with_suffix()` trả về dạng của HĐH, nên
+    trên Windows bạn đồng hành sinh ra là `raw\\plan@v1.facts.json` — không khớp
+    chuỗi nào trong `known`, dù file đó đã được khai. Đường dẫn bị thêm lần thứ hai,
+    rồi `_by_artifact` thấy hai path cùng quy về `plan::facts` và chặn. Chuẩn hoá về
+    posix để phép so sánh nằm trên cùng một bảng chữ.
+    """
     paths = list(document.get("raw_paths") or [])
     known = set(paths)
     for rel in list(paths):
         if not str(rel).endswith(".md"):
             continue
-        facts = str(Path(rel).with_suffix(".facts.json"))
+        facts = Path(rel).with_suffix(".facts.json").as_posix()
         if facts not in known and (root / facts).is_file():
             paths.append(facts)
             known.add(facts)
@@ -172,8 +179,17 @@ def _page_inventory(root: Path, doc_id: str) -> tuple[set[str], set[str]]:
     """Return expected/existing generated pages for one document identity."""
     expected = {f"wiki/sources/{doc_id}.md"}
     if doc_id != "nexus-plan":
+        # Tài liệu văn xuôi dài sinh thêm một trang cho mỗi CHƯƠNG
+        # (`wiki/sources/<doc_id>--<slug>.md`). Không kể chúng vào `existing` thì
+        # re-ingest coi chúng là trang lạ và bỏ mặc: bản v2 có trang tổng quan mới
+        # nhưng vẫn còn nguyên các trang chương của v1.
+        existing = {page.relative_to(root).as_posix()
+                    for page in sorted((root / "wiki/sources").glob(f"{doc_id}--*.md"))}
+        expected |= existing
         source = root / f"wiki/sources/{doc_id}.md"
-        return expected, {source.relative_to(root).as_posix()} if source.is_file() else set()
+        if source.is_file():
+            existing.add(source.relative_to(root).as_posix())
+        return expected, existing
     document = document_registry.current(doc_id, root)
     facts_path = root / artifact_rel(document, "nexus-people", "facts")
     payload = json.loads(facts_path.read_text(encoding="utf-8"))

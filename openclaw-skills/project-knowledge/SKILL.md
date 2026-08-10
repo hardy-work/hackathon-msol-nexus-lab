@@ -122,6 +122,13 @@ task/status/priority, Config và các sheet rỗng. `scripts/response_style.py` 
 gọi trong các eval để bắt output thiếu citation, lẫn runtime marker hoặc nhầm
 `not_in_kb` thành phủ định chắc chắn.
 
+Luồng VĂN (`.docx`/`.pdf`) khai số ở chế độ CHÉP `{facts, unit, src}` vì tài liệu văn
+xuôi không có `.facts.json`. Chế độ này để LLM gõ lại con số, nên `numeric_guard`
+policy=declare mở tài liệu ra đối chiếu ngược: giá trị phải nằm đúng mục mà `src` nêu,
+đơn vị phải khớp, nguồn `ocr: true` thì cấm khai số. Chặn ở Gate 3a lúc xuất bản và một
+lần nữa trong runtime, nên một trang lọt vào kho bằng đường khác cũng không biến con số
+chưa kiểm thành sự thật của Gate 4. Fixture: `python3 scripts/van_selftest.py`.
+
 Smoke test cho contract/paraphrase nằm ở `scripts/skill_selftest.py`.
 Stage 5 RAG derive chạy bằng:
 
@@ -175,6 +182,13 @@ Gate 3a không chỉ lint page current: nó còn quét toàn bộ page lịch s�
 cùng identity/version chain; target, raw_paths lịch sử và link trong snapshot phải
 tồn tại. Các snapshot cũ không bị ép backlink với page current, vì đó là quan hệ
 của từng thời điểm.
+
+Với luồng văn xuôi, `scripts/coverage.py` là completeness gate chạy trên output
+fresh trước khi ghi page: mọi Điều/khoản trong đúng chapter scope phải xuất hiện
+hoặc có marker rõ dạng `[Chưa bao phủ: 33.1.9]`. Khoản bị bỏ mà không có marker,
+hoặc identifier ngoài source scope, đều reject và ghi report vào
+`derived/stage4-rejected/*.coverage.json`. Gate này deterministic, không gọi LLM;
+`scripts/coverage_selftest.py` kiểm tra contract của nó.
 
 Identity/version canonical nằm trong `documents.yml`. Re-ingest phải tạo version mới,
 khai `supersedes`, chạy trong worktree `ingest/<doc>@vN`, xem `reingest-plan.json`,

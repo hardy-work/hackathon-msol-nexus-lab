@@ -1,10 +1,11 @@
 # Chỉ mục kho tri thức
 
-Cập nhật ở Stage 4 (scripts/build_index.py). Trạng thái: **8 trang · 9 nguồn `raw/` · 1 tài liệu gốc**.
+Cập nhật ở Stage 4 (scripts/build_index.py). Trạng thái: **19 trang · 10 nguồn `raw/` · 2 tài liệu gốc**.
 
 ## Corpus (`domain`)
 
 - **nexus** — corpus kế hoạch dự án Nexus (`nexus-plan.xlsx`).
+- **mor-software** — hồ sơ nguồn MOR Software được nạp từ Markdown.
 
 ## Con người — `entities/`
 
@@ -25,6 +26,17 @@ Cập nhật ở Stage 4 (scripts/build_index.py). Trạng thái: **8 trang · 9
 
 | Trang | doc_id | domain | nguồn `raw/` |
 |---|---|---|---|
+| [[noi-quy-lao-dong-20260808T041339Z-aa1429cc79]] | `noi-quy-lao-dong-20260808T041339Z-aa1429cc79` | `mor-software` | 1 (OCR) |
+| [[noi-quy-lao-dong-20260808T041339Z-aa1429cc79--chuong-1-nhung-quy-dinh]] | `noi-quy-lao-dong-20260808T041339Z-aa1429cc79` | `mor-software` | 1 (OCR) |
+| [[noi-quy-lao-dong-20260808T041339Z-aa1429cc79--chuong-10-thi-hanh-kiem-tra]] | `noi-quy-lao-dong-20260808T041339Z-aa1429cc79` | `mor-software` | 1 (OCR) |
+| [[noi-quy-lao-dong-20260808T041339Z-aa1429cc79--chuong-2-hop-dong-lao-dong]] | `noi-quy-lao-dong-20260808T041339Z-aa1429cc79` | `mor-software` | 1 (OCR) |
+| [[noi-quy-lao-dong-20260808T041339Z-aa1429cc79--chuong-3-thoi-gian-lam-viec]] | `noi-quy-lao-dong-20260808T041339Z-aa1429cc79` | `mor-software` | 1 (OCR) |
+| [[noi-quy-lao-dong-20260808T041339Z-aa1429cc79--chuong-4-trat-tu-tai-noi]] | `noi-quy-lao-dong-20260808T041339Z-aa1429cc79` | `mor-software` | 1 (OCR) |
+| [[noi-quy-lao-dong-20260808T041339Z-aa1429cc79--chuong-5-an-toan-ve-sinh]] | `noi-quy-lao-dong-20260808T041339Z-aa1429cc79` | `mor-software` | 1 (OCR) |
+| [[noi-quy-lao-dong-20260808T041339Z-aa1429cc79--chuong-6-phong-chong-quay]] | `noi-quy-lao-dong-20260808T041339Z-aa1429cc79` | `mor-software` | 1 (OCR) |
+| [[noi-quy-lao-dong-20260808T041339Z-aa1429cc79--chuong-7-bao-ve-tai-san-bi]] | `noi-quy-lao-dong-20260808T041339Z-aa1429cc79` | `mor-software` | 1 (OCR) |
+| [[noi-quy-lao-dong-20260808T041339Z-aa1429cc79--chuong-8-trach-nhiem-vat]] | `noi-quy-lao-dong-20260808T041339Z-aa1429cc79` | `mor-software` | 1 (OCR) |
+| [[noi-quy-lao-dong-20260808T041339Z-aa1429cc79--chuong-9-ky-luat-lao-dong]] | `noi-quy-lao-dong-20260808T041339Z-aa1429cc79` | `mor-software` | 1 (OCR) |
 | [[nexus-plan]] | `nexus-plan` | `nexus` | 9 |
 
 ## Khái niệm — `concepts/`

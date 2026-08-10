@@ -1,0 +1,4 @@
+interface:
+  display_name: "New-hire Training"
+  short_description: "Tạo onboarding handbook có citation"
+  default_prompt: "Use $new-hire-training to create a cited onboarding guide for a new project team member."

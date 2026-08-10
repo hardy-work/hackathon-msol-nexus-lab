@@ -19,7 +19,11 @@ def main() -> int:
     previous = os.environ.get("PROJECT_KNOWLEDGE_EMBEDDING_BACKEND")
     os.environ["PROJECT_KNOWLEDGE_EMBEDDING_BACKEND"] = "hash"
     try:
-        with tempfile.TemporaryDirectory(prefix="pk-rag-index-") as temp:
+        # Chroma giữ handle mở tới data_level0.bin cho tới khi process thoát; trên
+        # Windows điều đó làm rmtree ném PermissionError và cả suite dừng sau khi MỌI
+        # assertion đã xanh. Dọn rác tạm không phải thứ test này bảo đảm.
+        with tempfile.TemporaryDirectory(prefix="pk-rag-index-",
+                                         ignore_cleanup_errors=True) as temp:
             root = Path(temp) / "skill"
 
             def ignore(_path: str, names: list[str]) -> set[str]:

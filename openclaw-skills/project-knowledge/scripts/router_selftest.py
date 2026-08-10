@@ -34,11 +34,33 @@ def main() -> int:
         if got != expected:
             failures.append((query, expected, got))
 
+    # Bậc 1 chọn sheet: TẤT ĐỊNH và chạy TRƯỚC mọi bậc khác, nên định tuyến sai ở đây
+    # không bậc nào cứu được. `cong viec` từng một mình kéo mọi câu hỏi nhân sự vào
+    # bảng Sprint 1 và trả về `in_kb` — tự tin và sai domain, tệ hơn hẳn im lặng.
+    import answer
+
+    sheet_cases = {
+        # KHÔNG được vào bảng: 'công việc' là từ thông dụng, không phải tín hiệu task.
+        "Thủ tục bàn giao công việc khi nghỉ việc thế nào?": [],
+        "Người lao động có nghĩa vụ gì với công việc được giao?": [],
+        "Nội quy quy định gì về công việc ngoài giờ?": [],
+        # PHẢI vào bảng: có tín hiệu mạnh, hoặc từ yếu đi kèm tên trường của bảng.
+        "TaskID AU-1 là gì?": ["nexus-sprint1"],
+        "Sprint 1 có bao nhiêu task?": ["nexus-sprint1"],
+        "Công việc nào đang ở trạng thái In progress?": ["nexus-sprint1"],
+        "Task API Login có priority bao nhiêu?": ["nexus-sprint1"],
+    }
+    for query, expected in sheet_cases.items():
+        got = answer.inferred_docs(query)
+        if got != expected:
+            failures.append((query, expected, got))
+
     if failures:
         for case in failures:
             print(f"✗ router case: {case}")
         return 1
-    print(f"✓ router self-test: {len(CASES) + 3 + len(heuristics)} cases qua")
+    print(f"✓ router self-test: "
+          f"{len(CASES) + 3 + len(heuristics) + len(sheet_cases)} cases qua")
     return 0
 
 

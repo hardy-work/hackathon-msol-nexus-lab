@@ -1,12 +1,29 @@
 #!/usr/bin/env python3
-"""JSON CLI entrypoint backed by the long-lived-capable runtime engine."""
+"""JSON CLI entrypoint backed by the long-lived-capable runtime engine.
+
+stdout của tiến trình này LÀ hợp đồng: NexusBot và mọi evaluator đều `json.loads` nó.
+Thư viện bên thứ ba không tôn trọng hợp đồng đó — `bm25s` in "resource module not
+available on Windows" ra stdout ngay lúc import, đủ để mọi câu trả lời thành
+`invalid_json` trên Windows dù retrieval hoàn toàn đúng. Không đoán trước được thư viện
+nào sẽ in gì, nên chặn theo cơ chế: mọi thứ ghi stdout trong lúc import và lúc chạy đều
+bị đẩy sang stderr; chỉ payload JSON cuối cùng được ghi ra stdout thật.
+"""
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
+import sys
 
-from runtime_engine import default_runtime
+if hasattr(sys.stdout, "reconfigure"):
+    # The CLI contract is UTF-8 JSON even when Windows uses cp1252 for the
+    # console.  Evaluators consume stdout as bytes, so a code-page failure
+    # must not turn a valid answer into invalid_json.
+    sys.stdout.reconfigure(encoding="utf-8")
+_STDOUT = sys.stdout
+with contextlib.redirect_stdout(sys.stderr):
+    from runtime_engine import default_runtime
 
 
 def main() -> int:
@@ -37,11 +54,12 @@ def main() -> int:
                    "confidence": "none", "citations": [], "reason": str(exc),
                    "tier": 0, "project": args.project, "suggested_actions": []}
     else:
-        payload = default_runtime().query(
-            args.project, args.query, llm=use_llm, actor=args.actor, roles=args.roles,
-            history=history, use_cache=not args.no_cache,
-        )
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+        with contextlib.redirect_stdout(sys.stderr):
+            payload = default_runtime().query(
+                args.project, args.query, llm=use_llm, actor=args.actor, roles=args.roles,
+                history=history, use_cache=not args.no_cache,
+            )
+    print(json.dumps(payload, ensure_ascii=False, indent=2), file=_STDOUT)
     return {"error": 1, "forbidden": 3}.get(payload.get("status"), 0)
 
 
