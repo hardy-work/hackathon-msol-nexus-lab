@@ -111,8 +111,9 @@ servers / backend services it depends on.
   rule of thumb for this repo: **edit an existing file → Service Account; create
   a new file → OAuth.** See the skill's README for the full reasoning.
 
-  Needs a `.env` in this folder with `SLACK_BOT_TOKEN`,
-  `GOOGLE_OAUTH_CLIENT_FILE`, `GOOGLE_OAUTH_TOKEN_FILE` (see `.env.example`),
+  Needs a `.env` in this folder with `GOOGLE_OAUTH_CLIENT_FILE`,
+  `GOOGLE_OAUTH_TOKEN_FILE` (see `.env.example`); Slack access comes from the
+  NexusBot gateway's shared token,
   plus a `config.json` copied from `config.example.json`.
 
 Assumes a Vexa instance is already running and reachable (see the machine at
@@ -208,7 +209,8 @@ The stage-by-stage mapping and remaining data boundaries are documented in
 token. A minimal signed HTTP boundary is available at
 `adapters/slack/slack_http.py`; set `SLACK_SIGNING_SECRET` and expose
 `/slack/events` through a public HTTPS reverse proxy or tunnel. For real
-Events API/app-mention replies, configure `SLACK_BOT_TOKEN` so the gateway
+Events API/app-mention replies, configure the single NexusBot
+`SLACK_BOT_TOKEN` in the gateway service environment so the gateway
 acknowledges before retrieval and posts asynchronously; the Project Knowledge
 skill remains read-only. Set `PROJECT_KNOWLEDGE_SLACK_ROLE_MAP` to a trusted
 JSON mapping of real Slack `U...` user IDs to roles. Unknown users fail closed.

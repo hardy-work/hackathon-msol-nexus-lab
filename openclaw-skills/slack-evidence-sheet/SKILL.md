@@ -11,7 +11,7 @@ metadata:
           {
             "tools": ["Bash"],
             "env":
-              ["SLACK_BOT_TOKEN", "GOOGLE_OAUTH_CLIENT_FILE", "GOOGLE_OAUTH_TOKEN_FILE"],
+              ["GOOGLE_OAUTH_CLIENT_FILE", "GOOGLE_OAUTH_TOKEN_FILE"],
           },
       },
   }
@@ -98,13 +98,17 @@ Mỗi lượt chạy, `build-sheet.js` **tự** đổi refresh token lấy acces
 
 > ⚠️ Nếu OAuth app còn ở trạng thái **Testing**, refresh token hết hạn sau 7 ngày (`invalid_grant`). Vào Google Auth Platform → Audience → **Publish app** để hết hạn chế này. Scope `drive.file` là non-sensitive nên publish không cần Google kiểm duyệt.
 
-### Slack — bot token
+### Slack — bot token dùng chung của NexusBot
 
-`SLACK_BOT_TOKEN` cần scope: `channels:history` (kênh public) hoặc `groups:history` (private), `files:read`, `users:read`, `users:read.email`.
+Skill không sở hữu hoặc đọc `.env` riêng cho Slack. `slack-fetch.js` chỉ nhận
+`SLACK_BOT_TOKEN` do service environment của gateway NexusBot inject; đây là
+cùng một token với adapter Slack chính. Token cần scope: `channels:history`
+(kênh public) hoặc `groups:history` (private), `files:read`, `users:read`,
+`users:read.email`.
 
 Thêm `channels:read` / `groups:read` thì `slack-fetch.js` lấy được **tên** kênh (`cydas-people-dev`) thay vì mã (`C0606MMATEV`) — dùng cho preview và cho `{channel}` trong tên folder. Thiếu scope này không sao, script tự lùi về mã kênh.
 
-> ⚠️ KHÔNG dựa vào tool `slack` của OpenClaw để lấy file: Slack chỉ đẩy file của message **tag bot** tới bot, các file khác trong thread không truyền tới. `scripts/slack-fetch.js` gọi thẳng `conversations.replies` nên lấy đủ cả thread.
+> ⚠️ KHÔNG dựa vào tool `slack` của OpenClaw để lấy file: Slack chỉ đẩy file của message **tag bot** tới bot, các file khác trong thread không truyền tới. `scripts/slack-fetch.js` gọi thẳng `conversations.replies` bằng token chung của NexusBot nên lấy đủ cả thread.
 
 ---
 

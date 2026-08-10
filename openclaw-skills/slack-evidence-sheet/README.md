@@ -77,17 +77,19 @@ Trong GCP Console (project vừa tạo hoặc project có sẵn):
 
 #### Setup .env và lấy refresh token
 
-6. Tạo file `.env`:
+6. Tạo file `.env` chỉ cho Google OAuth:
    ```bash
    cp .env.example .env
    ```
 
-7. Sửa `.env`, điền **SLACK_BOT_TOKEN** (bot cần scope: `channels:history`, `groups:history`, `files:read`, `users:read`, `users:read.email`):
+7. Sửa `.env`, điền hai đường dẫn Google OAuth:
    ```
-   SLACK_BOT_TOKEN=xoxb-...
    GOOGLE_OAUTH_CLIENT_FILE=./oauth-client.json
    GOOGLE_OAUTH_TOKEN_FILE=./oauth-token.json
    ```
+
+   Slack token không đặt trong skill. Khi chạy qua NexusBot, gateway inject
+   `SLACK_BOT_TOKEN` dùng chung cho toàn bộ tác vụ Slack.
 
 8. Cài package `dotenv` (để script tự load `.env`):
    ```bash
@@ -100,7 +102,7 @@ Trong GCP Console (project vừa tạo hoặc project có sẵn):
    ```
    
    Script sẽ:
-   - Tải `.env` tự động (từ package `dotenv`)
+   - Tải cấu hình Google OAuth từ `.env`
    - Kiểm tra file `oauth-client.json`
    - In ra 1 URL dài (bắt đầu bằng `https://accounts.google.com/...`)
    - Dừng lại chờ bạn
@@ -232,7 +234,6 @@ Không cần commit hay push — bot đọc thẳng file trong thư mục làm v
 ## Chạy tay (không qua agent)
 
 ```bash
-export SLACK_BOT_TOKEN=xoxb-...
 export GOOGLE_OAUTH_TOKEN_FILE=./oauth-token.json
 
 node scripts/slack-fetch.js "<link thread>" ./downloads

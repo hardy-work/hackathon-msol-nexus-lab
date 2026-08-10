@@ -34,6 +34,17 @@ không lấy từ câu chữ người dùng.
 - Message `deleted` được giữ lại để audit nhưng không xuất hiện trong context.
 - Summary chỉ là conversational memory, không phải nguồn sự thật chính thức.
 
+## Runtime integration
+
+Production integration dùng `openclaw-plugin/` để nối `ThreadStore` vào typed
+hooks của gateway. Không tạo Slack adapter riêng, không đăng ký `app_mention`
+thứ hai và không gọi LLM từ skill. `before_prompt_build` được gateway await,
+gọi `ThreadStore.context()` và trả `prependContext` cho đúng lượt botchat;
+`message_received`/`message_sent` lưu hai chiều hội thoại.
+
+Slack token không được lưu trong skill. Các script Slack nhận token chung do
+service environment của NexusBot inject.
+
 ## Local tools
 
 Trước khi nối vào botchat hiện tại, đọc [`INTEGRATION_NOTE.md`](INTEGRATION_NOTE.md).
