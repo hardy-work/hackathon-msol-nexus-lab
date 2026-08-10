@@ -12,7 +12,7 @@ import re
 
 NOT_FOUND_MARKERS = (
     "không tìm thấy", "không thấy", "kho không biết", "kho chưa có",
-    "không thể", "không phải câu hỏi", "yêu cầu ghi/cập nhật",
+    "không thể", "chưa thể", "không phải câu hỏi", "yêu cầu ghi/cập nhật",
 )
 NEGATIVE_MARKERS = ("không", "chưa", "0 task", "0 công việc")
 UNCERTAINTY_MARKERS = ("có thể", "hình như", "có lẽ", "tôi đoán", "probably")

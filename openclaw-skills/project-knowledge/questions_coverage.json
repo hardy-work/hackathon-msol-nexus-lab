@@ -12,7 +12,7 @@
     {"id":"c08","group":"summary","q":"Summary project còn lại bao nhiêu giờ?","expect":{"status":"in_kb","contains":["234"],"must_cite":["Summary project!G4"]}},
     {"id":"c09","group":"summary","q":"Tiến độ hiện tại của Sprint 1 là bao nhiêu?","expect":{"status":"in_kb","contains":["51,25%"],"must_cite":["Summary project!H4"]}},
     {"id":"c10","group":"sprint","q":"API Login đang trạng thái gì?","expect":{"status":"in_kb","contains":["Done"],"must_cite":["Sprint 1!Q6"]}},
-    {"id":"c11","group":"sprint","q":"Có bao nhiêu task Done trong Sprint 1?","expect":{"status":"in_kb","contains":["30"],"must_cite":["nexus-sprint1.facts.json"]}},
+    {"id":"c11","group":"sprint","q":"Có bao nhiêu task Done trong Sprint 1?","expect":{"status":"in_kb","contains":["30"],"must_cite":["Nexus Plan.xlsx"]}},
     {"id":"c12","group":"sprint","q":"Liệt kê các task mức ưu tiên Highest.","expect":{"status":"in_kb","contains":["API Login","Highest"],"must_cite":["Sprint 1"]}},
     {"id":"c13","group":"sprint","q":"Task nào còn Remaining?","expect":{"status":"in_kb","contains":["Remaining (h)"],"must_cite":["Sprint 1"]}},
     {"id":"c14","group":"schedule","q":"Có bao nhiêu scope trong master schedule?","expect":{"status":"in_kb","contains":["5"],"must_cite":["Master schedule"]}},

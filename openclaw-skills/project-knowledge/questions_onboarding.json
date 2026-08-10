@@ -3,7 +3,7 @@
   "purpose": "Representative onboarding questions from a new PM/developer perspective.",
   "questions": [
     {"id":"o01","persona":"new_dev","q":"Những người có task trong Sprint đầu tiên là ai?","expect":{"status":"in_kb","contains":["ĐôNT","SơnBH","KiênĐT"]}},
-    {"id":"o02","persona":"new_dev","q":"Vai trò của ĐôNT là gì?","expect":{"status":"in_kb","contains":["BE"],"must_cite":["do-nt.md"]}},
+    {"id":"o02","persona":"new_dev","q":"Vai trò của ĐôNT là gì?","expect":{"status":"in_kb","contains":["BE"],"must_cite":["Nexus Plan.xlsx"]}},
     {"id":"o03","persona":"new_dev","q":"Ai phụ trách API Login trong Sprint 1?","expect":{"status":"in_kb","contains":["SơnBH"]}},
     {"id":"o04","persona":"new_dev","q":"API Login đang trạng thái gì?","expect":{"status":"in_kb","contains":["Done"],"must_cite":["Sprint 1!Q6"]}},
     {"id":"o05","persona":"new_pm","q":"Authentication bắt đầu và kết thúc ngày nào?","expect":{"status":"in_kb","contains":["2026-07-27","2026-07-28"],"must_cite":["Master schedule"]}},
