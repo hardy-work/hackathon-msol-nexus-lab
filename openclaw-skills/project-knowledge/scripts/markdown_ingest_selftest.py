@@ -95,6 +95,42 @@ def main() -> int:
         assert history.is_file()
         assert f"superseded_by: wiki/sources/{doc_id}.md" in history.read_text(encoding="utf-8")
 
+    with tempfile.TemporaryDirectory(prefix="pk-markdown-conversion-") as temp:
+        temp_root = Path(temp)
+        (temp_root / "originals").mkdir()
+        (temp_root / "raw").mkdir()
+        old_original = temp_root / "originals/employee-rules.pdf"
+        old_original.write_bytes(b"old-pdf-placeholder")
+        registry = f"""documents:
+  - doc_id: employee-rules
+    version: 1
+    original: originals/employee-rules.pdf
+    source_name: employee-rules.pdf
+    kind: pdf
+    sha256: {intake.sha256(old_original)}
+    status: canonical
+    current: true
+    supersedes: null
+    visibility: internal
+    extractor: van
+    raw_paths:
+      - raw/employee-rules.md
+"""
+        (temp_root / "documents.yml").write_text(registry, encoding="utf-8")
+        incoming = temp_root / "uploads/employee-rules.md"
+        incoming.parent.mkdir()
+        incoming.write_text(SOURCE, encoding="utf-8")
+
+        decision = intake.decide(
+            temp_root, incoming, confirmed_doc_id="employee-rules"
+        )
+        assert decision["flow"] == "reingest", decision
+        intake.register(temp_root, incoming, decision)
+        current = document_registry.current("employee-rules", temp_root)
+        assert current["kind"] == "text/markdown"
+        assert current["extractor"] == "markdown"
+        assert current["raw_paths"] == ["raw/employee-rules@v2.md"]
+
     print("✓ Markdown self-test: intake → raw → wiki source → derive")
     return 0
 
