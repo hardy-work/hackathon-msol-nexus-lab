@@ -100,6 +100,25 @@ def semantic_digest(path: Path) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def source_origin(path: Path) -> str:
+    """Read an optional human-facing origin filename from Markdown frontmatter."""
+    if path.suffix.lower() != ".md":
+        return ""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()[:80]
+    except (OSError, UnicodeDecodeError):
+        return ""
+    if not lines or lines[0].strip() != "---":
+        return ""
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        match = re.match(r"^source:\s*(.+?)\s*$", line)
+        if match:
+            return match.group(1).strip().strip('"\'`')
+    return ""
+
+
 def _registered_kind(root: Path, document: dict[str, Any]) -> str:
     if document.get("kind"):
         return str(document["kind"])
@@ -301,6 +320,9 @@ def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, An
     documents = document_registry.load(root)
     doc_id = str(decision["doc_id"])
     version = int(decision.get("version") or decision.get("to_version"))
+    updated_at = str(decision.get("updated_at") or dt.datetime.now(dt.timezone.utc).date())
+    updated_by = str(decision.get("updated_by") or "NexusBot (hệ thống)")
+    origin = str(decision.get("source_origin") or source_origin(source) or "").strip()
     if decision["flow"] == "reingest":
         current = document_registry.current(doc_id, root)
         from_version = int(decision["from_version"])
@@ -315,6 +337,9 @@ def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, An
             "original": original,
             "sha256": sha256(source),
             "source_name": source.name,
+            "source_origin": origin or str(current.get("source_origin") or ""),
+            "updated_at": updated_at,
+            "updated_by": updated_by,
             "kind": file_kind(source),
             "extractor": extractor,
             "status": "canonical",
@@ -336,6 +361,9 @@ def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, An
             "version": 1,
             "original": original,
             "source_name": source.name,
+            "source_origin": origin,
+            "updated_at": updated_at,
+            "updated_by": updated_by,
             "kind": file_kind(source),
             "sha256": sha256(source),
             "status": "canonical",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -123,3 +124,137 @@ def classify_intake(doc_id: str, root: Path = ROOT) -> dict[str, Any]:
 def current_versions(root: Path = ROOT) -> dict[str, int]:
     return {str(doc["doc_id"]): int(doc["version"])
             for doc in load(root) if doc.get("current")}
+
+
+def _citation_base(citation: str) -> tuple[str, str]:
+    """Split an internal locator from its human-readable cell/field suffix."""
+    value = str(citation or "").strip()
+    base = value
+    suffix = ""
+    for separator in (" :: ", " → ", " ("):
+        if separator in base:
+            base, suffix = base.split(separator, 1)
+            suffix = suffix.rstrip(")").strip()
+            break
+    base = base.split("#", 1)[0].strip()
+    return base, suffix
+
+
+def _safe_path(root: Path, relative: str) -> Path | None:
+    candidate = (root / relative).resolve()
+    try:
+        candidate.relative_to(root.resolve())
+    except ValueError:
+        return None
+    return candidate
+
+
+def _page_identity(root: Path, relative: str) -> tuple[str, int] | None:
+    path = _safe_path(root, relative)
+    if path is None or not path.is_file():
+        return None
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()[:80]
+    except (OSError, UnicodeDecodeError):
+        return None
+    if not lines or lines[0].strip() != "---":
+        return None
+    doc_id = version = None
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        match = re.match(r"^(doc_id|version):\s*['\"]?([^'\"]+)['\"]?\s*$", line)
+        if not match:
+            continue
+        if match.group(1) == "doc_id":
+            doc_id = match.group(2).strip()
+        else:
+            try:
+                version = int(match.group(2).strip())
+            except ValueError:
+                return None
+    return (doc_id, version) if doc_id and version else None
+
+
+def _page_raw_paths(root: Path, relative: str) -> set[str]:
+    path = _safe_path(root, relative)
+    if path is None or not path.is_file():
+        return set()
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        end = next(i for i, line in enumerate(lines[1:], 1) if line.strip() == "---")
+        metadata = yaml.safe_load("\n".join(lines[1:end])) or {}
+    except (OSError, UnicodeDecodeError, StopIteration, yaml.YAMLError):
+        return set()
+    values = metadata.get("raw_paths") or []
+    if isinstance(values, str):
+        values = [values]
+    return {str(value) for value in values}
+
+
+def document_for_citation(citation: str, root: Path = ROOT) -> dict[str, Any] | None:
+    """Resolve a raw/wiki citation to its registered current document."""
+    base, _ = _citation_base(citation)
+    if not base:
+        return None
+    documents = load(root)
+    for document in documents:
+        if not document.get("current"):
+            continue
+        declared = {str(item) for item in document.get("raw_paths") or []}
+        if base in declared:
+            return document
+        if base.endswith(".facts.json") and base[:-len(".facts.json")] + ".md" in declared:
+            return document
+    identity = _page_identity(root, base) if base.startswith("wiki/") else None
+    if identity:
+        doc_id, version = identity
+        return next((doc for doc in documents
+                     if str(doc.get("doc_id")) == doc_id
+                     and int(doc.get("version", 0)) == version), None)
+    if base.startswith("wiki/"):
+        page_raw_paths = _page_raw_paths(root, base)
+        for document in documents:
+            if page_raw_paths & {str(item) for item in document.get("raw_paths") or []}:
+                return document
+    return None
+
+
+def _display_date(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "chưa ghi nhận"
+    date = text.split("T", 1)[0]
+    match = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", date)
+    return f"{match.group(3)}/{match.group(2)}/{match.group(1)}" if match else text
+
+
+def public_citation(citation: str, root: Path = ROOT) -> str:
+    """Render provenance for readers without exposing internal wiki paths."""
+    base, suffix = _citation_base(citation)
+    document = document_for_citation(citation, root)
+    if document:
+        origin = str(document.get("source_origin") or "").strip()
+        source_name = str(document.get("source_name") or
+                          Path(str(document.get("original", ""))).name)
+        source = f"`{origin or source_name}`"
+        rendered = (f"Nguồn: {source} · cập nhật ngày "
+                    f"{_display_date(document.get('updated_at'))} · bởi "
+                    f"{document.get('updated_by') or 'chưa ghi nhận'}")
+    else:
+        name = Path(base).name if base else "chưa xác định"
+        rendered = f"Nguồn: `{name}` · cập nhật ngày chưa ghi nhận · bởi chưa ghi nhận"
+    if suffix:
+        rendered += f" · phạm vi {suffix}"
+    return rendered
+
+
+def public_citations(citations: list[str] | tuple[str, ...] | None,
+                     root: Path = ROOT) -> list[str]:
+    """Map a citation list to deduplicated reader-facing provenance labels."""
+    result: list[str] = []
+    for citation in citations or []:
+        rendered = public_citation(str(citation), root)
+        if rendered not in result:
+            result.append(rendered)
+    return result

@@ -7,8 +7,9 @@
                                                tới, đúng đơn vị — xem §declare bên dưới
   policy=answer   Gate 4 · lúc ra câu trả lời: mọi con số phải truy được về một khai báo
                                                `facts` có nguồn — raw/*.facts.json (luồng
-                                               SỐ) HOẶC frontmatter trang wiki `source`/
-                                               `case-study` (luồng VĂN, CLAUDE.md §1.2).
+                                               SỐ), frontmatter trang wiki `source`/
+                                               `case-study` (luồng VĂN), hoặc nội dung
+                                               raw Markdown current không phải OCR.
 
 Luồng VĂN không sinh .facts.json ở Stage 2 (số văn xuôi cần LLM hiểu ngữ cảnh mới rút
 được), nên số đo của tài liệu văn xuôi được khai ở frontmatter trang wiki đã-qua-Gate
@@ -23,6 +24,8 @@ cấm việc đó, nhưng **cấm bằng lời nhắc không phải là cổng**
 
 Nguyên tắc chặn: thà không trả lời còn hơn trả lời một con số không truy được nguồn.
 """
+from __future__ import annotations
+
 import json
 import re
 from collections import Counter
@@ -58,6 +61,8 @@ def check_ingest(name, value, unit, src):
 # Số KHÔNG phải giá trị đo lường — che đi trước khi soi.
 MASK = [
     r"\[\[[^\]\n]+\]\]",                 # wiki link targets are identifiers, not measurements
+    r"`(?:raw|wiki)/[^`\n]+`",              # inline provenance paths are not measurements
+    r"\b(?:raw|wiki)/[^\s)>\],]+",        # plain provenance paths are not measurements
     # ĐỊNH DANH văn bản (luồng VĂN) — KHÔNG phải số đo, giống ô Excel / phiên bản.
     # Đặt TRƯỚC mẫu ô Excel: nếu không, '[A-Z]{1,3}\d+' nuốt 'QH13' và bỏ sót năm.
     r"\b\d+/\d{4}/[A-ZĐ]+\d*(?:[-–][A-ZĐ]+\d*)*", # số hiệu luật: 86/2015/QH13, 72/2013/NĐ-CP
@@ -152,6 +157,7 @@ def clause_marker_spans(text):
 DATE_TOKEN = re.compile(
     r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b"
 )
+CLOCK_TOKEN = re.compile(r"(?<!\w)(\d{1,2})h(\d{2})(?!\w)", re.I)
 TRANSFORM_TOKEN = re.compile(
     r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b|"
     r"(?<![\w.])\d[\d.,]*(?![\w.])"
@@ -787,6 +793,60 @@ class AnswerGuard:
                     if not payload_is_current(data, self.root, path=facts_path):
                         continue
                     self._collect(data, bucket, ubucket)
+
+                # Markdown documents are authoritative text sources, but do not
+                # produce a facts.json automatically.  For a current, explicitly
+                # non-OCR Markdown raw, allow Gate 4 to verify numbers directly
+                # against the cited source body.  This still fails closed: the
+                # number must occur in the cited raw document, and an OCR source
+                # never enters this bucket.
+                for raw_rel in fm.get("raw_paths") or []:
+                    raw_rel = str(raw_rel)
+                    if not raw_rel.endswith(".md"):
+                        continue
+                    document = _raw_document(self.root, raw_rel)
+                    if document is None:
+                        continue
+                    raw_fm, body = document
+                    if not frontmatter_is_current(raw_fm, Path(self.root)):
+                        continue
+                    if raw_fm.get("ocr") in (True, "true"):
+                        continue
+                    if (raw_fm.get("extractor") != "scripts/extract_markdown.py"
+                            and raw_fm.get("kind") not in {"markdown", "text/markdown"}):
+                        continue
+                    raw_bucket: set = set()
+                    raw_ubucket: dict = {}
+                    for canonical, near_unit, _ in transform_numbers(body):
+                        self.values.add(canonical)
+                        raw_bucket.add(canonical)
+                        if near_unit:
+                            self.value_units.setdefault(canonical, set()).add(near_unit)
+                            raw_ubucket.setdefault(canonical, set()).add(near_unit)
+                    for match in DATE_TOKEN.finditer(body):
+                        canonical = f"date:{match.group(0)}"
+                        self.values.add(canonical)
+                        raw_bucket.add(canonical)
+                    # Clock notation such as `8h30` is two numeric tokens in an
+                    # answer but the generic transformer may treat the first token
+                    # as a section/list marker. Register the hour and minute parts
+                    # explicitly for direct Markdown provenance.
+                    for match in CLOCK_TOKEN.finditer(body):
+                        hour = int(match.group(1))
+                        minute = int(match.group(2))
+                        for canonical in self._forms(hour, "hour"):
+                            self.values.add(canonical)
+                            raw_bucket.add(canonical)
+                            self.value_units.setdefault(canonical, set()).add("hour")
+                            raw_ubucket.setdefault(canonical, set()).add("hour")
+                        for canonical in self._forms(minute):
+                            self.values.add(canonical)
+                            raw_bucket.add(canonical)
+                    stem = Path(raw_rel).stem
+                    self.by_file.setdefault(stem, set()).update(raw_bucket)
+                    _merge_units(self.units_by_file.setdefault(stem, {}), raw_ubucket)
+                    bucket.update(raw_bucket)
+                    _merge_units(ubucket, raw_ubucket)
                 path = p.relative_to(self.root).as_posix()
                 self.by_page[path] = bucket
                 self.units_by_page[path] = ubucket

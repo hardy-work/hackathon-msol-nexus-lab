@@ -2,9 +2,11 @@
 
 ## Source record
 
-The generator accepts only Markdown wiki pages with YAML frontmatter containing `page`, `name` or an H1, `visibility`, and either `doc_id` or `raw_paths`. A source citation is rendered as:
+The generator accepts only Markdown wiki pages with YAML frontmatter containing `page`, `name` or an H1, `visibility`, and either `doc_id` or `raw_paths`. A reader-facing source is rendered as:
 
-`wiki/<area>/<file>.md` · `doc_id=<id>` · `version=<n>` · `visibility=<value>`
+`Nguồn: <tên file gốc> · cập nhật ngày <dd/mm/yyyy> · bởi <người cập nhật>`
+
+Internal wiki paths, document IDs and versions remain system metadata for provenance and Gate 4; they are not shown as the reader-facing source.
 
 OCR-backed pages must also carry the warning from the source page. The generator never copies the original binary into a training artifact.
 

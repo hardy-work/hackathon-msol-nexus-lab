@@ -115,3 +115,6 @@
 
 ## 2026-08-09 · noi-quy-lao-dong-20260808T041339Z-aa1429cc79 · Stage 4 WIKI-INGEST (source VĂN) · OK
 - Sinh/cập nhật 1 trang wiki; `build_index.py` đồng bộ lại `index.md`.
+
+## 2026-08-10 · noi-quy-lao-dong-20260808T041339Z-aa1429cc79 · Stage 4 WIKI-INGEST (Markdown) · OK
+- Sinh/cập nhật 1 trang wiki; `build_index.py` đồng bộ lại `index.md`.

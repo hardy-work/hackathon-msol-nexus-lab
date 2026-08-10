@@ -38,25 +38,37 @@ def main() -> int:
         )
         assert not create_training.discover_pages(restricted_root), "restricted source leaked"
     text = create_training.render_handbook("nexus", "developer", "Test learner", pages, internal, project, team, freshness, registry, profiles, aliases)
-    for marker in ("Mục tiêu sau khi hoàn thành", "Checklist onboarding", "Ma trận nguồn", "Freshness KB", "doc_id=", "Chưa có trong KB"):
+    for marker in ("Mục tiêu sau khi hoàn thành", "Checklist onboarding", "Ma trận nguồn", "Freshness KB", "Nguồn:", "Chưa có trong KB"):
         assert marker in text, marker
-    assert "doc_id=unknown" not in text, "entity citations should resolve through raw_paths"
+    assert "Nguồn:" in text, "training must render reader-facing source provenance"
+    source_lines = [line for line in text.splitlines() if "Nguồn:" in line]
+    assert all("wiki/" not in line and "raw/" not in line for line in source_lines), "internal paths must not be shown in citations"
     pm_text = create_training.render_handbook("nexus", "project-manager", "Test PM", pages, internal, project, team, freshness, registry, profiles, aliases)
     assert text != pm_text, "role profiles must change the learning path"
     assert "Trọng tâm Developer" in text
     assert "Trọng tâm PM" in pm_text
     assert "**Coverage:** `partial`" in text
-    altered = pm_text.replace("Nội quy lao động MOR", "POLICY-CHANGED", 1)
+    assert "nguồn có thể là OCR" not in text, "current Markdown policy must not be labelled as OCR"
+    policy_title = next(page.title for page in internal if page.doc_id.startswith("noi-quy-lao-dong-"))
+    altered = pm_text.replace(policy_title, "POLICY-CHANGED", 1)
     scoped = create_training.reuse_fixed_policy_modules(text, altered)
     assert "POLICY-CHANGED" not in scoped, "project refresh must retain fixed policy blocks"
-    assert "Nội quy lao động MOR" in scoped
+    assert policy_title in scoped
     with tempfile.TemporaryDirectory() as tmp:
         output = Path(tmp) / "training.md"
         assert create_training.main(["--kb-root", str(kb), "--project", "nexus", "--role", "developer", "--name", "Test learner", "--output", str(output)]) == 0
         generated = output.read_text(encoding="utf-8")
         assert generated.startswith("# Handbook onboarding")
-        assert "noi-quy-lao-dong" in generated
-        assert "nexus-plan.md" in generated
+        assert "1760635210-MOR.BO.PRO.01" in generated
+        assert "Nguồn:" in generated
+        assert "1760635210-MOR.BO.PRO.01" in generated
+        assert "cập nhật ngày 10/08/2026 · bởi MH_DoNT" in generated
+        source_lines = [line for line in generated.splitlines() if "Nguồn:" in line]
+        assert all("wiki/" not in line and "raw/" not in line for line in source_lines)
+        assert "noi-quy-lao-dong-20260808T041339Z-aa1429cc79@v1.md" not in generated, "historical OCR policy pages must not enter training"
+        assert "noi-quy-lao-dong-20260808T041339Z-aa1429cc79--chuong-" not in generated, "historical OCR chapter pages must not enter training"
+        assert "Các trang OCR có thể" not in generated
+        assert "Nexus Plan.xlsx" in generated
         report = evaluate_training.evaluate_artifact(output)
         assert report["pass"], report
     print(f"✓ new-hire-training self-test: {len(pages)} nguồn, internal={len(internal)}, project={len(project)}, team={len(team)}")

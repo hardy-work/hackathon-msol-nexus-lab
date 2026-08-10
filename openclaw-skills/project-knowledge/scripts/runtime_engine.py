@@ -11,6 +11,7 @@ from pathlib import Path
 
 import access_control
 import answer
+import document_registry
 import filesystem_boundary
 import query_cache
 import runtime_state
@@ -181,11 +182,13 @@ class KnowledgeRuntime:
                 confidence = {"in_kb": "high" if result.tier == 1 else "medium",
                               "confident_no": "high", "not_in_kb": "none",
                               "error": "none"}[status]
+                display_citations = document_registry.public_citations(result.cites, self.root)
                 payload = {"status": status, "answer": result.answer,
-                           "confidence": confidence, "citations": list(result.cites),
+                           "confidence": confidence, "citations": display_citations,
                            "reason": result.reason, "tier": result.tier, "project": project,
-                           "suggested_actions": suggested_actions(question, status, result.cites),
+                           "suggested_actions": suggested_actions(question, status, display_citations),
                            "cache_hit": False}
+                payload["answer"] = answer.public_answer(self.root, payload["answer"])
                 freshness = getattr(kb, "freshness", None)
                 if freshness is not None:
                     payload.update({"freshness": freshness,

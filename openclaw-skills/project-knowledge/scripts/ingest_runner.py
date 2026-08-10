@@ -51,6 +51,11 @@ def run(proposal_id: str, *, base: str = "main", run_all: bool = True,
     doc_id = str(decision["doc_id"])
     version = int(decision.get("version") or decision.get("to_version"))
     source = Path(proposal["source"]["path"])
+    requester = proposal.get("requested_by") or {}
+    decision = dict(decision)
+    decision.setdefault("updated_at", _now().split("T", 1)[0])
+    decision.setdefault("updated_by", requester.get("name") or requester.get("user_id") or "NexusBot (hệ thống)")
+    proposal["intake_decision"] = decision
     started = _now()
     proposal["status"] = "running"
     proposal["execution"] = {"status": "running", "started_at": started,

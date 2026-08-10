@@ -1,35 +1,54 @@
 documents:
-  - doc_id: nexus-plan
-    version: 1
-    original: originals/nexus-plan.xlsx
-    source_name: Nexus Plan.xlsx
-    kind: xlsx
-    sha256: df3369a7bfbe56eb8d2222053f8e23c744d7dfee70640e37166175cbad2d6d58
-    status: canonical
-    current: true
-    supersedes: null
-    visibility: internal
-    extractor: nexus
-    raw_paths:
-      - raw/nexus-backlog.md
-      - raw/nexus-config.md
-      - raw/nexus-issue.md
-      - raw/nexus-master-schedule.md
-      - raw/nexus-people.md
-      - raw/nexus-resource-plan.md
-      - raw/nexus-risk.md
-      - raw/nexus-sprint1.md
-      - raw/nexus-summary.md
-  - doc_id: noi-quy-lao-dong-20260808T041339Z-aa1429cc79
-    version: 1
-    original: originals/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.pdf
-    source_name: Noi quy lao dong_v1.0.pdf
-    kind: pdf
-    sha256: 6330165083547fb7d52bddd79220a5a81038dbbdce638dc0c9c311c2ee79416c
-    status: canonical
-    current: true
-    supersedes: null
-    visibility: internal
-    extractor: van
-    raw_paths:
-      - raw/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.md
+- doc_id: nexus-plan
+  version: 1
+  original: originals/nexus-plan.xlsx
+  source_name: Nexus Plan.xlsx
+  updated_at: 2026-08-03
+  updated_by: NexusBot (hệ thống)
+  kind: xlsx
+  sha256: df3369a7bfbe56eb8d2222053f8e23c744d7dfee70640e37166175cbad2d6d58
+  status: canonical
+  current: true
+  supersedes: null
+  visibility: internal
+  extractor: nexus
+  raw_paths:
+  - raw/nexus-backlog.md
+  - raw/nexus-config.md
+  - raw/nexus-issue.md
+  - raw/nexus-master-schedule.md
+  - raw/nexus-people.md
+  - raw/nexus-resource-plan.md
+  - raw/nexus-risk.md
+  - raw/nexus-sprint1.md
+  - raw/nexus-summary.md
+- doc_id: noi-quy-lao-dong-20260808T041339Z-aa1429cc79
+  version: 1
+  original: originals/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.pdf
+  source_name: Noi quy lao dong_v1.0.pdf
+  source_origin: 1760635210-MOR.BO.PRO.01_Nội quy lao động_v1.0.pdf
+  kind: pdf
+  sha256: 6330165083547fb7d52bddd79220a5a81038dbbdce638dc0c9c311c2ee79416c
+  status: canonical
+  current: false
+  supersedes: null
+  visibility: internal
+  extractor: van
+  raw_paths:
+  - raw/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.md
+- doc_id: noi-quy-lao-dong-20260808T041339Z-aa1429cc79
+  version: 2
+  original: originals/noi-quy-lao-dong-20260808T041339Z-aa1429cc79@v2.md
+  source_name: noi-quy-lao-dong.md
+  source_origin: 1760635210-MOR.BO.PRO.01_Nội quy lao động_v1.0.pdf
+  updated_at: 2026-08-10
+  updated_by: MH_DoNT
+  kind: text/markdown
+  sha256: 6e8a709d14ca5288bd9b9dde34709c4f4205cfd0735b59eeb1987106af2b816f
+  status: canonical
+  current: true
+  supersedes: 1
+  visibility: internal
+  extractor: markdown
+  raw_paths:
+  - raw/noi-quy-lao-dong-20260808T041339Z-aa1429cc79@v2.md

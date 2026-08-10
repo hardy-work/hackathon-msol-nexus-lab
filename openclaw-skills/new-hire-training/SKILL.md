@@ -10,7 +10,7 @@ Tạo một tài liệu training có thể dùng ngay từ các trang wiki hiệ
 ## Quy trình
 
 1. Xác định `project-knowledge` root. Ưu tiên `--kb-root`; nếu bỏ trống, dùng `../../project-knowledge` tính từ thư mục skill hoặc biến `PROJECT_KNOWLEDGE_ROOT`.
-2. Chỉ đọc các trang wiki đã xuất bản (`wiki/sources`, `wiki/entities`, `wiki/concepts`, `wiki/case-studies`). Bỏ qua `index.md`, `log.md`, `.gitkeep`, file archive/snapshot và trang không có frontmatter hợp lệ.
+2. Chỉ đọc các trang wiki hiện hành đã xuất bản (`wiki/sources`, `wiki/entities`, `wiki/concepts`, `wiki/case-studies`). Bỏ qua `index.md`, `log.md`, `.gitkeep`, file archive/snapshot, trang `retired`/có `superseded_by` và trang không có frontmatter hợp lệ.
 3. Lọc theo visibility: cho phép `public` và `internal`; loại `restricted`, `confidential` hoặc giá trị không nhận diện. Không nới quyền theo tên người học.
 4. Phân loại nguồn thành:
    - **Nội bộ công ty**: domain MOR/HR hoặc tên/raw path chứa `noi-quy`, `policy`, `handbook`, `hr`.
@@ -28,13 +28,13 @@ Tạo một tài liệu training có thể dùng ngay từ các trang wiki hiệ
      --output ./generated/nexus-new-hire.md
    ```
 
-6. Đọc lại output và kiểm tra: mỗi module có source reference, các con số giữ nguyên như nguồn, cảnh báo OCR được giữ nguyên, trạng thái freshness được hiển thị, và phần thiếu dữ liệu được ghi rõ. Không gọi Slack/Jira/Google Drive trong skill này.
+6. Đọc lại output và kiểm tra: mỗi module có source reference, các con số giữ nguyên như nguồn, cảnh báo OCR chỉ xuất hiện khi provenance của nguồn thực sự xác định là OCR, trạng thái freshness được hiển thị, và phần thiếu dữ liệu được ghi rõ. Không gọi Slack/Jira/Google Drive trong skill này.
 
 ## Profile theo vai trò
 
 Generator nhận các role phổ biến `developer`, `qa`, `project-manager` và `hr-operations` (có alias như `backend-developer`, `tester`, `pm`, `hr`). Mỗi profile thêm module trọng tâm, hoạt động gợi ý và danh sách khoảng trống. Khoảng trống luôn được đánh dấu `[Chưa có trong KB]`, không được hiểu là một quy trình/policy đã tồn tại.
 
-Với các trang entity chỉ có `raw_paths`, generator truy ngược `documents.yml` để hiển thị `doc_id/version` canonical và giữ lại `raw_paths` trong citation.
+Với các trang entity chỉ có `raw_paths`, generator truy ngược `documents.yml` để hiển thị tên file nguồn, ngày cập nhật và người cập nhật; không đưa đường dẫn `wiki/` hoặc `raw/` nội bộ vào citation cho người đọc.
 
 Artifact luôn gắn scope: `policy_fixed` cho Nội quy/chính sách cố định, `project_dynamic` cho resource/sprint/team/risk/workflow có thể thay đổi, và `role_guidance` cho hướng dẫn theo vai trò. Khi project thay đổi, kiểm tra/regenerate phần `project_dynamic`; không cần ingest lại nguồn `policy_fixed`.
 
@@ -63,7 +63,7 @@ Tài liệu Markdown phải có các phần sau, theo đúng thứ tự:
 3. Lộ trình module: nội bộ công ty, dự án, team/workflow, thực hành.
 4. Checklist trước ngày đầu, tuần đầu và trước khi nhận task đầu tiên.
 5. Câu hỏi kiểm tra kiến thức; câu nào không có dữ liệu phải gắn `[Chưa có trong KB]`.
-6. Ma trận nguồn: file wiki, `doc_id`, version, visibility và ghi chú OCR nếu có.
+6. Ma trận nguồn: tên file nguồn, ngày cập nhật, người cập nhật và ghi chú OCR nếu có.
 7. Giới hạn và việc cần xác nhận với HR/PM.
 
 Generator mặc định tạo nội dung deterministic, không cần LLM hay mạng. Có thể dùng LLM ở lớp ngoài để diễn đạt lại, nhưng không được bỏ citation, thêm số liệu hoặc biến đề xuất thành chính sách.
@@ -72,7 +72,7 @@ Generator mặc định tạo nội dung deterministic, không cần LLM hay m�
 
 - Phân biệt **quy định bắt buộc**, **hướng dẫn dự án** và **đề xuất học tập** bằng nhãn rõ ràng.
 - Không suy ra quyền lợi, deadline, vai trò, tech-stack hoặc quy trình khi nguồn không khai báo.
-- Các trang OCR chỉ là bản nhận dạng; luôn giữ câu cảnh báo “đối chiếu bản gốc” và không gọi chúng là bản pháp lý cuối cùng.
+- Các trang có provenance OCR chỉ là bản nhận dạng; luôn giữ câu cảnh báo “đối chiếu bản gốc” và không gọi chúng là bản pháp lý cuối cùng. Tài liệu Markdown đã re-ingest không được gắn nhãn OCR chỉ vì tên file có chữ `noi-quy`.
 - Với tài liệu nội bộ, chỉ đưa vào handbook khi trang có `visibility: internal` hoặc `public`; không copy raw/original bytes vào output.
 - Khi nhiều nguồn mâu thuẫn, hiển thị cả hai citation và đánh dấu cần HR/PM xác nhận; không tự chọn một bên.
 - Tài liệu sinh ra là artifact đầu ra, không được ghi vào `wiki/`, `raw/`, `structured/` hoặc `derived/` của project-knowledge.

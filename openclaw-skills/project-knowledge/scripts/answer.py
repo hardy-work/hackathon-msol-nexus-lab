@@ -15,6 +15,8 @@ cái trước chỉ mất thông tin; nói nhầm cái trước thành cái sau 
 
   python3 scripts/answer.py "câu hỏi"
 """
+from __future__ import annotations
+
 import re
 import json
 import os
@@ -864,8 +866,8 @@ def tier1(kb, q):
         configured = kb.vocab.get("tech_stack", [])
         if re.search(r"ai |nguoi|phu trach|lam javascript|lam java", qa):
             return Result(1, NF,
-                "Kho có danh mục tech-stack chuẩn nhưng chưa có mapping người–tech-stack; "
-                "không thể xác định ai làm công nghệ này.",
+                "Dữ liệu hiện có ghi nhận danh mục tech-stack nhưng chưa có mapping "
+                "người–tech-stack, nên chưa thể xác định ai phụ trách công nghệ này.",
                 cites=[f"{raw_ref('nexus-config')} (Config!G2:G15)",
                        f"{raw_ref('nexus-config', 'facts')} :: vocabulary.tech_stack"],
                 reason="workbook chỉ khai báo vocabulary `tech_stack`, không có cột liên kết với assignee.")
@@ -1316,6 +1318,18 @@ def invalid_citations(kb, citations) -> list[str]:
         if not resolved.is_file():
             invalid.append(raw)
     return invalid
+
+
+def public_answer(root: Path, text: str) -> str:
+    """Hide internal wiki locators from the answer shown to readers."""
+    lines = str(text or "").splitlines()
+    for index, line in enumerate(lines):
+        match = re.match(r"^(\s*nguồn\s*:\s*)(.+?)\s*$", line, re.IGNORECASE)
+        if not match or not re.search(r"(?:^|[ /])(wiki|raw)/", match.group(2)):
+            continue
+        lines[index] = document_registry.public_citation(match.group(2), root)
+        break
+    return "\n".join(lines)
 
 
 def gate4(res, kb):

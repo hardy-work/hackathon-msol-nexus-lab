@@ -38,16 +38,17 @@ def evaluate_artifact(path: Path) -> dict[str, object]:
     modules = re.findall(r"(?m)^### 2\.\d+ (.+)$", text)
     scopes = re.findall(r"(?m)^- \*\*Scope:\*\* `([^`]+)`$", text)
     coverage = re.findall(r"(?m)^- \*\*Coverage:\*\* `([^`]+)`$", text)
-    citations = text.count("doc_id=")
-    unknown_citations = text.count("doc_id=unknown")
-    raw_path_citations = text.count("raw_paths=")
+    source_lines = [line for line in text.splitlines() if "Nguồn:" in line]
+    citations = len(source_lines)
+    unknown_citations = sum("Nguồn: `chưa xác định`" in line for line in source_lines)
+    raw_path_citations = sum("wiki/" in line or "raw/" in line for line in source_lines)
     missing_markers = text.count("[Chưa có trong KB]")
     checks = {
         "required_sections": all(marker in text for marker in REQUIRED_HEADINGS),
         "role_profile": "Hồ sơ đào tạo" in text and "role_guidance" in scopes,
         "fixed_policy_scope": scopes.count("policy_fixed") >= 2,
         "dynamic_project_scope": scopes.count("project_dynamic") >= 2,
-        "source_citations": citations > 0 and unknown_citations == 0,
+        "source_citations": citations > 0 and unknown_citations == 0 and raw_path_citations == 0,
         "freshness": "Freshness KB" in text,
         "explicit_gaps": missing_markers > 0 and "partial" in coverage,
     }

@@ -153,6 +153,29 @@ class Page:
         return self.meta.get("page", "")
 
     @property
+    def is_history(self) -> bool:
+        """Whether this page is retained for audit, not for current training."""
+        return self.meta.get("retired", "").lower() in {"true", "yes", "1"} or bool(
+            self.meta.get("superseded_by", "").strip()
+        )
+
+    @property
+    def is_ocr_source(self) -> bool:
+        """Return true only when provenance explicitly identifies OCR output.
+
+        A document name such as ``noi-quy-lao-dong.md`` is not evidence of OCR;
+        the previous substring check incorrectly marked the Markdown re-ingest.
+        """
+        truthy = {"true", "yes", "1"}
+        if self.meta.get("ocr", "").strip().lower() in truthy:
+            return True
+        provenance = " ".join(
+            self.meta.get(key, "")
+            for key in ("extractor", "kind", "generated_by", "source_type")
+        ).lower()
+        return "ocr" in provenance or "vision-2pass" in provenance
+
+    @property
     def searchable(self) -> str:
         return " ".join(
             [self.title, self.meta.get("domain", ""), self.meta.get("project", ""),
@@ -224,8 +247,8 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
     current_key: str | None = None
     list_values: list[str] = []
     for line in lines[1:end]:
-        if re.match(r"^\s+-\s+", line) and current_key:
-            list_values.append(re.sub(r"^\s+-\s+", "", line).strip().strip('"\''))
+        if re.match(r"^\s*-\s+", line) and current_key:
+            list_values.append(re.sub(r"^\s*-\s+", "", line).strip().strip('"\''))
             meta[current_key] = ",".join(list_values)
             continue
         match = re.match(r"^([A-Za-z0-9_-]+):\s*(.*)$", line)
@@ -283,7 +306,7 @@ def discover_pages(kb_root: Path) -> list[Page]:
             continue
         for path in sorted(root.rglob("*.md")):
             page = parse_page(path, kb_root)
-            if page and page.visibility in ALLOWED_VISIBILITY:
+            if page and page.visibility in ALLOWED_VISIBILITY and not page.is_history:
                 pages.append(page)
     return pages
 
@@ -317,8 +340,8 @@ def classify_pages(pages: list[Page], project: str) -> tuple[list[Page], list[Pa
     return internal, project_pages, team
 
 
-def load_document_registry(kb_root: Path) -> dict[str, tuple[str, str]]:
-    """Map published raw paths back to their canonical document identity."""
+def load_document_registry(kb_root: Path) -> dict[str, dict[str, str]]:
+    """Map published raw paths to reader-facing source provenance."""
     path = kb_root / "documents.yml"
     if not path.is_file():
         return {}
@@ -326,35 +349,42 @@ def load_document_registry(kb_root: Path) -> dict[str, tuple[str, str]]:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except (OSError, yaml.YAMLError):
         return {}
-    registry: dict[str, tuple[str, str]] = {}
+    registry: dict[str, dict[str, str]] = {}
     for document in data.get("documents", []) or []:
         doc_id = str(document.get("doc_id", "")).strip()
         version = str(document.get("version", "unknown")).strip()
         if not doc_id:
             continue
         for raw_path in document.get("raw_paths", []) or []:
-            registry[Path(str(raw_path)).as_posix()] = (doc_id, version)
+            registry[Path(str(raw_path)).as_posix()] = {
+                "doc_id": doc_id,
+                "version": version,
+                "source_name": str(document.get("source_name") or ""),
+                "source_origin": str(document.get("source_origin") or ""),
+                "updated_at": str(document.get("updated_at") or ""),
+                "updated_by": str(document.get("updated_by") or ""),
+                "original": Path(str(document.get("original") or "")).name,
+            }
     return registry
 
 
-def _citation(page: Page, registry: dict[str, tuple[str, str]] | None = None) -> str:
+def _display_date(value: str) -> str:
+    date = str(value or "").strip().split("T", 1)[0]
+    match = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", date)
+    return f"{match.group(3)}/{match.group(2)}/{match.group(1)}" if match else (date or "chưa ghi nhận")
+
+
+def _citation(page: Page, registry: dict[str, dict[str, str]] | None = None) -> str:
     registry = registry or {}
-    version = page.meta.get("version", "")
-    doc_id = page.doc_id
-    identities = [registry.get(raw_path) for raw_path in page.raw_paths]
-    identities = [identity for identity in identities if identity]
-    if not doc_id and identities and len({identity[0] for identity in identities}) == 1:
-        doc_id = identities[0][0]
-    if not version and identities and len({identity[1] for identity in identities}) == 1:
-        version = identities[0][1]
-    if not doc_id:
-        doc_id = "unknown"
-    if not version:
-        version = "unknown"
-    parts = [f"`{page.relative}`", f"`doc_id={doc_id}`", f"`version={version}`", f"`visibility={page.visibility}`"]
-    if not page.doc_id and page.raw_paths:
-        parts.append(f"`raw_paths={';'.join(page.raw_paths)}`")
-    return " · ".join(parts)
+    records = [registry.get(raw_path) for raw_path in page.raw_paths]
+    records = [record for record in records if record]
+    record = records[0] if records else {}
+    source_name = record.get("source_name") or page.meta.get("source_name") or (
+        Path(page.raw_paths[0]).name if page.raw_paths else page.relative)
+    origin = record.get("source_origin", "").strip()
+    source = f"`{origin or source_name}`"
+    return (f"Nguồn: {source} · cập nhật ngày {_display_date(record.get('updated_at', ''))} · "
+            f"bởi {record.get('updated_by') or 'chưa ghi nhận'}")
 
 
 def _source_points(page: Page, limit: int = 5) -> list[str]:
@@ -424,7 +454,7 @@ def build_modules(internal: list[Page], project_pages: list[Page], team: list[Pa
     ]
 
 
-def render_pages(pages: list[Page], registry: dict[str, tuple[str, str]] | None = None) -> str:
+def render_pages(pages: list[Page], registry: dict[str, dict[str, str]] | None = None) -> str:
     if not pages:
         return "- `[Chưa có trong KB]` Không tìm thấy nguồn phù hợp."
     chunks: list[str] = []
@@ -435,7 +465,7 @@ def render_pages(pages: list[Page], registry: dict[str, tuple[str, str]] | None 
             chunks.extend(f"  - {point}" for point in points)
         else:
             chunks.append("  - `[Chưa có trong KB]` Trang không có đoạn tóm tắt đọc được.")
-        if _has_any(page.searchable, ["ocr", "noi-quy"]):
+        if page.is_ocr_source:
             chunks.append("  - Lưu ý: nguồn có thể là OCR; đối chiếu bản gốc trước khi dùng làm quy định pháp lý.")
     return "\n".join(chunks)
 
@@ -488,7 +518,7 @@ def check_freshness(kb_root: Path) -> dict[str, str]:
         return {"state": "unknown", "reason": f"Không đọc được freshness: {type(exc).__name__}"}
 
 
-def render_handbook(project: str, role: str, name: str, pages: list[Page], internal: list[Page], project_pages: list[Page], team: list[Page], freshness: dict[str, str] | None = None, registry: dict[str, tuple[str, str]] | None = None, profiles: dict[str, dict[str, object]] | None = None, aliases: dict[str, str] | None = None, artifact_scope: str = "all") -> str:
+def render_handbook(project: str, role: str, name: str, pages: list[Page], internal: list[Page], project_pages: list[Page], team: list[Page], freshness: dict[str, str] | None = None, registry: dict[str, dict[str, str]] | None = None, profiles: dict[str, dict[str, object]] | None = None, aliases: dict[str, str] | None = None, artifact_scope: str = "all") -> str:
     today = dt.date.today().isoformat()
     role_key, profile = role_profile(role, profiles, aliases)
     modules = build_modules(internal, project_pages, team, role_key, profiles, aliases)
@@ -562,7 +592,7 @@ def render_handbook(project: str, role: str, name: str, pages: list[Page], inter
         "1. Nguồn nào là quy định nội bộ và phải đối chiếu bản gốc trước khi áp dụng?",
         "2. Project overview nằm ở đâu và nó dẫn tới những loại dữ liệu nào?",
         "3. Khi không tìm thấy thông tin về tech-stack/owner, cần trả lời thế nào? — **`Chưa có trong KB`**, không suy diễn.",
-        "4. Citation tối thiểu cần có những trường nào? — đường dẫn wiki, `doc_id`, `version`, `visibility`.",
+        "4. Citation tối thiểu cần có những trường nào? — tên file nguồn, ngày cập nhật và người cập nhật.",
         "5. Ai có quyền phê duyệt thay đổi dữ liệu dự án? — `[Chưa có trong KB]` nếu nguồn hiện tại chưa khai báo.",
         *[f"{6 + index}. {question}" for index, question in enumerate(profile["questions"])],
         "",
@@ -581,11 +611,12 @@ def render_handbook(project: str, role: str, name: str, pages: list[Page], inter
         f"- Freshness hiện tại: `{freshness_state}`" + (f" — {freshness_note}" if freshness_note else ""),
         "- Nếu freshness là `stale` hoặc `unknown`, rebuild/kiểm tra `project-knowledge` trước khi dùng handbook cho quyết định mới.",
         "- Tài liệu chỉ phản ánh snapshot KB tại thời điểm sinh; kiểm tra freshness trước khi dùng cho quyết định mới.",
-        "- Các trang OCR có thể có sai số nhận dạng; đối chiếu bản gốc và hỏi HR khi có nghi ngờ.",
         "- Thông tin không xuất hiện trong ma trận nguồn không được coi là không tồn tại.",
         "- HR/PM phải xác nhận nội dung thiếu hoặc mâu thuẫn trước khi phát hành handbook chính thức.",
         "",
     ])
+    if any(page.is_ocr_source for page in pages):
+        lines.insert(-2, "- Có nguồn OCR trong snapshot này; đối chiếu bản gốc và hỏi HR khi có nghi ngờ.")
     return "\n".join(lines)
 
 

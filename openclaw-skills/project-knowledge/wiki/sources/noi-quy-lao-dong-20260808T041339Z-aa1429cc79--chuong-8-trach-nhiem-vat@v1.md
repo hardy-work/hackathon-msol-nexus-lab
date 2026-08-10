@@ -1,14 +1,17 @@
 ---
 page: source
-name: "Nội quy lao động MOR — CHƯƠNG 8. TRÁCH NHIỆM VẬT CHẤT"
+name: Nội quy lao động MOR — CHƯƠNG 8. TRÁCH NHIỆM VẬT CHẤT
 doc_id: noi-quy-lao-dong-20260808T041339Z-aa1429cc79
 version: 1
 domain: mor-software
 visibility: internal
 raw_paths:
-  - raw/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.md
-section: "CHƯƠNG 8. TRÁCH NHIỆM VẬT CHẤT"
+- raw/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.md
+section: CHƯƠNG 8. TRÁCH NHIỆM VẬT CHẤT
 part_of: wiki/sources/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.md
+retired: true
+retired_in: 2
+retired_by: wiki/sources/noi-quy-lao-dong-20260808T041339Z-aa1429cc79.md
 ---
 
 # CHƯƠNG 8. TRÁCH NHIỆM VẬT CHẤT
