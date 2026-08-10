@@ -175,7 +175,7 @@ def reconcile_artifacts(root: Path, doc_id: str, from_version: int, to_version: 
             "raw_paths": ordered_paths}
 
 
-def _page_inventory(root: Path, doc_id: str) -> tuple[set[str], set[str]]:
+def _page_inventory(root: Path, doc_id: str, extractor: str | None = None) -> tuple[set[str], set[str]]:
     """Return expected/existing generated pages for one document identity."""
     expected = {f"wiki/sources/{doc_id}.md"}
     if doc_id != "nexus-plan":
@@ -185,7 +185,8 @@ def _page_inventory(root: Path, doc_id: str) -> tuple[set[str], set[str]]:
         # nhưng vẫn còn nguyên các trang chương của v1.
         existing = {page.relative_to(root).as_posix()
                     for page in sorted((root / "wiki/sources").glob(f"{doc_id}--*.md"))}
-        expected |= existing
+        if extractor != "markdown":
+            expected |= existing
         source = root / f"wiki/sources/{doc_id}.md"
         if source.is_file():
             existing.add(source.relative_to(root).as_posix())
@@ -258,13 +259,20 @@ def build_plan(root: Path, doc_id: str, from_version: int, to_version: int) -> d
     changed_old_paths = [str(row["old"]) for row in raw_rows if row.get("old")]
     impacted = impacted_pages(root, changed_old_paths, doc_id=doc_id,
                               from_version=from_version, one_to_one_paths=old_paths)
-    expected_pages, existing_pages = _page_inventory(root, doc_id)
+    expected_pages, existing_pages = _page_inventory(
+        root, doc_id, extractor=str(new.get("extractor") or "")
+    )
+    removed_pages = sorted(existing_pages - expected_pages)
+    # A renderer change may retire pages that were impacted by the old
+    # extractor. Those pages must go through the retired-page path, not the
+    # one-to-one supersede path; otherwise their superseded_by points to a
+    # chapter page that the new renderer no longer creates.
+    impacted = [item for item in impacted if item["page"] not in removed_pages]
     if doc_id == "nexus-plan":
         # A foreign page may cite a shared raw artifact, but it is not owned by
         # this document's renderer and must never be rewritten/retired here.
         impacted = [item for item in impacted if item["page"] in existing_pages]
     new_pages = sorted(expected_pages - existing_pages)
-    removed_pages = sorted(existing_pages - expected_pages)
     write_pages = {str(item["page"]) for item in impacted if item["page"] not in removed_pages}
     write_pages.update(new_pages)
     if doc_id == "nexus-plan" and (
