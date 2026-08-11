@@ -156,13 +156,30 @@ one before doing anything else.
    - A topic is clearly being discussed and then the transcript jumps
      (a timestamp gap, or an abrupt subject change with no resolution),
      suggesting lost audio, with no way to tell how it concluded.
+   - **The transcript's last segment ends mid-word or mid-sentence**
+     (e.g. cuts off on "It" with no punctuation, or the final speaker
+     is visibly not done) **instead of a natural close** (goodbyes, a
+     recap, silence after a complete sentence). This always counts as
+     a gap, regardless of how short the transcript is or how informal
+     the content looks — a cut-off ending means real content (possibly
+     the decisions/action items themselves) was lost after the capture
+     stopped, and you cannot know that from what you have. Say so
+     explicitly when asking: tell the user the transcript appears to
+     cut off mid-sentence and ask whether the meeting actually ended
+     there or whether content is missing.
    - A named reference (a document, ticket ID, number, person) is
      mistranscribed or cut off in a way that could change an action
      item's meaning.
 
-   If nothing rises to this bar, skip this step entirely and go straight
-   to step 8 — don't manufacture questions to pad a list. Only raise real
-   gaps that would actually change the output.
+   **"This doesn't look like a formal business meeting" is never by
+   itself a reason to skip this step or to conclude there are no
+   decisions/action items.** You were asked to join and report on this
+   meeting, so a short, informal, or unexpected transcript is a signal
+   to double-check with the user (via this step), not license to
+   dismiss it. Only skip this step if none of the bullets above apply
+   *and* the transcript actually ends on a natural close — don't
+   manufacture questions to pad a list, but don't use "seems informal"
+   as an excuse to avoid asking either.
 
    If there are gaps, reply in the same channel/thread the user invoked
    you from, addressed to the person who asked you to join this meeting,
@@ -217,7 +234,17 @@ one before doing anything else.
    `<span style="color:green">...</span>` — keep the `- [ ]` checkbox
    syntax itself outside the span so it still renders as a checkbox.
    Only include a "Decisions" or "Action items" bullet if the transcript
-   actually contains one — don't invent items to fill the template.
+   actually contains one — don't invent items to fill the template. But
+   **never silently drop the "Decisions" or "Action items" section just
+   because none were found** — by the time you reach step 8, step 7 has
+   already run, so an empty result means the transcript genuinely had
+   none *and* you already gave the user a chance to fill the gap (or the
+   transcript ended on a natural close with nothing raised). In that
+   case, keep the section header and write one line explaining why it's
+   empty (e.g. "Không có decision/action item được nêu rõ trong nội
+   dung transcript đã ghi nhận") instead of omitting the section — the
+   reader should be able to tell "confirmed empty" apart from "the bot
+   didn't look."
 
    **Pay special attention to the closing of the meeting.** People usually
    recap the discussion and spell out next-actions in the last stretch of a
