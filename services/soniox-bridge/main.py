@@ -82,6 +82,13 @@ STREAM_SEG_MAX_CHARS = int(os.getenv("STREAM_SEG_MAX_CHARS", "220"))
 # Don't split off a segment shorter than this on a gap/punctuation — merge it into
 # the next instead (avoids tiny junk fragments like "ad." from a mid-word gap).
 STREAM_SEG_MIN_CHARS = int(os.getenv("STREAM_SEG_MIN_CHARS", "14"))
+# A per-channel Soniox realtime connection lives for the whole meeting. A
+# transient Soniox-side error (e.g. "408 Request timeout") must not kill
+# transcription for that speaker for the rest of the meeting — reconnect
+# instead. Backoff between attempts, and a cap so a truly dead Soniox
+# doesn't spin the channel forever.
+STREAM_RECONNECT_BACKOFF_S = float(os.getenv("STREAM_RECONNECT_BACKOFF_S", "1.0"))
+STREAM_MAX_RECONNECTS = int(os.getenv("STREAM_MAX_RECONNECTS", "20"))
 # Our own inbound auth, same dual scheme Vexa's reference service supports.
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
 # B1 low-latency interim push (opt-in). When set, each transcript is forwarded to
@@ -481,9 +488,20 @@ class _ChannelStream:
         self._last_interim_push = 0.0
         self._closed = False
         self._flush_lock = asyncio.Lock()
-        self._reader_task: Optional[asyncio.Task] = None
+        self._run_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
+        # _run owns the Soniox websocket's whole lifecycle, including
+        # reconnecting it on transient errors — see _run() below.
+        await self._connect()
+        self._run_task = asyncio.create_task(self._run())
+        self._tasks = [
+            asyncio.create_task(self._writer()),
+            self._run_task,
+            asyncio.create_task(self._ticker()),
+        ]
+
+    async def _connect(self) -> None:
         self._ws = await websockets.connect(SONIOX_WS_URL, open_timeout=10, compression=None)
         cfg: dict = {
             "api_key": SONIOX_API_KEY,
@@ -497,12 +515,6 @@ class _ChannelStream:
         else:
             cfg["enable_language_identification"] = True
         await self._ws.send(json.dumps(cfg))
-        self._reader_task = asyncio.create_task(self._reader())
-        self._tasks = [
-            asyncio.create_task(self._writer()),
-            self._reader_task,
-            asyncio.create_task(self._ticker()),
-        ]
 
     def feed(self, pcm: bytes) -> None:
         try:
@@ -511,41 +523,89 @@ class _ChannelStream:
             pass  # drop under backpressure rather than stall the relay
 
     async def _writer(self) -> None:
-        try:
-            while True:
-                pcm = await self._pcm_q.get()
-                if pcm is None:  # sentinel -> end of audio
-                    await self._ws.send("")
-                    return
-                await self._ws.send(pcm)
-        except Exception:  # noqa: BLE001
-            pass
+        # Never exit on a transient send failure — that would silently and
+        # permanently stop audio from reaching Soniox even after _run()
+        # reconnects. Drop the one chunk that failed and keep going; a brief
+        # gap during reconnect is fine, a dead channel for the rest of the
+        # meeting is not.
+        while True:
+            pcm = await self._pcm_q.get()
+            if pcm is None:  # sentinel -> end of audio
+                try:
+                    if self._ws is not None:
+                        await self._ws.send("")
+                except Exception:  # noqa: BLE001
+                    pass
+                return
+            try:
+                if self._ws is not None:
+                    await self._ws.send(pcm)
+            except Exception:  # noqa: BLE001
+                pass
 
-    async def _reader(self) -> None:
-        try:
-            while True:
-                raw = await self._ws.recv()
-                msg = json.loads(raw)
-                if msg.get("error_code"):
-                    logger.warning("stream soniox error: %s %s", msg.get("error_code"), msg.get("error_message"))
-                    break
-                changed = False
-                tail = ""
-                for tok in msg.get("tokens", []):
-                    if tok.get("is_final"):
-                        await self._append_final(tok)
-                        changed = True
-                    else:
-                        tail += tok.get("text", "")
-                self._interim_tail = tail
-                self._last_token_at = time.monotonic()
-                await self._maybe_push_interim(force=changed)
-                if msg.get("finished"):
-                    break
-        except Exception as e:  # noqa: BLE001
-            logger.debug("stream reader ended: %s", e)
-        finally:
-            await self._flush(final=True)
+    async def _reader_loop(self) -> None:
+        """Consume one Soniox connection until it errors, finishes, or
+        breaks. Raises/returns on any of those — the caller (_run) decides
+        whether to reconnect."""
+        while True:
+            raw = await self._ws.recv()
+            msg = json.loads(raw)
+            if msg.get("error_code"):
+                logger.warning(
+                    "stream ch%d soniox error: %s %s",
+                    self.channel, msg.get("error_code"), msg.get("error_message"),
+                )
+                return
+            changed = False
+            tail = ""
+            for tok in msg.get("tokens", []):
+                if tok.get("is_final"):
+                    await self._append_final(tok)
+                    changed = True
+                else:
+                    tail += tok.get("text", "")
+            self._interim_tail = tail
+            self._last_token_at = time.monotonic()
+            await self._maybe_push_interim(force=changed)
+            if msg.get("finished"):
+                return
+
+    async def _run(self) -> None:
+        """Owns the Soniox connection for this channel's whole lifetime.
+        A transient Soniox-side error (e.g. "408 Request timeout") used to
+        kill transcription for this speaker for the rest of the meeting —
+        the socket died but nothing ever reconnected it, while feed() kept
+        queueing real audio that then went nowhere. Reconnect instead."""
+        reconnects = 0
+        while True:
+            try:
+                await self._reader_loop()
+            except Exception as e:  # noqa: BLE001
+                logger.debug("stream ch%d reader ended: %s", self.channel, e)
+            # Commit whatever was open on this connection. Mark it as a seam
+            # (not a final end) unless we're actually shutting down, so a
+            # mid-sentence cut here reads as "connection seam", matching the
+            # gap/idle flush reasons already used elsewhere in this file.
+            await self._flush(reason="end" if self._closed else "reconnect")
+            if self._closed:
+                return
+            reconnects += 1
+            if reconnects > STREAM_MAX_RECONNECTS:
+                logger.error(
+                    "stream ch%d giving up after %d reconnects to soniox",
+                    self.channel, reconnects,
+                )
+                return
+            logger.info("stream ch%d reconnecting to soniox (attempt %d)", self.channel, reconnects)
+            self._ws = None  # _writer drops frames while this is None instead of erroring
+            await asyncio.sleep(STREAM_RECONNECT_BACKOFF_S)
+            try:
+                await self._connect()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("stream ch%d reconnect failed: %s", self.channel, e)
+                self._ws = None
+                # loop back around: _reader_loop() will raise immediately on
+                # self._ws.recv() against None and we'll retry with backoff
 
     async def _append_final(self, tok: dict) -> None:
         # New segment if there's a real gap since the last final token: close the
@@ -628,12 +688,12 @@ class _ChannelStream:
         except Exception:  # noqa: BLE001
             pass
         # Soniox commits the FINAL tokens only after it sees end-of-audio, in a
-        # trailing burst. WAIT for the reader to drain that burst (it flushes the
-        # remaining segment(s) in its finally) before tearing anything down —
-        # cancelling early here was dropping the tail of every stream.
-        if self._reader_task is not None:
+        # trailing burst. WAIT for _run to drain that burst (it flushes the
+        # remaining segment once self._closed is seen) before tearing anything
+        # down — cancelling early here was dropping the tail of every stream.
+        if self._run_task is not None:
             try:
-                await asyncio.wait_for(asyncio.shield(self._reader_task), timeout=10)
+                await asyncio.wait_for(asyncio.shield(self._run_task), timeout=10)
             except Exception:  # noqa: BLE001
                 pass
         for t in self._tasks:
