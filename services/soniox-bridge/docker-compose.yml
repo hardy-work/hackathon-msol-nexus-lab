@@ -15,6 +15,12 @@ services:
       - SONIOX_ASYNC_OVER_BYTES=${SONIOX_ASYNC_OVER_BYTES:-800000}
       - SONIOX_ASYNC_TIMEOUT_S=${SONIOX_ASYNC_TIMEOUT_S:-25}
       - SONIOX_ASYNC_POLL_MS=${SONIOX_ASYNC_POLL_MS:-400}
+      # How fast the CONFIRMED transcript (top list) catches up to the interim
+      # "đang nghe" line. Defaults live in main.py; override here to tune.
+      # Lower = faster but more prone to cutting a sentence mid-thought (Soniox
+      # itself needs ~1-1.5s to commit a token as final, so don't go far below that).
+      - STREAM_IDLE_FLUSH_MS=${STREAM_IDLE_FLUSH_MS:-2500}
+      - STREAM_SEG_GAP_MS=${STREAM_SEG_GAP_MS:-900}
       # B1 low-latency interim push (opt-in). Empty -> disabled (reverts).
       - LIVE_INGEST_URL=${LIVE_INGEST_URL:-}
       - LIVE_INGEST_TOKEN=${LIVE_INGEST_TOKEN:-}
