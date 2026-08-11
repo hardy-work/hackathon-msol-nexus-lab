@@ -12,6 +12,7 @@ import json
 import os
 import re
 import subprocess
+import unicodedata
 from dataclasses import dataclass
 
 import models
@@ -26,6 +27,35 @@ ROUTES = {
     "action",       # approval/action skill hand-off
     "unsupported",  # likely outside the committed corpus
 }
+
+ACTION_VERBS = re.compile(
+    r"\b(cap nhat|sua|tao|doi|update|create|delete|remove|add|xoa)\b",
+)
+LEADING_LOG_REQUEST = re.compile(r"^\s*(ghi|log)\b")
+
+
+def _plain(text: str) -> str:
+    value = unicodedata.normalize("NFD", str(text).casefold().replace("đ", "d"))
+    return "".join(char for char in value if unicodedata.category(char) != "Mn")
+
+
+def is_action_request(query: str) -> bool:
+    """Return true only for a positive write request, not a negated mention.
+
+    This helper is shared by the deterministic tier-1 guard and the Haiku
+    fallback.  Without one policy, a phrase such as "không tự tạo số" could
+    be rejected as an action before retrieval had a chance to run.
+    """
+    q = _plain(query)
+    for match in ACTION_VERBS.finditer(q):
+        prefix = q[:match.start()]
+        if re.search(r"\bkhong(?:\s+\w+){0,2}\s*$", prefix):
+            continue
+        return True
+    # "Summary project ghi Re-est..." is a read query.  Preserve the existing
+    # contract where `ghi`/`log` means a write only when it starts the request
+    # (for example, "Log thêm 2 giờ cho ĐôNT").
+    return bool(LEADING_LOG_REQUEST.match(q))
 
 ROUTER_PROMPT = """Bạn là bộ định tuyến rẻ cho Project Knowledge Nexus.
 Chỉ phân loại câu hỏi, KHÔNG trả lời câu hỏi và KHÔNG suy đoán dữ liệu.
@@ -104,7 +134,10 @@ def heuristic_route(query: str) -> Decision:
     therefore cannot turn a missing model into a false negative answer.
     """
     q = query.casefold()
-    if re.search(r"\b(cập nhật|sửa|ghi|log|tạo|đổi|update|create|delete)\b", q):
+    # A prohibition in a synthesis prompt ("không tự tạo hoặc tính số") is
+    # not an action request.  Inspect the short token window before each verb
+    # instead of treating every occurrence of "tạo"/"ghi" as an imperative.
+    if is_action_request(q):
         return Decision("action", 0.99, "phát hiện động từ ghi/cập nhật", "heuristic")
     if re.search(r"vì sao|tại sao|nguyên nhân|đánh giá|nhận xét|giải thích", q):
         return Decision("open", 0.75, "câu hỏi diễn giải", "heuristic")

@@ -28,6 +28,8 @@ def main() -> int:
         "Cập nhật task API Login thành Done": "action",
         "Tại sao Sprint 1 bị chậm?": "open",
         "Ai phụ trách API Login?": "structured",
+        "Đánh giá cách Nexus Plan tổ chức thông tin và nêu điểm nổi bật cùng hạn chế; chỉ dùng câu chữ, không tự tạo hoặc tính bất kỳ con số nào.": "open",
+        "Summary project ghi Re-est (h) của Sprint 1 là bao nhiêu": "document",
     }
     for query, expected in heuristics.items():
         got = router.heuristic_route(query).route

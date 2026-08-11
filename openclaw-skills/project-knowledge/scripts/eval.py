@@ -8,6 +8,7 @@ về bản chất — và đó là luận điểm của cả dự án.
   python3 scripts/eval.py [--verbose]
 """
 import json
+import os
 import re
 import sys
 import unicodedata
@@ -73,6 +74,17 @@ def check(q, res):
 def main():
     verbose = "--verbose" in sys.argv or "-v" in sys.argv
     spec = json.loads((ROOT / "questions.json").read_text(encoding="utf-8"))
+    # This suite evaluates the signed Nexus demo snapshot.  Keep the approval
+    # authority local to the test harness, matching the other eval entrypoints
+    # and run_all.sh; production callers must still inject trusted grants.
+    os.environ.setdefault(
+        "PROJECT_KNOWLEDGE_COVERAGE_GRANTS",
+        '{"Đô":["project_knowledge:approve_coverage"]}',
+    )
+    os.environ.setdefault(
+        "PROJECT_KNOWLEDGE_APPROVAL_IDS",
+        "nexus-demo-person-role-20260803,nexus-demo-person-task-20260803",
+    )
     kb = KB()
 
     use_llm = "--llm" in sys.argv

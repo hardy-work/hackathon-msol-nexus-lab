@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""TRUY VẤN 4 BẬC · 3 LOẠI KẾT QUẢ.
+"""LUỒNG TRUY VẤN NHIỀU BẬC · 3 LOẠI KẾT QUẢ.
 
+  Bậc 0  CATALOG SHORTLIST        metadata + page ACL
   Bậc 1  TRUY VẤN CÓ CẤU TRÚC   derived/facts.duckdb + DIMENSION + coverage
                                  tất định · là bậc DUY NHẤT được nói "chắc chắn không"
-  Bậc 2  TÌM KIẾM TỪ KHOÁ        wiki/*.md
-  Bậc 3  LLM ĐỌC TRANG WIKI      claude -p (chỉ bật bằng --llm)
-  Bậc 4  NGUỒN THÔ               raw/*.md
+  Graph  TRUY VẤN QUAN HỆ        derived/graph.json; trả trực tiếp hoặc bổ sung context
+  Bậc 2  HYBRID RETRIEVAL         BM25s + BGE-M3/Chroma, hợp nhất bằng RRF
+  Bậc 3  LLM ĐỌC TRANG WIKI      Sonnet (chỉ bật khi llm=True)
+  Gate 4 KIỂM CHỨNG ĐẦU RA       citation tồn tại + numeric provenance
+
+  raw/* là lớp provenance của citation, không phải retrieval tier độc lập.
 
   Kết quả:  CÓ  ·  CHẮC CHẮN KHÔNG  ·  KHÔNG TÌM THẤY
 
@@ -816,8 +820,7 @@ def tier1(kb, q):
     q = normalize_query(q)
     qa = strip_accent(q)
     who = kb.find_people(q)
-    if (re.search(r"\b(cap nhat|sua|tao|doi|update|create|xoa|delete|remove|add)\b", qa, re.I)
-            or re.match(r"\s*(ghi|log)\b", qa, re.I)):
+    if router.is_action_request(q):
         return Result(1, NF,
                       "Đây là yêu cầu ghi/cập nhật dữ liệu, không phải câu hỏi tra cứu.",
                       reason="Project Knowledge chỉ tạo action proposal; action skill riêng phải kiểm tra quyền và xin approval trước khi ghi.")
