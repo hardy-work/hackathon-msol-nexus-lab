@@ -44,6 +44,11 @@ giờ?” hoặc các truy vấn không có yêu cầu nạp file. Các câu h�
 - Mọi ingest chạy trong isolated Git worktree. Không chạy extractor trực tiếp
   trên corpus canonical và không tự merge vào `main`.
 - Review artifact là bản kiểm tra/audit, không phải source of truth.
+- Markdown thường không cần có YAML frontmatter. Intake giữ nguyên original và
+  sinh metadata cho raw/wiki theo thứ tự: `domain` trong file → `org` trong file
+  → domain của version hiện tại khi re-ingest → `ingest.default_domain` đã
+  curate trong `access.yml`. Domain được khai rõ nhưng không nằm trong
+  `schema.yml` phải fail sớm; không để LLM tự đoán hay lấy domain từ text Slack.
 - Chỉ deployment layer mới được publish atomically, reload runtime và ghi nhận
   `published`; `ready_to_publish` chưa có nghĩa là tài liệu đã khả dụng.
 
@@ -115,6 +120,7 @@ export KNOWLEDGE_BASE_REPO=/path/to/hackathon-msol-nexus-lab
 export KNOWLEDGE_BASE_STATE_DIR=/path/to/persistent/runtime-state
 export KNOWLEDGE_BASE_PYTHON=/path/to/project-venv/bin/python
 export KNOWLEDGE_BASE_RUNTIME_ROOT=/path/to/runtime/skills/knowledge-base
+export KNOWLEDGE_BASE_CLAUDE_BIN=/path/to/claude
 
 $KNOWLEDGE_BASE_PYTHON \
   "$KNOWLEDGE_BASE_REPO/openclaw-skills/knowledge-base/scripts/ingest_job.py" \

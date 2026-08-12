@@ -36,15 +36,25 @@ def title(metadata: dict, body: str, fallback: str) -> str:
     for line in body.splitlines():
         if line.startswith("# "):
             return line[2:].strip()
+    # Documents copied from rich-text systems commonly use a bold first line
+    # instead of a Markdown H1.  Treat only a whole-line strong heading as a
+    # title; do not guess from arbitrary prose.
+    for line in body.splitlines():
+        value = line.strip()
+        match = re.fullmatch(r"\*\*(.+?)\*\*", value)
+        if match and match.group(1).strip():
+            return match.group(1).strip()
     return fallback
 
 
-def domain(metadata: dict) -> str:
-    """Resolve an explicit domain, or normalize the document organisation."""
+def domain(metadata: dict, fallback: str = "") -> str:
+    """Resolve explicit metadata first, then a trusted curated fallback."""
     if metadata.get("domain"):
         return str(metadata["domain"])
     if metadata.get("org"):
         value = slug(str(metadata["org"]))
         if value:
             return value
+    if str(fallback or "").strip():
+        return str(fallback).strip()
     raise ValueError("Markdown source thiếu `domain` hoặc `org` trong frontmatter")

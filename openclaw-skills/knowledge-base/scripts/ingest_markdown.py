@@ -25,7 +25,7 @@ def ingest_one(root: Path, document: dict) -> Path:
         raise FileNotFoundError(f"thiếu raw Markdown: {raw_path.relative_to(root)}")
     metadata, body = markdown_source.parse(raw_path)
     schema = yaml.safe_load((root / "schema.yml").read_text(encoding="utf-8"))
-    domain = markdown_source.domain(metadata)
+    domain = markdown_source.domain(metadata, fallback=str(document.get("domain") or ""))
     allowed = schema["dimensions"]["domain"]["values"]
     allowed = set(allowed) if not isinstance(allowed, dict) else set(allowed)
     if domain not in allowed:
@@ -47,6 +47,9 @@ def ingest_one(root: Path, document: dict) -> Path:
         "raw_paths": [raw_rel],
         "generated_by": "scripts/ingest_markdown.py",
     }
+    for key in ("source_name", "updated_at", "updated_by"):
+        if document.get(key):
+            frontmatter[key] = document[key]
     header = yaml.safe_dump(frontmatter, allow_unicode=True, sort_keys=False).strip()
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(f"---\n{header}\n---\n{body}", encoding="utf-8")

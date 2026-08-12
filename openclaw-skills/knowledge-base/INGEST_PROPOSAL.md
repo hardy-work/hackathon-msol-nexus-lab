@@ -41,6 +41,14 @@ Lệnh kiểm tra file tồn tại, loại file, kích thước, symlink, SHA-25
 định identity/version của `intake.py`. Proposal được lưu ngoài corpus tại
 `KNOWLEDGE_BASE_STATE_DIR/ingest-proposals/`.
 
+Với Markdown, người dùng có thể upload tài liệu thông thường không có YAML
+frontmatter. Original và SHA-256 luôn giữ nguyên. Intake sinh metadata cho
+raw/wiki bằng dữ liệu tất định theo thứ tự: `domain` trong file, `org` trong
+file, domain của version hiện tại khi re-ingest, rồi
+`access.yml → ingest.default_domain`. Giá trị cuối phải thuộc
+`schema.yml → dimensions.domain`; domain được khai rõ nhưng chưa curate bị chặn
+ngay lúc tạo proposal, không fallback và không hỏi LLM suy đoán.
+
 Nếu tên file khớp document cũ nhưng chưa đủ căn cứ chọn identity, proposal dừng
 ở `awaiting_identity`. Một user trong allowlist phải xác nhận `doc_id`:
 
