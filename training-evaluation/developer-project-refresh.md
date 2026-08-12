@@ -233,7 +233,7 @@
 ## 6. Giới hạn cần xác nhận
 
 - Freshness hiện tại: `fresh` — derived khớp với originals/raw/wiki hiện tại
-- Nếu freshness là `stale` hoặc `unknown`, rebuild/kiểm tra `project-knowledge` trước khi dùng handbook cho quyết định mới.
+- Nếu freshness là `stale` hoặc `unknown`, rebuild/kiểm tra `knowledge-base` trước khi dùng handbook cho quyết định mới.
 - Tài liệu chỉ phản ánh snapshot KB tại thời điểm sinh; kiểm tra freshness trước khi dùng cho quyết định mới.
 - Thông tin không xuất hiện trong ma trận nguồn không được coi là không tồn tại.
 - HR/PM phải xác nhận nội dung thiếu hoặc mâu thuẫn trước khi phát hành handbook chính thức.

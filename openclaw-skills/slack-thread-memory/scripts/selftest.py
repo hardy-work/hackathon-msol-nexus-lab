@@ -21,7 +21,7 @@ def message(ts: str, text: str, *, thread_ts: str | None = None, user: str = "U1
 
 
 def main() -> int:
-    assert "project-knowledge" not in str(default_state_dir()).lower()
+    assert "knowledge-base" not in str(default_state_dir()).lower()
     assert redact_text("token=xoxb-secret password=hunter2") == (
         "token=[REDACTED] password=[REDACTED]"
     )

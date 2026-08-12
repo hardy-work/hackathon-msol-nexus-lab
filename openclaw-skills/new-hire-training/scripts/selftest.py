@@ -16,7 +16,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
-    kb = root.parent / "project-knowledge"
+    kb = root.parent / "knowledge-base"
     pages = create_training.discover_pages(kb)
     assert pages, "expected published wiki pages"
     assert all(page.visibility in create_training.ALLOWED_VISIBILITY for page in pages)

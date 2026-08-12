@@ -37,4 +37,4 @@ project/team/role/practice portion.
 - Verify project dates, people and effort against the current project wiki/facts.
 - Keep OCR caveats and version numbers visible.
 - Ask HR/PM to resolve missing or conflicting information.
-- Store the generated artifact outside the project-knowledge corpus unless the owner explicitly approves a separate ingest.
+- Store the generated artifact outside the knowledge-base corpus unless the owner explicitly approves a separate ingest.

@@ -87,11 +87,15 @@ servers / backend services it depends on.
   Needs a `.env` in this folder with `GOOGLE_SHEETS_API_KEY` only (read-only,
   no Service Account needed) — see `.env.example`.
 
-- [`openclaw-skills/project-knowledge/`](openclaw-skills/project-knowledge/) —
+- [`openclaw-skills/knowledge-base/`](openclaw-skills/knowledge-base/) —
   read-only Nexus project knowledge skill. It answers questions from the
   committed Nexus Plan corpus with DuckDB/facts, wiki citations, confidence and
   explicit `not_in_kb`/`confident_no` semantics. It never writes Jira, Sheets or
   Slack. The corpus is self-contained; `derived/` indexes are rebuilt locally.
+- [`openclaw-skills/knowledge-ingest/`](openclaw-skills/knowledge-ingest/) —
+  separate Slack-upload routing skill for controlled Nexus Wiki/KB ingest. It
+  validates the trusted Slack user ID, file hash/type, review gates and isolated
+  worktree before handing the shared ingest engine to the deployment publisher.
 - [`openclaw-skills/slack-evidence-sheet/`](openclaw-skills/slack-evidence-sheet/) —
   turns one Slack evidence-collection thread into a brand-new Google Sheet: one
   row per person, with their email, the time they posted, and their attached
@@ -168,7 +172,7 @@ For the offline Nexus Q&A demo, install its pinned Python dependencies and run
 the skill-local demo:
 
 ```bash
-cd openclaw-skills/project-knowledge
+cd openclaw-skills/knowledge-base
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 bash demo/run_demo.sh
@@ -183,13 +187,13 @@ The query boundary is fail-closed. Inject a trusted identity and roles from the
 host runtime (SSO/Slack mapping), for example:
 
 ```bash
-PROJECT_KNOWLEDGE_ACTOR=local-demo \
-PROJECT_KNOWLEDGE_ROLES=project_member \
+KNOWLEDGE_BASE_ACTOR=local-demo \
+KNOWLEDGE_BASE_ROLES=project_member \
 python3 scripts/run.py --project nexus --query "ĐôNT làm vai trò gì?"
 ```
 
 Coverage receipts do not grant themselves authority. Production also injects
-`PROJECT_KNOWLEDGE_COVERAGE_GRANTS` and `PROJECT_KNOWLEDGE_APPROVAL_IDS` from an
+`KNOWLEDGE_BASE_COVERAGE_GRANTS` and `KNOWLEDGE_BASE_APPROVAL_IDS` from an
 approval service; the offline test runner supplies demo-only values.
 
 The pipeline also builds a task relationship graph and records corpus
@@ -203,7 +207,7 @@ are ingested in an isolated `ingest/<doc>@vN` worktree using
 automatically.
 
 The stage-by-stage mapping and remaining data boundaries are documented in
-[`openclaw-skills/project-knowledge/FLOW_STATUS.md`](openclaw-skills/project-knowledge/FLOW_STATUS.md).
+[`openclaw-skills/knowledge-base/FLOW_STATUS.md`](openclaw-skills/knowledge-base/FLOW_STATUS.md).
 
 `demo/run_slack_demo.sh` exercises the Slack-shaped adapter locally without a
 token. A minimal signed HTTP boundary is available at
@@ -212,14 +216,14 @@ token. A minimal signed HTTP boundary is available at
 Events API/app-mention replies, configure the single NexusBot
 `SLACK_BOT_TOKEN` in the gateway service environment so the gateway
 acknowledges before retrieval and posts asynchronously; the Project Knowledge
-skill remains read-only. Set `PROJECT_KNOWLEDGE_SLACK_ROLE_MAP` to a trusted
+skill remains read-only. Set `KNOWLEDGE_BASE_SLACK_ROLE_MAP` to a trusted
 JSON mapping of real Slack `U...` user IDs to roles. Unknown users fail closed.
 The full app setup and production-safe environment defaults are in
-`openclaw-skills/project-knowledge/adapters/slack/SLACK.md` and its
+`openclaw-skills/knowledge-base/adapters/slack/SLACK.md` and its
 `.env.example`.
 
 Production Slack delivery uses a durable idempotent queue with retry/dead-letter;
-see `adapters/slack/.env.example`. Mount `PROJECT_KNOWLEDGE_STATE_DIR` on persistent
+see `adapters/slack/.env.example`. Mount `KNOWLEDGE_BASE_STATE_DIR` on persistent
 storage because it owns jobs, query cache, conversation retention and privacy-safe
 telemetry. `/health` reports aggregate queue/runtime status.
 
@@ -233,7 +237,10 @@ gateway:
 
 ```bash
 mkdir -p ~/.openclaw/workspace/skills
-ln -s "$(pwd)" ~/.openclaw/workspace/skills/project-knowledge
+ln -s "$(pwd)/openclaw-skills/knowledge-base" \
+  ~/.openclaw/workspace/skills/knowledge-base
+ln -s "$(pwd)/openclaw-skills/knowledge-ingest" \
+  ~/.openclaw/workspace/skills/knowledge-ingest
 ```
 
 `.env` and `.mcp.json` are gitignored (they hold API keys) — always copy

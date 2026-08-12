@@ -29,7 +29,7 @@ vụ dùng cùng một Slack token trong service environment của NexusBot.
   gateway, không lấy từ câu chữ người dùng.
 - Chỉ lưu context hội thoại của Slack vào DB riêng `SLACK_THREAD_MEMORY_STATE_DIR`.
 - Không ghi Slack message vào `documents.yml`, `raw/`, `structured/`, `wiki/`,
-  `derived/` hoặc `project-knowledge` conversation DB.
+  `derived/` hoặc `knowledge-base` conversation DB.
 - Context được đánh dấu là dữ liệu hội thoại không tin cậy; không coi chat là
   wiki fact nếu không có flow ingest explicit.
 - Retry cùng message là upsert idempotent; thread khác không thể đọc context.
