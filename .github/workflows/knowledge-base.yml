@@ -1,0 +1,45 @@
+name: Knowledge Base checks
+
+on:
+  pull_request:
+    paths:
+      - "openclaw-skills/knowledge-base/**"
+      - ".github/workflows/knowledge-base.yml"
+  push:
+    branches: [main]
+    paths:
+      - "openclaw-skills/knowledge-base/**"
+      - ".github/workflows/knowledge-base.yml"
+
+jobs:
+  offline-demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: openclaw-skills/knowledge-base/requirements.txt
+      - name: Install skill dependencies
+        run: python -m pip install -r openclaw-skills/knowledge-base/requirements.txt
+      - name: Run intake to re-ingest to Gate 3a to derive
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+          KNOWLEDGE_BASE_EMBEDDING_BACKEND: "hash"
+        run: python openclaw-skills/knowledge-base/scripts/ingest_flow_selftest.py
+      - name: Run Gate 3a history metadata contract
+        run: python openclaw-skills/knowledge-base/scripts/lint_history_selftest.py
+      - name: Run Gate 3b consensus contract
+        run: python openclaw-skills/knowledge-base/scripts/review_selftest.py
+      - name: Run read-only filesystem boundary contract
+        run: python openclaw-skills/knowledge-base/scripts/filesystem_boundary_selftest.py
+      - name: Run deterministic Nexus demo
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+          KNOWLEDGE_BASE_EMBEDDING_BACKEND: "hash"
+          KNOWLEDGE_BASE_COVERAGE_GRANTS: '{"Đô":["knowledge_base:approve_coverage"]}'
+          KNOWLEDGE_BASE_APPROVAL_IDS: "nexus-demo-person-role-20260803,nexus-demo-person-task-20260803"
+        run: bash openclaw-skills/knowledge-base/demo/run_demo.sh
