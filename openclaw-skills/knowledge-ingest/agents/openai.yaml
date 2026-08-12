@@ -1,4 +1,4 @@
 interface:
   display_name: "Knowledge Ingest"
-  short_description: "Nạp hoặc cập nhật tài liệu KB có kiểm soát"
-  default_prompt: "Use $knowledge-ingest to validate and ingest an attached file as new or updated knowledge-base content."
+  short_description: "Nạp tài liệu KB bằng background job an toàn"
+  default_prompt: "Use $knowledge-ingest to submit the attached file once, acknowledge immediately, and report the background publish result."

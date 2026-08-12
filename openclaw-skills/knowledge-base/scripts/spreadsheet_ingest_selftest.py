@@ -13,9 +13,11 @@ import yaml
 
 import document_registry
 import extract_spreadsheet
+import ingest_flow
 import ingest_spreadsheet
 import numeric_guard
 import review_artifact
+import spreadsheet_contract
 
 
 def digest(path: Path) -> str:
@@ -85,6 +87,42 @@ def main() -> int:
         page = ingest_spreadsheet.ingest_one(root, document)
         assert page == root / "wiki/sources/upload.md"
         assert "raw/upload.md" in page.read_text(encoding="utf-8")
+        bundle = review_artifact.write_bundle(
+            artifact, root / ".runtime/review"
+        )
+        contract = spreadsheet_contract.validate(
+            root, "upload", review_artifact_path=Path(bundle["json_path"])
+        )
+        assert contract["cell_count"] == 5
+        assert contract["review_cell_count"] == 5
+        assert contract["gate3b_policy"] == "deterministic-source-contract"
+
+        original_page = page.read_text(encoding="utf-8")
+        page.write_text(original_page + "invented\n", encoding="utf-8")
+        try:
+            spreadsheet_contract.validate(root, "upload")
+        except ValueError as exc:
+            assert "byte-equivalent" in str(exc)
+        else:
+            raise AssertionError("wiki body khác raw phải bị completeness gate chặn")
+        page.write_text(original_page, encoding="utf-8")
+        original_changed = ingest_flow.changed_wiki_pages
+        original_run = ingest_flow.run
+        try:
+            ingest_flow.changed_wiki_pages = lambda _worktree, _skill: [
+                "wiki/sources/upload.md"
+            ]
+
+            def unexpected_llm(*_args, **_kwargs):
+                raise AssertionError("deterministic XLSX source không được gọi LLM review")
+
+            ingest_flow.run = unexpected_llm
+            ingest_flow.review_changed_pages(
+                root, root, root / "scripts", "upload", 1
+            )
+        finally:
+            ingest_flow.changed_wiki_pages = original_changed
+            ingest_flow.run = original_run
         guard = numeric_guard.AnswerGuard(root)
         assert "12.5" in guard.by_page["wiki/sources/upload.md"]
         assert guard.check("12.5", cites=["wiki/sources/upload.md"]) == []

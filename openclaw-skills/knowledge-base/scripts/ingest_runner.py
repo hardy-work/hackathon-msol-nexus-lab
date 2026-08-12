@@ -2,9 +2,9 @@
 """Execute an authorized ingest proposal in an isolated worktree.
 
 The runner is the bridge between the Slack-facing allowlist and the existing
-``ingest_flow.py``.  It intentionally stops at ``ready_to_publish``:
-the host/deployment layer owns the final atomic merge and runtime reload, then
-calls ``record-published`` with the new corpus version.
+``ingest_flow.py``. It stops at ``ready_to_publish`` after fast release-blocking
+gates and a content-addressed manifest. ``ingest_publisher.py`` then owns the
+single deterministic merge/promote/record transition.
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ingest_flow  # noqa: E402
 import ingest_proposal  # noqa: E402
 import intake  # noqa: E402
+import publish_gates  # noqa: E402
 import review_artifact  # noqa: E402
 
 
@@ -30,7 +31,7 @@ def _now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
 
 
-def run(proposal_id: str, *, base: str = "main", run_all: bool = True,
+def run(proposal_id: str, *, base: str = "main", run_all: bool = False,
         root: Path = ROOT
         ) -> dict:
     proposal = ingest_proposal.load(proposal_id, root)
@@ -65,7 +66,13 @@ def run(proposal_id: str, *, base: str = "main", run_all: bool = True,
     ingest_proposal.save(proposal, root)
     branch = None
     worktree = None
+    base_commit = None
+    validation = None
     try:
+        base_commit = subprocess.check_output(
+            [ingest_flow.git_executable(), "rev-parse", base],
+            cwd=ingest_flow.REPO, text=True,
+        ).strip()
         branch, worktree = ingest_flow.prepare(doc_id, version, base)
         target = ingest_flow.skill_root(worktree)
         registered = intake.register(target, source, decision)
@@ -73,9 +80,9 @@ def run(proposal_id: str, *, base: str = "main", run_all: bool = True,
         # DuckDB/graph/RAG derive and corpus freshness build in the worktree.
         ingest_flow.execute(worktree, doc_id, version, review=True)
         if run_all:
-            # run_all.sh is intentionally executed only inside the isolated
-            # worktree.  It rebuilds derived/ from scratch and is never allowed
-            # to delete or rebuild the canonical root directly.
+            # Full code/demo regression is opt-in. Production data ingest uses
+            # publish_gates below, which validates the exact artifacts that
+            # will be promoted without rebuilding them a second time.
             run_all_env = os.environ.copy()
             # Keep the interpreter selected by the host runner.  Otherwise a
             # launchd service may fall back to macOS system Python even though
@@ -83,6 +90,14 @@ def run(proposal_id: str, *, base: str = "main", run_all: bool = True,
             run_all_env.setdefault("KNOWLEDGE_BASE_PYTHON", sys.executable)
             subprocess.run(["bash", "scripts/run_all.sh"], cwd=target,
                            env=run_all_env, check=True)
+        artifact_json = None
+        review_bundle = proposal.get("review_artifact") or {}
+        if review_bundle.get("json_path"):
+            artifact_json = Path(str(review_bundle["json_path"]))
+        validation = publish_gates.run(
+            target, proposal_id=proposal_id, doc_id=doc_id, version=version,
+            review_artifact_path=artifact_json, git_commit=base_commit,
+        )
     except Exception as exc:
         proposal = ingest_proposal.load(proposal_id, root)
         proposal["status"] = "failed"
@@ -101,7 +116,9 @@ def run(proposal_id: str, *, base: str = "main", run_all: bool = True,
     proposal["execution"] = {
         "status": "gates_passed", "started_at": started, "finished_at": _now(),
         "base": base, "branch": branch, "worktree": str(worktree),
+        "base_commit": base_commit,
         "registered": registered,
+        "validation": validation,
         "publish_required": True,
         "runtime_reload_required": True,
     }
@@ -141,8 +158,10 @@ def main(argv: list[str] | None = None) -> int:
     run_parser = sub.add_parser("run")
     run_parser.add_argument("proposal_id")
     run_parser.add_argument("--base", default="main")
+    run_parser.add_argument("--full-regression", action="store_true",
+                            help="opt-in: chạy full run_all.sh ngoài publish gates")
     run_parser.add_argument("--skip-run-all", action="store_true",
-                            help="chỉ dùng fixture/debug; production flow phải chạy run_all.sh")
+                            help=argparse.SUPPRESS)
     publish_parser = sub.add_parser("record-published")
     publish_parser.add_argument("proposal_id")
     publish_parser.add_argument("--corpus-version", required=True)
@@ -150,7 +169,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "run":
-            result = run(args.proposal_id, base=args.base, run_all=not args.skip_run_all,
+            result = run(args.proposal_id, base=args.base,
+                         run_all=args.full_regression and not args.skip_run_all,
                          root=args.root.resolve())
         else:
             result = record_published(

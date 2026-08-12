@@ -65,10 +65,14 @@ Sheet/Doc và gửi link thông báo; Google credential nằm ở adapter ngoài
 Review artifact là bản kiểm tra/audit, không phải source of truth. File upload,
 raw artifact và wiki generated mới là provenance của corpus.
 
-## Chạy ingest và publish
+## Chạy background ingest và publish
 
 ```bash
-python3 scripts/ingest_runner.py run <proposal_id>
+python3 scripts/ingest_job.py submit \
+  --file /staging/upload.xlsx \
+  --actor U0APQSSGKTM \
+  --channel-id C123 \
+  --thread-ts 1785313275.818529
 ```
 
 Trong Gateway deploy, NexusBot phải gọi bản runner từ Git repository chính,
@@ -79,7 +83,9 @@ cho host runner:
 export KNOWLEDGE_BASE_REPO=/Users/mor_minhhieu/repos/hackathon-msol-nexus-lab
 export KNOWLEDGE_BASE_CLAUDE_BIN=/opt/homebrew/bin/claude
 export KNOWLEDGE_BASE_PYTHON=/Users/mor_minhhieu/.openclaw/workspace-hackathon/skills/knowledge-base/.venv/bin/python
-$KNOWLEDGE_BASE_PYTHON /Users/mor_minhhieu/repos/hackathon-msol-nexus-lab/openclaw-skills/knowledge-base/scripts/ingest_runner.py run <proposal_id>
+export KNOWLEDGE_BASE_RUNTIME_ROOT=/Users/mor_minhhieu/.openclaw/workspace-hackathon/skills/knowledge-base
+$KNOWLEDGE_BASE_PYTHON /Users/mor_minhhieu/repos/hackathon-msol-nexus-lab/openclaw-skills/knowledge-base/scripts/ingest_job.py submit \
+  --file /staging/upload.xlsx --actor U0APQSSGKTM
 ```
 
 `KNOWLEDGE_BASE_STATE_DIR` vẫn trỏ tới state directory dùng chung của
@@ -88,10 +94,15 @@ kiểm tra `openpyxl` trước khi chọn Python để tránh rơi về system P
 dependency. Runner tự động dừng ở `ready_to_publish`, không tự merge vào corpus
 chính.
 
-Runner tự tạo review artifact local nếu NexusBot chưa tạo trước, sau đó tạo
-isolated worktree, register source, chạy extractor, lint, Gate 3b, DB/graph/RAG
-derive và `run_all.sh`. Runner dừng ở `ready_to_publish` để deployment layer
-publish atomically, gọi `runtime_engine.KnowledgeRuntime.reload()`, rồi ghi nhận:
+`submit` tạo proposal rồi trả ngay để NexusBot ACK Slack. Background worker tự
+tạo review artifact, isolated worktree, register source, chạy extractor, lint,
+Gate 3b, DB/graph/RAG derive và publish gates. `run_all.sh` chỉ còn là
+`--full-regression` opt-in; production không dựng lại toàn corpus lần thứ hai.
+
+`ingest_publisher.py` commit đúng corpus write-set, chỉ fast-forward khi base
+commit chưa đổi, kiểm tra input digest sau merge, rồi promote chính `derived/`
+đã được test và checksum trong `release_manifest.json`. Cuối cùng publisher
+ghi nhận `published`; không để Agent tự gọi Git/build/reload theo nhiều vòng.
 
 Với initial ingest, Gate 3b chỉ review các trang `wiki/*.md` vừa được tạo hoặc
 thay đổi trong isolated worktree; không review lại toàn bộ corpus. Điều này giữ
@@ -99,7 +110,8 @@ thay đổi trong isolated worktree; không review lại toàn bộ corpus. Đi�
 không liên quan, vào một prompt review. Re-ingest vẫn review đúng write-set do
 `reingest-plan.json` khai báo.
 
-```bash
-python3 scripts/ingest_runner.py record-published <proposal_id> \
-  --corpus-version nexus-... --runtime-reloaded
-```
+Generic Excel source page được miễn LLM review chỉ khi
+`spreadsheet_contract.py` chứng minh đầy đủ original hash, cell locator,
+formula/value và raw/wiki body. Mọi trang có diễn giải LLM vẫn dùng đồng thuận
+K=3. Gateway lấy completion từ `ingest_job.py status <proposal_id>` để gửi kết
+quả cuối vào Slack thread.

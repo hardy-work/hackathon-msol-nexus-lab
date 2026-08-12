@@ -88,6 +88,7 @@ echo; echo "══ GRAPH RETRIEVAL (offline) ══"; "$PY" scripts/graph_selfte
 echo; echo "══ INVENTORY (offline) ══"; "$PY" scripts/inventory_selftest.py
 echo; echo "══ AUTOMATIC FILE INTAKE (offline) ══"; "$PY" scripts/intake_selftest.py
 echo; echo "══ GENERIC XLSX INGEST (offline) ══"; "$PY" scripts/spreadsheet_ingest_selftest.py
+echo; echo "══ RELEASE MANIFEST + ATOMIC PUBLISH (offline) ══"; "$PY" scripts/release_publish_selftest.py
 echo; echo "══ SLACK INGEST ALLOWLIST (offline) ══"; "$PY" scripts/ingest_proposal_selftest.py
 echo; echo "══ MARKDOWN INTAKE → WIKI (offline) ══"; "$PY" scripts/markdown_ingest_selftest.py
 echo; echo "══ LUỒNG VĂN · .docx/.pdf → Stage 4 → Gate 3a/4 (offline) ══"; "$PY" scripts/van_selftest.py
