@@ -1,6 +1,6 @@
 ---
 name: project-knowledge
-description: Tra cứu thông tin dự án Nexus từ Excel/wiki/facts có provenance, citation và độ tin cậy rõ ràng. Dùng khi người dùng hỏi về task, assignee, role, sprint, effort, lịch, resource, risk, issue, backlog hoặc cần onboarding theo dữ liệu dự án; không dùng skill này để tự ý ghi Jira, gửi tin nhắn hay thay đổi dữ liệu.
+description: Tra cứu thông tin dự án Nexus từ Excel/wiki/facts ĐÃ INGEST (dữ liệu tĩnh, có thể cũ hơn Sheet thật), có provenance, citation và độ tin cậy rõ ràng. Dùng khi người dùng hỏi về task, assignee, role, sprint, effort, lịch, resource, risk, issue, backlog hoặc cần onboarding theo dữ liệu dự án đã kiểm chứng trong kho. KHÔNG dùng skill này khi người dùng hỏi "dashboard"/"tổng quan dự án"/số liệu SỐNG cập nhật hôm nay — trường hợp đó dùng skill `dashboard` (đọc trực tiếp Google Sheet, luôn mới nhất). Không dùng skill này để tự ý ghi Jira, gửi tin nhắn hay thay đổi dữ liệu.
 ---
 
 # Project Knowledge
