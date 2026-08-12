@@ -15,10 +15,12 @@ from pathlib import Path
 from typing import Any
 
 import openpyxl
+from openpyxl.utils import get_column_letter
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import artifact_paths  # noqa: E402
 import document_registry  # noqa: E402
+from spreadsheet_reader import iter_row_pairs  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -68,19 +70,28 @@ def extract_one(root: Path, document: dict[str, Any]) -> tuple[Path, Path, int]:
             sheet_lines = [f"## Sheet `{formula_sheet.title}`", ""]
             max_row = max(formula_sheet.max_row or 0, value_sheet.max_row or 0)
             max_col = max(formula_sheet.max_column or 0, value_sheet.max_column or 0)
-            for row_no in range(1, max_row + 1):
+            for row_no, formula_row, value_row in iter_row_pairs(
+                formula_sheet, value_sheet
+            ):
+                width = max(len(formula_row), len(value_row))
+                max_row = max(max_row, row_no)
+                max_col = max(max_col, width)
                 cells: dict[str, dict[str, Any]] = {}
                 parts: list[str] = []
-                for col_no in range(1, max_col + 1):
-                    formula_cell = formula_sheet.cell(row_no, col_no)
-                    value_cell = value_sheet.cell(row_no, col_no)
-                    raw = formula_cell.value
-                    evaluated = value_cell.value
+                for offset in range(width):
+                    formula_cell = (
+                        formula_row[offset] if offset < len(formula_row) else None
+                    )
+                    value_cell = value_row[offset] if offset < len(value_row) else None
+                    if formula_cell is None and value_cell is None:
+                        continue
+                    raw = formula_cell.value if formula_cell is not None else None
+                    evaluated = value_cell.value if value_cell is not None else None
                     formula = raw if isinstance(raw, str) and raw.startswith("=") else None
                     value = _value(evaluated if formula and evaluated is not None else raw)
                     if value is None or value == "":
                         continue
-                    col = formula_cell.column_letter
+                    col = get_column_letter(offset + 1)
                     src = f"{formula_sheet.title}!{col}{row_no}"
                     cell_data: dict[str, Any] = {
                         "header": col,
@@ -89,7 +100,9 @@ def extract_one(root: Path, document: dict[str, Any]) -> tuple[Path, Path, int]:
                     }
                     if formula:
                         cell_data["formula"] = formula
-                    if isinstance(evaluated, (int, float)) and not isinstance(evaluated, bool):
+                    if isinstance(evaluated, (int, float)) and not isinstance(
+                        evaluated, bool
+                    ):
                         cell_data["value_num"] = evaluated
                         numeric_cells[src] = {"value": evaluated, "src": src}
                     cells[col] = cell_data
