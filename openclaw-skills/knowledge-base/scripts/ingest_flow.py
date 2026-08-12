@@ -16,6 +16,7 @@ from pathlib import Path
 
 from document_registry import by_version
 import intake
+import spreadsheet_contract
 import reingest
 
 SKILL = Path(__file__).resolve().parent.parent
@@ -166,12 +167,25 @@ def changed_wiki_pages(worktree: Path, skill: Path) -> list[str]:
     return sorted(pages)
 
 
-def review_changed_pages(worktree: Path, skill: Path, scripts: Path, env=None) -> None:
-    """Run Gate 3b only for wiki pages written by this ingest."""
-    pages = changed_wiki_pages(worktree, skill)
+def review_changed_pages(worktree: Path, skill: Path, scripts: Path,
+                         doc_id: str, version: int, env=None,
+                         pages: list[str] | None = None) -> None:
+    """Review semantic pages; prove deterministic XLSX source pages by contract."""
+    pages = pages if pages is not None else changed_wiki_pages(worktree, skill)
     if not pages:
         raise RuntimeError("ingest không tạo hoặc thay đổi trang wiki nào để review")
+    deterministic: dict | None = None
     for page in pages:
+        if spreadsheet_contract.is_deterministic_source_page(skill, page, doc_id):
+            deterministic = spreadsheet_contract.validate(
+                skill, doc_id, version=version
+            )
+            print(
+                "✓ Gate 3b deterministic waiver · "
+                f"{page} · {deterministic['cell_count']} cells có locator",
+                flush=True,
+            )
+            continue
         run([sys.executable, str(scripts / "review.py"), "--page", page], skill, env)
 
 
@@ -258,12 +272,19 @@ def execute(worktree: Path, doc_id: str, version: int, review: bool) -> None:
         )
     run([sys.executable, str(scripts / "lint.py")], skill, env)
     if review:
-        command = [sys.executable, str(scripts / "review.py")]
-        if plan_path:
-            command += ["--plan", str(plan_path.relative_to(skill))]
-            run(command, skill, env)
+        if plan_path and extractor != "spreadsheet":
+            run([
+                sys.executable, str(scripts / "review.py"),
+                "--plan", str(plan_path.relative_to(skill)),
+            ], skill, env)
         else:
-            review_changed_pages(worktree, skill, scripts, env)
+            scoped_pages = None
+            if plan_path:
+                plan = json.loads(plan_path.read_text(encoding="utf-8"))
+                scoped_pages = list((plan.get("page_actions") or {}).get("write") or [])
+            review_changed_pages(
+                worktree, skill, scripts, doc_id, version, env, pages=scoped_pages
+            )
     run([sys.executable, str(scripts / "build_db.py")], skill, env)
     run([sys.executable, str(scripts / "build_graph.py")], skill, env)
     run([sys.executable, str(scripts / "build_rag_indexes.py")], skill, env)

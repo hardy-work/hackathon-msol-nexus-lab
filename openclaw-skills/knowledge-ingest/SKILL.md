@@ -5,8 +5,9 @@ description: >
   muốn thêm, bổ sung, cập nhật, sửa hay thay thế dữ liệu/tài liệu hiện có và có
   file Excel, Markdown, DOCX hoặc PDF đính kèm. Luồng tự phân biệt nạp mới với
   re-ingest, đồng thời kiểm tra Slack user ID trong allowlist, hash, loại file,
-  review, isolated worktree và chỉ publish sau khi các gate đạt yêu cầu. Không
-  dùng để trả lời truy vấn thông thường hoặc thay đổi dữ liệu ngoài pipeline.
+  review, isolated worktree, background job và chỉ publish artifact đúng digest
+  sau khi các gate đạt yêu cầu. Dùng entrypoint submit một lần và ACK Slack ngay;
+  không dùng để trả lời truy vấn thông thường hoặc thay đổi dữ liệu ngoài pipeline.
 ---
 
 # Knowledge ingest
@@ -54,25 +55,55 @@ openclaw-skills/knowledge-base/access.yml
 
 ## Luồng chuẩn
 
-NexusBot gọi các entrypoint trong skill `knowledge-base` theo thứ tự:
+NexusBot gọi đúng một entrypoint `ingest_job.py submit`. Không để LLM tự dò và
+gọi lần lượt Git, build, merge, reload hoặc `record-published`.
 
 ```text
 mention + file
-  → ingest_proposal.py create
-  → review_artifact.py
+  → ingest_job.py submit
+  → proposal + background job persistent
+  → ACK Slack ngay với proposal_id
+  → worker tạo review artifact
   → confirm-identity (nếu cần)
   → ingest_runner.py run
   → isolated worktree
   → intake / extract / structure / wiki ingest
   → Gate 1, Gate 2, Gate 3a, Gate 3b
   → DuckDB / graph / RAG derive
+  → publish gates + release manifest
   → ready_to_publish
-  → deployment publish + runtime reload
-  → record-published
+  → ingest_publisher.py: ff-only merge + exact artifact promotion
+  → digest auto-reload + record-published
+  → gateway gửi completion artifact vào Slack thread
 ```
 
 Tài liệu vận hành chi tiết nằm tại
 `openclaw-skills/knowledge-base/INGEST_PROPOSAL.md`.
+
+## Submit từ Slack
+
+Truyền Slack user ID từ event envelope, không lấy từ text/display name:
+
+```bash
+$KNOWLEDGE_BASE_PYTHON \
+  "$KNOWLEDGE_BASE_REPO/openclaw-skills/knowledge-base/scripts/ingest_job.py" \
+  submit \
+  --file /staging/upload.xlsx \
+  --actor U0APQSSGKTM \
+  --name MH_DoNT \
+  --channel-id C123 \
+  --thread-ts 1785313275.818529 \
+  --message-ts 1785313276.100000
+```
+
+Khi command trả `accepted=true`, phản hồi Slack ngay, không chờ worker:
+
+```text
+Đã nhận <file>. Proposal: <proposal_id>. Mình đang kiểm tra và nạp dữ liệu.
+```
+
+Gateway đọc `ingest_job.py status <proposal_id>` hoặc completion artifact trong
+`$KNOWLEDGE_BASE_STATE_DIR/ingest-jobs/` để gửi kết quả cuối vào đúng thread.
 
 ## Runtime server
 
@@ -83,11 +114,16 @@ skill trong OpenClaw workspace runtime. Host runner cần có:
 export KNOWLEDGE_BASE_REPO=/path/to/hackathon-msol-nexus-lab
 export KNOWLEDGE_BASE_STATE_DIR=/path/to/persistent/runtime-state
 export KNOWLEDGE_BASE_PYTHON=/path/to/project-venv/bin/python
+export KNOWLEDGE_BASE_RUNTIME_ROOT=/path/to/runtime/skills/knowledge-base
 
 $KNOWLEDGE_BASE_PYTHON \
-  "$KNOWLEDGE_BASE_REPO/openclaw-skills/knowledge-base/scripts/ingest_runner.py" \
-  run <proposal_id>
+  "$KNOWLEDGE_BASE_REPO/openclaw-skills/knowledge-base/scripts/ingest_job.py" \
+  submit --file <staging-file> --actor <trusted-slack-user-id>
 ```
+
+`KNOWLEDGE_BASE_RUNTIME_ROOT` phải resolve tới canonical skill, thường bằng
+symlink. Publisher cố ý từ chối một runtime copy độc lập vì copy nhiều thư mục
+không thể atomic và dễ tạo trạng thái source mới/index cũ.
 
 `KNOWLEDGE_BASE_REPO` phải là Git repository có `.git`. Nếu thiếu biến này,
 runtime copy không thể tạo worktree an toàn và phải fail closed.
@@ -114,6 +150,19 @@ Chỉ dùng `PUBLISHED` khi proposal có `corpus_version` mới và
 `runtime_reloaded=true`. Với `READY_TO_PUBLISH`, nói rõ pipeline đã đạt gate
 nhưng deployment/publish và reload còn chờ xử lý. Với `FAILED`, nêu lỗi ngắn
 gọn và không nói tài liệu đã được nạp.
+
+## Chính sách chất lượng và hiệu năng
+
+- Không chạy `run_all.sh` mặc định trên mỗi upload. `ingest_runner.py` chạy bộ
+  publish gates trên đúng artifact vừa derive; full regression chỉ dùng
+  `--full-regression` trong CI/chẩn đoán.
+- Không rebuild `derived/` sau merge. Publisher chỉ promote artifact có
+  `release_manifest.json` và `input_sha256` trùng tuyệt đối với corpus sau merge.
+- Generic Excel source page chỉ được miễn Gate 3b khi
+  `spreadsheet_contract.py` chứng minh original SHA, cell locator, formula/value,
+  raw body và wiki body khớp một-một. Trang do LLM viết/tóm tắt vẫn review K=3.
+- Base branch thay đổi sau lúc test, file ngoài phạm vi ingest, artifact hash lệch
+  hoặc runtime root không trỏ canonical skill đều phải fail closed.
 
 ## Không làm
 

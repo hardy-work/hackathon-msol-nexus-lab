@@ -188,6 +188,27 @@ def _new_id(source_hash: str) -> str:
     return f"ingest-{stamp}-{source_hash[:12]}"
 
 
+def _existing_slack_request(*, source_hash: str, channel_id: str,
+                            message_ts: str, root: Path) -> dict[str, Any] | None:
+    """Deduplicate Slack event retries without merging unrelated uploads."""
+    if not channel_id or not message_ts:
+        return None
+    for path in sorted(_proposal_dir(root).glob("*.json")):
+        try:
+            proposal = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        context = proposal.get("slack_context") or {}
+        if (
+            (proposal.get("source") or {}).get("sha256") == source_hash
+            and context.get("channel_id") == channel_id
+            and context.get("message_ts") == message_ts
+            and proposal.get("status") not in {"failed", "stale"}
+        ):
+            return proposal
+    return None
+
+
 def create(source: Path, *, actor: str, roles: str | list[str] | None = None,
            confirmed_doc_id: str | None = None,
            channel_id: str = "", thread_ts: str = "", message_ts: str = "",
@@ -197,6 +218,12 @@ def create(source: Path, *, actor: str, roles: str | list[str] | None = None,
     if not allowed:
         raise ProposalError(reason)
     source_info, decision = _check_source(source, root, confirmed_doc_id=confirmed_doc_id)
+    existing = _existing_slack_request(
+        source_hash=source_info["sha256"], channel_id=channel_id,
+        message_ts=message_ts, root=root,
+    )
+    if existing is not None:
+        return existing
     proposal_id = _new_id(source_info["sha256"])
     destination = _path_for(proposal_id, root)
     while destination.exists():

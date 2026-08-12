@@ -10,6 +10,7 @@ import openpyxl
 import yaml
 
 import ingest_proposal
+import ingest_job
 import review_artifact
 
 
@@ -101,6 +102,35 @@ def main() -> int:
             message = ingest_proposal.proposal_message(ready)
             assert "MH_DoNT" in message
             assert "không cần approval" in message
+
+            original_start = ingest_job.start
+            captured = {}
+            try:
+                def fake_start(proposal_id, *, root, full_regression=False):
+                    captured.update({"proposal_id": proposal_id, "root": root,
+                                     "full_regression": full_regression})
+                    return {"status": "queued", "proposal_id": proposal_id}
+
+                ingest_job.start = fake_start
+                submitted = ingest_job.submit(
+                    source, actor=DO, requester_name="MH_DoNT",
+                    channel_id="C1", thread_ts="1.1", message_ts="1.2",
+                    root=root,
+                )
+            finally:
+                ingest_job.start = original_start
+            assert submitted["accepted"] is True
+            assert submitted["job_status"] == "queued"
+            submitted_proposal = ingest_proposal.load(
+                submitted["proposal_id"], root
+            )
+            assert submitted_proposal["slack_context"]["thread_ts"] == "1.1"
+            assert captured["proposal_id"] == submitted["proposal_id"]
+            retried = ingest_proposal.create(
+                source, actor=DO, channel_id="C1", thread_ts="1.1",
+                message_ts="1.2", root=root,
+            )
+            assert retried["proposal_id"] == submitted["proposal_id"]
 
             second = ingest_proposal.create(source, actor=DO, root=root)
             source.write_bytes(source.read_bytes() + b"changed")

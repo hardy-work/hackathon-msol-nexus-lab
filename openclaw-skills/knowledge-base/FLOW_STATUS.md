@@ -12,8 +12,8 @@
 | Gate 2/4 | `numeric_guard.py` | Citation-scoped exact number/date/unit checks; no rounded-value allowance; identifiers masked by real position, not by proximity. `check_transform` compares values first, then units of surviving values, so a legitimate reflow is not reported as invention |
 | Gate 3a · numeric declare | `numeric_guard.check_page_declarations` | Copy-mode `{facts, unit, src}` is resolved back to the exact section `src` names; wrong section, wrong unit, missing locator and OCR-sourced numbers all fail closed at Gate 3a and again in the runtime guard |
 | Gate 3a | `lint.py` | Contract, current version, visibility, references and numeric provenance |
-| Gate 3b | `review.py` | Sonnet review is opt-in; previous Nexus run passed 8/8 |
-| Stage 6 · Publish | DuckDB + wiki index | Rebuildable from source; `derived/` is intentionally ignored |
+| Gate 3b | `review.py`, `spreadsheet_contract.py` | Ingest prose/LLM pages require Sonnet consensus K=3; deterministic generic XLSX source pages may skip it only after exact original→cell→raw→wiki completeness validation |
+| Stage 6 · Publish | `publish_gates.py`, `release_manifest.py`, `ingest_publisher.py` | Exact tested DuckDB/graph/RAG artifact set is checksum-bound to the merged input digest and promoted without a second rebuild |
 | Stage 5 · RAG Derive | `build_rag_indexes.py` | Mandatory BM25 + persistent Chroma store, bound to current input digest |
 | Keyword retrieval | `bm25_index.py` | `bm25s` index over current Gate-3 wiki pages; missing/stale index fails closed |
 | Graph derive/retrieval | `build_graph.py`, `graph_retrieval.py` | 60 task nodes and provenance edges; no invented dependency edges |
@@ -25,7 +25,7 @@
 | Long-lived runtime | `runtime_engine.py`, `benchmark.py` | Reuses access-scoped DuckDB views, graph, BGE-M3 and cache connections |
 | Read-only filesystem boundary | `scripts/filesystem_boundary.py` | Runtime chỉ đọc corpus/index trong skill root; chặn traversal/symlink escape; cache/telemetry nằm ở `.runtime` hoặc volume riêng |
 | Gateway integration | External NexusBot owns transport; this skill exposes `scripts/run.py` | Trusted actor/roles, history and JSON response contract; no Slack adapter in this skill |
-| Slack ingest proposal | `scripts/ingest_proposal.py`, `scripts/review_artifact.py`, `scripts/ingest_runner.py` | File/hash/type + Slack ID allowlist → review artifact → isolated ingest worktree; no human approval step; stops before deployment publish |
+| Slack ingest proposal | `ingest_job.py`, `ingest_proposal.py`, `ingest_runner.py`, `ingest_publisher.py` | One submit call returns an immediate ACK contract, then a persistent worker runs allowlist/hash/review/worktree/publish and emits a completion artifact |
 | Telemetry | `telemetry.py`, `/health` | Query/queue latency and state without raw question, answer or actor identity |
 | Production eval | onboarding + production suites | Auth/context/cache/concurrency and 10 PM/new-dev representative questions |
 | Demo showcase | `demo/run_demo.sh`, `scripts/demo_showcase.py` | Freshness-aware, one-process, offline 7-step story; human and JSON output |

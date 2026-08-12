@@ -4,11 +4,13 @@ on:
   pull_request:
     paths:
       - "openclaw-skills/knowledge-base/**"
+      - "openclaw-skills/knowledge-ingest/**"
       - ".github/workflows/knowledge-base.yml"
   push:
     branches: [main]
     paths:
       - "openclaw-skills/knowledge-base/**"
+      - "openclaw-skills/knowledge-ingest/**"
       - ".github/workflows/knowledge-base.yml"
 
 jobs:
@@ -33,6 +35,8 @@ jobs:
         run: python openclaw-skills/knowledge-base/scripts/lint_history_selftest.py
       - name: Run Gate 3b consensus contract
         run: python openclaw-skills/knowledge-base/scripts/review_selftest.py
+      - name: Run release manifest and atomic publish contract
+        run: python openclaw-skills/knowledge-base/scripts/release_publish_selftest.py
       - name: Run read-only filesystem boundary contract
         run: python openclaw-skills/knowledge-base/scripts/filesystem_boundary_selftest.py
       - name: Run deterministic Nexus demo
