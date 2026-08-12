@@ -1,0 +1,4 @@
+# Config/credentials theo từng project — không commit
+config.json
+.env
+service-account.json
