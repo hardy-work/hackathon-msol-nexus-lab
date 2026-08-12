@@ -273,17 +273,19 @@ one before doing anything else.
    not confirmed, auto-detected") so anyone reading the note later knows
    how much to trust it.
 
-9. **Deliver.** Save the summary to
-   `{baseDir}/notes/<YYYY-MM-DD>-<native_meeting_id>.md`. If the meeting
-   ended normally (bot left, or you stopped it on the user's explicit
+9. **Deliver.** Save the full summary (including the "## Full transcript"
+   section) to `{baseDir}/notes/<YYYY-MM-DD>-<native_meeting_id>.md`. If the
+   meeting ended normally (bot left, or you stopped it on the user's explicit
    request), reply immediately in the same chat channel they messaged you
-   from with the summary text (not just a "done" — they shouldn't have to
-   open the file to see what happened in the meeting). If the meeting was
-   ended by the step 4 empty-room heuristic, ask first — e.g. "Cuộc họp có
-   vẻ đã kết thúc (không có ai nói suốt 6 phút) — gửi kết quả tổng hợp cho
-   bạn nhé?" — and only send the summary after they confirm. `stop_meeting`
-   was already called back in step 5, so there's nothing left to clean up
-   here.
+   from with the summary **minus the "## Full transcript" section** (not
+   just a "done" — they shouldn't have to open the file to see what
+   happened in the meeting, but the full segment-by-segment transcript is
+   too long/noisy to post inline). Mention where the full transcript was
+   saved instead of pasting it. If the meeting was ended by the step 4
+   empty-room heuristic, ask first — e.g. "Cuộc họp có vẻ đã kết thúc (không
+   có ai nói suốt 6 phút) — gửi kết quả tổng hợp cho bạn nhé?" — and only
+   send the summary after they confirm. `stop_meeting` was already called
+   back in step 5, so there's nothing left to clean up here.
 
 ## Edge cases
 
