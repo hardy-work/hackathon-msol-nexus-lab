@@ -1,9 +1,0 @@
-{
-  "fileId": null,
-  "sourceTabs": {
-    "summaryProject": { "name": "Summary project" },
-    "riskManagement": { "name": "Risk management" },
-    "issueManagement": { "name": "Isssue management" }
-  },
-  "outputTab": { "name": "Dashboard" }
-}
