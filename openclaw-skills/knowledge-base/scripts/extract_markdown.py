@@ -62,13 +62,17 @@ def extract_one(root: Path, document: dict) -> Path:
         "source_name": str(document.get("source_name") or original.name),
         "sha256": sha256(original),
         "extractor": "scripts/extract_markdown.py",
-        "lang": metadata.get("lang", "vi"),
+        "lang": metadata.get("lang") or document.get("lang") or "vi",
         "page_type": "source",
-        "title": markdown_source.title(metadata, body, original.stem),
+        "title": markdown_source.title(
+            metadata, body, str(document.get("title") or original.stem)
+        ),
     }
     for key in ("type", "org", "domain", "source", "last_updated"):
         if key in metadata:
             raw_metadata[key] = metadata[key]
+        elif key in document:
+            raw_metadata[key] = document[key]
     raw_path.parent.mkdir(parents=True, exist_ok=True)
     header = yaml.safe_dump(raw_metadata, allow_unicode=True, sort_keys=False).strip()
     raw_path.write_text(f"---\n{header}\n---\n{body}", encoding="utf-8")

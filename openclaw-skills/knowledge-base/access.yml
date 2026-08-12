@@ -16,6 +16,10 @@ coverage_permissions:
 # Slack user ID; free-form message text and display names never grant permission.
 # This allowlist is the only gate for starting a knowledge ingest.
 ingest:
+  # Markdown uploads may be ordinary documents without YAML frontmatter.
+  # Use this curated domain only when the source declares neither domain nor
+  # organisation; an explicit but unknown domain still fails closed.
+  default_domain: mor-software
   allowed_users:
     - user_id: U03H0QB426A
       name: MH_TungDV

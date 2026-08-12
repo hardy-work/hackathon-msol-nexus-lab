@@ -18,7 +18,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 import document_registry
+import markdown_source
 from inventory import kind as detect_kind
 from inventory import normalized_name
 
@@ -117,6 +120,79 @@ def source_origin(path: Path) -> str:
         if match:
             return match.group(1).strip().strip('"\'`')
     return ""
+
+
+def _allowed_domains(root: Path) -> set[str]:
+    payload = yaml.safe_load((root / "schema.yml").read_text(encoding="utf-8")) or {}
+    values = ((payload.get("dimensions") or {}).get("domain") or {}).get("values") or []
+    return {str(value) for value in (values.keys() if isinstance(values, dict) else values)}
+
+
+def _default_ingest_domain(root: Path) -> str:
+    payload = yaml.safe_load((root / "access.yml").read_text(encoding="utf-8")) or {}
+    ingest = payload.get("ingest") or {}
+    return str(ingest.get("default_domain") or "").strip()
+
+
+def _registered_domain(root: Path, document: dict[str, Any]) -> str:
+    """Recover a current document domain before falling back to ingest config."""
+    declared = str(document.get("domain") or "").strip()
+    if declared:
+        return declared
+    candidates = [root / str(path) for path in document.get("raw_paths") or []]
+    candidates.append(root / "wiki" / "sources" / f"{document.get('doc_id')}.md")
+    for path in candidates:
+        if not path.is_file() or path.suffix.lower() != ".md":
+            continue
+        try:
+            metadata, _ = markdown_source.parse(path)
+        except (OSError, UnicodeDecodeError, ValueError, yaml.YAMLError):
+            continue
+        declared = str(metadata.get("domain") or "").strip()
+        if declared:
+            return declared
+    return ""
+
+
+def markdown_ingest_metadata(root: Path, source: Path,
+                             fallback_domain: str = "") -> dict[str, str]:
+    """Build trusted Markdown metadata without mutating the uploaded bytes.
+
+    Explicit source metadata wins and must already be curated.  A document
+    with no domain/org inherits its current registered domain on re-ingest, or
+    the configured ingest default for a new upload.  Nothing is inferred by an
+    LLM or from free-form Slack text.
+    """
+    metadata, body = markdown_source.parse(source)
+    if metadata.get("domain"):
+        domain = str(metadata["domain"]).strip()
+        domain_source = "frontmatter.domain"
+    elif metadata.get("org"):
+        domain = markdown_source.domain(metadata)
+        domain_source = "frontmatter.org"
+    elif str(fallback_domain or "").strip():
+        domain = str(fallback_domain).strip()
+        domain_source = "registry"
+    else:
+        domain = _default_ingest_domain(root)
+        domain_source = "access.ingest.default_domain"
+    if not domain:
+        raise ValueError(
+            "Markdown thiếu `domain`/`org` và access.yml chưa khai "
+            "`ingest.default_domain`"
+        )
+    allowed = _allowed_domains(root)
+    if domain not in allowed:
+        raise ValueError(
+            f"domain `{domain}` chưa được curate trong schema.yml; "
+            "không tự suy đoán domain từ file upload"
+        )
+    return {
+        "title": markdown_source.title(metadata, body, source.stem),
+        "domain": domain,
+        "lang": str(metadata.get("lang") or "vi"),
+        "domain_source": domain_source,
+    }
 
 
 def _registered_kind(root: Path, document: dict[str, Any]) -> str:
@@ -227,7 +303,7 @@ def decide(root: Path, source: Path, confirmed_doc_id: str | None = None) -> dic
     if not candidate_ids:
         if confirmed_doc_id:
             raise ValueError(f"doc_id `{confirmed_doc_id}` không tồn tại trong documents.yml")
-        return {
+        decision = {
             "schema": "knowledge-base/intake-decision/v1",
             "flow": "initial_ingest",
             "source": str(source),
@@ -238,6 +314,9 @@ def decide(root: Path, source: Path, confirmed_doc_id: str | None = None) -> dic
             "version": 1,
             "reason": "không có document identity tương ứng trong registry",
         }
+        if decision["kind"] == "text/markdown":
+            decision["content_metadata"] = markdown_ingest_metadata(root, source)
+        return decision
     if len(candidate_ids) != 1:
         raise ValueError(f"file khớp nhiều document identity: {candidate_ids}")
 
@@ -274,7 +353,7 @@ def decide(root: Path, source: Path, confirmed_doc_id: str | None = None) -> dic
     versions = [int(document["version"]) for document in candidates]
     from_version = int(current["version"])
     to_version = max(versions) + 1
-    return {
+    decision = {
         "schema": "knowledge-base/intake-decision/v1",
         "flow": "reingest",
         "source": str(source),
@@ -286,6 +365,11 @@ def decide(root: Path, source: Path, confirmed_doc_id: str | None = None) -> dic
         "to_version": to_version,
         "reason": f"semantic content thay đổi; tạo version mới supersedes v{from_version}",
     }
+    if decision["kind"] == "text/markdown":
+        decision["content_metadata"] = markdown_ingest_metadata(
+            root, source, fallback_domain=_registered_domain(root, current)
+        )
+    return decision
 
 
 def _write_registry(root: Path, documents: list[dict[str, Any]]) -> None:
@@ -323,12 +407,17 @@ def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, An
     updated_at = str(decision.get("updated_at") or dt.datetime.now(dt.timezone.utc).date())
     updated_by = str(decision.get("updated_by") or "NexusBot (hệ thống)")
     origin = str(decision.get("source_origin") or source_origin(source) or "").strip()
+    content_metadata = dict(decision.get("content_metadata") or {})
     if decision["flow"] == "reingest":
         current = document_registry.current(doc_id, root)
         from_version = int(decision["from_version"])
         if int(current["version"]) != from_version:
             raise ValueError("registry đã đổi current version sau lúc tạo intake decision")
         extractor = extractor_for(doc_id, file_kind(source))
+        if extractor == "markdown" and not content_metadata:
+            content_metadata = markdown_ingest_metadata(
+                root, source, fallback_domain=_registered_domain(root, current)
+            )
         original = _original_path(doc_id, version, source)
         raw_paths = [_versioned_path(str(path), version) for path in current.get("raw_paths") or []]
         new_document = dict(current)
@@ -347,6 +436,8 @@ def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, An
             "supersedes": from_version,
             "raw_paths": raw_paths,
         })
+        if extractor == "markdown":
+            new_document.update(content_metadata)
         documents = [
             {**document, "current": False} if document.get("doc_id") == doc_id else document
             for document in documents
@@ -356,6 +447,8 @@ def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, An
             raise ValueError(f"doc_id `{doc_id}` đã tồn tại; không được khởi tạo lại từ đầu")
         original = f"originals/{doc_id}{source.suffix.lower()}"
         extractor = extractor_for(doc_id, file_kind(source))
+        if extractor == "markdown" and not content_metadata:
+            content_metadata = markdown_ingest_metadata(root, source)
         new_document = {
             "doc_id": doc_id,
             "version": 1,
@@ -379,6 +472,8 @@ def register(root: Path, source: Path, decision: dict[str, Any]) -> dict[str, An
             "raw_paths": [f"raw/{doc_id}.md"]
             if extractor in {"markdown", "spreadsheet", "van"} else [],
         }
+        if extractor == "markdown":
+            new_document.update(content_metadata)
 
     destination = root / original
     if destination.exists():
