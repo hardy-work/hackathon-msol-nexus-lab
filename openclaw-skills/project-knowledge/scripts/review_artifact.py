@@ -20,6 +20,8 @@ from typing import Any
 
 import openpyxl
 
+from spreadsheet_reader import iter_row_pairs
+
 
 SCHEMA = "nexus-project-knowledge/review-artifact/v1"
 
@@ -60,23 +62,31 @@ def _workbook(path: Path) -> list[dict[str, Any]]:
             cells: list[dict[str, Any]] = []
             max_row = max(formula_sheet.max_row or 0, value_sheet.max_row or 0)
             max_col = max(formula_sheet.max_column or 0, value_sheet.max_column or 0)
-            for row in range(1, max_row + 1):
-                for col in range(1, max_col + 1):
-                    formula_cell = formula_sheet.cell(row, col)
-                    value_cell = value_sheet.cell(row, col)
-                    raw = formula_cell.value
-                    evaluated = value_cell.value
+            for row, formula_row, value_row in iter_row_pairs(
+                formula_sheet, value_sheet
+            ):
+                width = max(len(formula_row), len(value_row))
+                max_row = max(max_row, row)
+                max_col = max(max_col, width)
+                for offset in range(width):
+                    formula_cell = (
+                        formula_row[offset] if offset < len(formula_row) else None
+                    )
+                    value_cell = value_row[offset] if offset < len(value_row) else None
+                    raw = formula_cell.value if formula_cell is not None else None
+                    evaluated = value_cell.value if value_cell is not None else None
                     if raw in (None, "") and evaluated in (None, ""):
                         continue
+                    cell = formula_cell if raw not in (None, "") else value_cell
                     formula = raw if isinstance(raw, str) and raw.startswith("=") else None
                     displayed = evaluated if formula else raw
                     cells.append({
-                        "address": formula_cell.coordinate,
+                        "address": cell.coordinate,
                         "value": _cell_value(displayed),
                         "formula": formula,
-                        "data_type": formula_cell.data_type,
-                        "number_format": formula_cell.number_format,
-                        "source": f"{formula_sheet.title}!{formula_cell.coordinate}",
+                        "data_type": cell.data_type,
+                        "number_format": cell.number_format,
+                        "source": f"{formula_sheet.title}!{cell.coordinate}",
                     })
             sheets.append({
                 "name": formula_sheet.title,
