@@ -3,9 +3,10 @@
 Áp cho **mọi chữ bot gửi ra cho người dùng**: tin Slack, reply trong thread, báo
 lỗi, bảng tổng hợp report.
 
-**Đang áp cho 3 skill:** [`reminder-followup`](reminder-followup/SKILL.md),
+**Đang áp cho 4 skill:** [`reminder-followup`](reminder-followup/SKILL.md),
 [`gg-sheet`](gg-sheet/SKILL.md),
-[`gg-sheet-daily-report`](gg-sheet-daily-report/SKILL.md) — tức là toàn bộ luồng
+[`gg-sheet-daily-report`](gg-sheet-daily-report/SKILL.md),
+[`dashboard`](dashboard/SKILL.md) — tức là toàn bộ luồng
 report hàng ngày qua Google Sheet.
 
 Các skill khác (`jira-daily-report`, `jira-task-editor`, `slack-evidence-sheet`,
