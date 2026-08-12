@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Separate, thread-scoped conversation store for the Slack chatbot.
 
-This module intentionally has no dependency on project-knowledge.  The only
+This module intentionally has no dependency on knowledge-base.  The only
 retrieval operation exposed to callers is keyed by one canonical Slack thread.
 """
 from __future__ import annotations
@@ -16,7 +16,7 @@ from typing import Any, Iterable
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
-PROJECT_KNOWLEDGE_ROOT = SKILL_ROOT.parent / "project-knowledge"
+KNOWLEDGE_BASE_ROOT = SKILL_ROOT.parent / "knowledge-base"
 
 
 def _utc_now() -> str:
@@ -24,14 +24,14 @@ def _utc_now() -> str:
 
 
 def default_state_dir() -> Path:
-    """Return a writable state directory outside the project-knowledge corpus."""
+    """Return a writable state directory outside the knowledge-base corpus."""
     configured = os.getenv("SLACK_THREAD_MEMORY_STATE_DIR")
     path = Path(configured).expanduser() if configured else SKILL_ROOT / ".runtime"
     path = path.resolve()
-    forbidden = PROJECT_KNOWLEDGE_ROOT.resolve()
+    forbidden = KNOWLEDGE_BASE_ROOT.resolve()
     if path == forbidden or forbidden in path.parents:
         raise ValueError(
-            "SLACK_THREAD_MEMORY_STATE_DIR không được nằm trong project-knowledge"
+            "SLACK_THREAD_MEMORY_STATE_DIR không được nằm trong knowledge-base"
         )
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -97,9 +97,9 @@ class ThreadStore:
 
     def __init__(self, path: Path | str | None = None):
         self.path = Path(path).expanduser().resolve() if path else default_db_path()
-        project_root = PROJECT_KNOWLEDGE_ROOT.resolve()
-        if self.path == project_root or project_root in self.path.parents:
-            raise ValueError("Slack store không được đặt trong project-knowledge")
+        knowledge_root = KNOWLEDGE_BASE_ROOT.resolve()
+        if self.path == knowledge_root or knowledge_root in self.path.parents:
+            raise ValueError("Slack store không được đặt trong knowledge-base")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.con = sqlite3.connect(self.path, timeout=5, check_same_thread=False)
         self.con.row_factory = sqlite3.Row

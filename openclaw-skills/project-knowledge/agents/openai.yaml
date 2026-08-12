@@ -1,4 +1,0 @@
-interface:
-  display_name: "Project Knowledge"
-  short_description: "Tra cứu Nexus có nguồn và độ tin cậy"
-  default_prompt: "Use $project-knowledge to answer a project question with citations and explicit confidence."

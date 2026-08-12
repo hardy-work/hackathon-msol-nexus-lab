@@ -1,0 +1,4 @@
+interface:
+  display_name: "Knowledge Base"
+  short_description: "Tra cứu KB read-only có nguồn và độ tin cậy"
+  default_prompt: "Use $knowledge-base to answer a knowledge-base question with citations and explicit confidence."

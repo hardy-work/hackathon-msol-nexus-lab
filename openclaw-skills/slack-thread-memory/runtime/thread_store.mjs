@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 
 const SKILL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PROJECT_KNOWLEDGE_ROOT = path.resolve(SKILL_ROOT, "../project-knowledge");
+const KNOWLEDGE_BASE_ROOT = path.resolve(SKILL_ROOT, "../knowledge-base");
 
 function utcNow() {
   return new Date().toISOString();
@@ -20,8 +20,8 @@ export function defaultStateDir() {
   const configured = process.env.SLACK_THREAD_MEMORY_STATE_DIR?.trim();
   const stateRoot = process.env.OPENCLAW_STATE_DIR?.trim() || path.join(os.homedir(), ".openclaw-hackathon");
   const dir = path.resolve(configured || path.join(stateRoot, "state", "slack-thread-memory"));
-  if (isWithin(dir, path.resolve(PROJECT_KNOWLEDGE_ROOT))) {
-    throw new Error("SLACK_THREAD_MEMORY_STATE_DIR không được nằm trong project-knowledge");
+  if (isWithin(dir, path.resolve(KNOWLEDGE_BASE_ROOT))) {
+    throw new Error("SLACK_THREAD_MEMORY_STATE_DIR không được nằm trong knowledge-base");
   }
   fs.mkdirSync(dir, { recursive: true });
   return dir;
@@ -78,8 +78,8 @@ function safeMetadata(message) {
 export class ThreadStore {
   constructor(dbPath = undefined) {
     this.path = path.resolve(String(dbPath || defaultDbPath()));
-    if (isWithin(this.path, path.resolve(PROJECT_KNOWLEDGE_ROOT))) {
-      throw new Error("Slack store không được đặt trong project-knowledge");
+    if (isWithin(this.path, path.resolve(KNOWLEDGE_BASE_ROOT))) {
+      throw new Error("Slack store không được đặt trong knowledge-base");
     }
     fs.mkdirSync(path.dirname(this.path), { recursive: true });
     this.db = new DatabaseSync(this.path);

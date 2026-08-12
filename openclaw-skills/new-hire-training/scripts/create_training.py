@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a provenance-first new-hire training handbook from project-knowledge wiki pages."""
+"""Build a provenance-first new-hire training handbook from knowledge-base wiki pages."""
 from __future__ import annotations
 
 import argparse
@@ -494,7 +494,7 @@ def reuse_fixed_policy_modules(previous_text: str, generated_text: str) -> str:
 
 
 def check_freshness(kb_root: Path) -> dict[str, str]:
-    """Read project-knowledge freshness without making it a hard dependency."""
+    """Read knowledge-base freshness without making it a hard dependency."""
     script_dir = kb_root / "scripts"
     if not (script_dir / "versioning.py").is_file():
         return {"state": "unknown", "reason": "Không tìm thấy scripts/versioning.py"}
@@ -609,7 +609,7 @@ def render_handbook(project: str, role: str, name: str, pages: list[Page], inter
         "## 6. Giới hạn cần xác nhận",
         "",
         f"- Freshness hiện tại: `{freshness_state}`" + (f" — {freshness_note}" if freshness_note else ""),
-        "- Nếu freshness là `stale` hoặc `unknown`, rebuild/kiểm tra `project-knowledge` trước khi dùng handbook cho quyết định mới.",
+        "- Nếu freshness là `stale` hoặc `unknown`, rebuild/kiểm tra `knowledge-base` trước khi dùng handbook cho quyết định mới.",
         "- Tài liệu chỉ phản ánh snapshot KB tại thời điểm sinh; kiểm tra freshness trước khi dùng cho quyết định mới.",
         "- Thông tin không xuất hiện trong ma trận nguồn không được coi là không tồn tại.",
         "- HR/PM phải xác nhận nội dung thiếu hoặc mâu thuẫn trước khi phát hành handbook chính thức.",
@@ -622,7 +622,9 @@ def render_handbook(project: str, role: str, name: str, pages: list[Page], inter
 
 def default_kb_root() -> Path:
     here = Path(__file__).resolve()
-    return Path(__import__("os").environ.get("PROJECT_KNOWLEDGE_ROOT", here.parents[2] / "project-knowledge"))
+    import os
+    configured = os.environ.get("KNOWLEDGE_BASE_ROOT")
+    return Path(configured or here.parents[2] / "knowledge-base")
 
 
 def main(argv: list[str] | None = None) -> int:

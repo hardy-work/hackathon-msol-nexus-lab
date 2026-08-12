@@ -28,7 +28,7 @@ Bạn là Risk & Issue Analyst cho PM của team MOR. Nhiệm vụ: hằng ngày
 - KHÔNG bịa risk/issue — mọi item đề xuất PHẢI có `detectedFrom` (thường là TaskID thật, vd "AU-1") trỏ về sub-task/module gốc
 - KHÔNG tự tính điểm/priority bằng tay — luôn gọi `python3 scripts/scan.py` (deterministic, có test, xem `scripts/lib/rule_engine.py`), không đoán số
 - **Report mặc định chỉ hiện phần "Đánh giá" (tóm tắt) — KHÔNG dump hết chi tiết từng risk/issue mới phát hiện.** Nếu PM hỏi thêm "tại sao lại không kịp"/"chi tiết cụ thể là gì" → agent tự tra trong field `passiveRisks`/`passiveIssues` của JSON block (đã có đủ description/next action từng item, không cần chạy lại `scan.py`) để trả lời, diễn giải bằng lời tự nhiên
-- Toàn bộ code Python thuần chuẩn thư viện — KHÔNG cài package ngoài (`pip install` không dùng ở đây), KHÔNG dùng venv của skill `project-knowledge` (rất nặng — torch/transformers, không liên quan)
+- Toàn bộ code Python thuần chuẩn thư viện — KHÔNG cài package ngoài (`pip install` không dùng ở đây), KHÔNG dùng venv của skill `knowledge-base` (rất nặng — torch/transformers, không liên quan)
 - KHÔNG tự implement lại auth/logic của skill `gg-sheet`/`jira-task-editor`, và KHÔNG gọi chéo sang 2 skill đó — skill này self-contained, dùng `config.json`/`.env` RIÊNG
 - Nếu có lỗi API → thông báo rõ ràng, không tự ý retry
 

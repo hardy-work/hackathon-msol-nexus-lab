@@ -10,7 +10,7 @@ lỗi, bảng tổng hợp report.
 report hàng ngày qua Google Sheet.
 
 Các skill khác (`jira-daily-report`, `jira-task-editor`, `slack-evidence-sheet`,
-`meeting-notetaker`, `project-knowledge`) **cố ý chưa áp** — không phải quên.
+`meeting-notetaker`, `knowledge-base`) **cố ý chưa áp** — không phải quên.
 Thêm skill mới vào luồng report thì áp luật này và ghi tên nó vào danh sách
 trên.
 

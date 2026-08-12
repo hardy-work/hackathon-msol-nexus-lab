@@ -1,6 +1,6 @@
 ---
 name: dashboard
-description: Khi PM yêu cầu "dashboard"/"tổng quan dự án"/"sức khỏe dự án"/"cho tôi số liệu để pitch" — TỨC LÀ SỐ LIỆU SỐNG, đọc trực tiếp và mới nhất ngay lúc hỏi — đọc tab "Summary project" + "Risk management" + "Isssue management" (Google Sheet đang dùng chung), tổng hợp thành 1 bản tóm tắt sức khỏe dự án — tiến độ sprint hiện tại, risk/issue đang mở/đang xử lý, top risk ưu tiên cao — và ghi lại vào tab "Dashboard" (tự tạo nếu chưa có, chỉ đụng đúng tab này). Đây là skill DUY NHẤT nên dùng cho từ khoá "dashboard"/"tổng quan dự án" — KHÔNG nhường cho `project-knowledge` (skill đó chỉ tra cứu tài liệu tĩnh đã ingest, có thể cũ, không phải số liệu Sheet sống).
+description: Khi PM yêu cầu "dashboard"/"tổng quan dự án"/"sức khỏe dự án"/"cho tôi số liệu để pitch" — TỨC LÀ SỐ LIỆU SỐNG, đọc trực tiếp và mới nhất ngay lúc hỏi — đọc tab "Summary project" + "Risk management" + "Isssue management" (Google Sheet đang dùng chung), tổng hợp thành 1 bản tóm tắt sức khỏe dự án — tiến độ sprint hiện tại, risk/issue đang mở/đang xử lý, top risk ưu tiên cao — và ghi lại vào tab "Dashboard" (tự tạo nếu chưa có, chỉ đụng đúng tab này). Đây là skill DUY NHẤT nên dùng cho từ khoá "dashboard"/"tổng quan dự án" — KHÔNG nhường cho `knowledge-base` (skill đó chỉ tra cứu tài liệu tĩnh đã ingest, có thể cũ, không phải số liệu Sheet sống).
 user-invocable: true
 metadata:
   {

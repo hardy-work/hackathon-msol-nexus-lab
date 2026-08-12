@@ -2,7 +2,7 @@
 
 Kho lưu lịch sử hội thoại riêng cho chatbot Slack. Mỗi thread là một scope độc lập:
 bot chỉ được đưa vào context các message có cùng `channel_id` và `thread_ts` với event
-đã tag bot. Kho này không phải là nguồn của `project-knowledge` và không ghi vào
+đã tag bot. Kho này không phải là nguồn của `knowledge-base` và không ghi vào
 `documents.yml`, `raw/`, `wiki/` hoặc các index của project knowledge.
 
 ## Chạy local không cần Slack server
@@ -52,7 +52,7 @@ message đó.
 CLI Python mặc định DB ở `.runtime/` của skill và bị ignore khỏi Git. Runtime
 plugin mặc định dùng state của OpenClaw (`$OPENCLAW_STATE_DIR/state/...`).
 Production nên đặt `SLACK_THREAD_MEMORY_STATE_DIR` trên volume/database riêng,
-không trỏ vào `openclaw-skills/project-knowledge`.
+không trỏ vào `openclaw-skills/knowledge-base`.
 
 ```text
 SLACK_THREAD_MEMORY_STATE_DIR=/var/lib/nexus/slack-thread-memory

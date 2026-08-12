@@ -1,6 +1,6 @@
 ---
 name: new-hire-training
-description: Tạo handbook onboarding cho nhân viên mới bằng cách tổng hợp tài liệu nội bộ và tài liệu dự án đã được kiểm chứng trong project-knowledge, kèm mục tiêu học tập, lộ trình, checklist, câu hỏi kiểm tra và citation. Dùng khi người dùng yêu cầu tạo tài liệu training/onboarding, kế hoạch 30-60-90 ngày, giáo trình nhập dự án hoặc tài liệu hướng dẫn cho dev/PM mới; không dùng để sửa KB, suy diễn chính sách hoặc thay thế tài liệu gốc.
+description: Tạo handbook onboarding cho nhân viên mới bằng cách tổng hợp tài liệu nội bộ và tài liệu dự án đã được kiểm chứng trong knowledge-base, kèm mục tiêu học tập, lộ trình, checklist, câu hỏi kiểm tra và citation. Dùng khi người dùng yêu cầu tạo tài liệu training/onboarding, kế hoạch 30-60-90 ngày, giáo trình nhập dự án hoặc tài liệu hướng dẫn cho dev/PM mới; không dùng để sửa KB, suy diễn chính sách hoặc thay thế tài liệu gốc.
 ---
 
 # New-hire training
@@ -9,7 +9,7 @@ Tạo một tài liệu training có thể dùng ngay từ các trang wiki hiệ
 
 ## Quy trình
 
-1. Xác định `project-knowledge` root. Ưu tiên `--kb-root`; nếu bỏ trống, dùng `../../project-knowledge` tính từ thư mục skill hoặc biến `PROJECT_KNOWLEDGE_ROOT`.
+1. Xác định `knowledge-base` root. Ưu tiên `--kb-root`; nếu bỏ trống, dùng `../../knowledge-base` tính từ thư mục skill hoặc biến `KNOWLEDGE_BASE_ROOT`.
 2. Chỉ đọc các trang wiki hiện hành đã xuất bản (`wiki/sources`, `wiki/entities`, `wiki/concepts`, `wiki/case-studies`). Bỏ qua `index.md`, `log.md`, `.gitkeep`, file archive/snapshot, trang `retired`/có `superseded_by` và trang không có frontmatter hợp lệ.
 3. Lọc theo visibility: cho phép `public` và `internal`; loại `restricted`, `confidential` hoặc giá trị không nhận diện. Không nới quyền theo tên người học.
 4. Phân loại nguồn thành:
@@ -20,7 +20,7 @@ Tạo một tài liệu training có thể dùng ngay từ các trang wiki hiệ
 
    ```bash
    python scripts/create_training.py \
-     --kb-root ../project-knowledge \
+     --kb-root ../knowledge-base \
      --project nexus \
      --role developer \
      --roles-config config/role_profiles.yml \
@@ -49,7 +49,7 @@ hai module `policy_fixed`:
 
 ```bash
 python scripts/create_training.py \
-  --kb-root ../project-knowledge --project nexus --role developer \
+  --kb-root ../knowledge-base --project nexus --role developer \
   --scope project_dynamic --previous ./generated/nexus-new-hire.md \
   --output ./generated/nexus-new-hire.project-refresh.md
 ```
@@ -75,7 +75,7 @@ Generator mặc định tạo nội dung deterministic, không cần LLM hay m�
 - Các trang có provenance OCR chỉ là bản nhận dạng; luôn giữ câu cảnh báo “đối chiếu bản gốc” và không gọi chúng là bản pháp lý cuối cùng. Tài liệu Markdown đã re-ingest không được gắn nhãn OCR chỉ vì tên file có chữ `noi-quy`.
 - Với tài liệu nội bộ, chỉ đưa vào handbook khi trang có `visibility: internal` hoặc `public`; không copy raw/original bytes vào output.
 - Khi nhiều nguồn mâu thuẫn, hiển thị cả hai citation và đánh dấu cần HR/PM xác nhận; không tự chọn một bên.
-- Tài liệu sinh ra là artifact đầu ra, không được ghi vào `wiki/`, `raw/`, `structured/` hoặc `derived/` của project-knowledge.
+- Tài liệu sinh ra là artifact đầu ra, không được ghi vào `wiki/`, `raw/`, `structured/` hoặc `derived/` của knowledge-base.
 
 ## Tài nguyên
 
