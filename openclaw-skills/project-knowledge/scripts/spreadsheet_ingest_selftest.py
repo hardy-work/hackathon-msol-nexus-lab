@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import tempfile
+import zipfile
 from pathlib import Path
 
 import openpyxl
@@ -13,10 +15,26 @@ import document_registry
 import extract_spreadsheet
 import ingest_spreadsheet
 import numeric_guard
+import review_artifact
 
 
 def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def without_dimensions(source: Path, target: Path) -> None:
+    """Create a valid XLSX whose worksheet XML omits optional dimensions."""
+    with zipfile.ZipFile(source) as input_zip, zipfile.ZipFile(
+        target, "w"
+    ) as output_zip:
+        for info in input_zip.infolist():
+            data = input_zip.read(info.filename)
+            if (
+                info.filename.startswith("xl/worksheets/")
+                and info.filename.endswith(".xml")
+            ):
+                data = re.sub(rb"<dimension\b[^>]*/>", b"", data, count=1)
+            output_zip.writestr(info, data)
 
 
 def main() -> int:
@@ -29,6 +47,7 @@ def main() -> int:
         }, sort_keys=False), encoding="utf-8")
         (root / "coverage.yml").write_text("[]\n", encoding="utf-8")
         source = root / "originals/upload.xlsx"
+        normal_source = root / "normal.xlsx"
         book = openpyxl.Workbook()
         sheet = book.active
         sheet.title = "Data"
@@ -37,7 +56,11 @@ def main() -> int:
         sheet["A2"] = "NEX-1"
         sheet["B2"] = 12.5
         sheet["C2"] = "=B2*2"
-        book.save(source)
+        book.save(normal_source)
+        without_dimensions(normal_source, source)
+        with zipfile.ZipFile(source) as archive:
+            worksheet_xml = archive.read("xl/worksheets/sheet1.xml")
+            assert b"<dimension" not in worksheet_xml
         (root / "documents.yml").write_text(yaml.safe_dump({"documents": [{
             "doc_id": "upload", "version": 1,
             "original": "originals/upload.xlsx", "source_name": "upload.xlsx",
@@ -55,6 +78,10 @@ def main() -> int:
         assert "Data!C2==B2*2 [formula: =B2*2]" in raw_text
         facts_text = facts.read_text(encoding="utf-8")
         assert '"doc_id": "upload"' in facts_text
+        artifact = review_artifact.build(source, proposal_id="dimensionless")
+        assert sum(len(item["cells"]) for item in artifact["workbook"]["sheets"]) == 5
+        assert artifact["workbook"]["sheets"][0]["max_row"] == 2
+        assert artifact["workbook"]["sheets"][0]["max_column"] == 3
         page = ingest_spreadsheet.ingest_one(root, document)
         assert page == root / "wiki/sources/upload.md"
         assert "raw/upload.md" in page.read_text(encoding="utf-8")
