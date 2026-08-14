@@ -1,0 +1,16 @@
+{
+  "name": "nexus-deck-github-pages",
+  "created_at": "2026-08-14",
+  "schema_version": 1,
+  "archived": false,
+  "title": "Live view cho Nexus Agent Deck trên GitHub Pages",
+  "design_log": "../../design-logs/2026-08-14-nexus-deck-github-pages-design.md",
+  "artifacts": [
+    "proposal.md",
+    "design.md",
+    "tasks.md",
+    "review-checklist.md"
+  ],
+  "task_count": 24,
+  "phases": 5
+}
