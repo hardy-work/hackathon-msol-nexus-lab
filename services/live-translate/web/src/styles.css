@@ -156,7 +156,7 @@ body {
 .interim-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   padding: 10px 20px;
   border-top: 1px solid var(--border);
   background: var(--panel);
@@ -172,9 +172,13 @@ body {
   padding: 3px 8px;
   border-radius: 20px;
 }
-.interim-text { font-style: italic; color: var(--text); opacity: 0.75; }
+.interim-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; flex: 1; min-width: 0; }
+.interim-text { font-style: italic; color: var(--text); opacity: 0.75; word-break: break-word; }
+.interim-text.interim-translated { opacity: 0.9; }
+.interim-text.pending { opacity: 0.5; }
 
 @media (max-width: 720px) {
   .cols-head, .turn-cols { grid-template-columns: 1fr; gap: 8px; }
   .cols-head { display: none; }
+  .interim-cols { grid-template-columns: 1fr; gap: 4px; }
 }

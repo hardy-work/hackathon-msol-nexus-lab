@@ -50,6 +50,17 @@ WEB_PUBLIC_URL = os.getenv("WEB_PUBLIC_URL", "").rstrip("/")
 POLL_INTERVAL_S = float(os.getenv("POLL_INTERVAL_S", "1.5"))
 IDLE_SHUTDOWN_S = float(os.getenv("IDLE_SHUTDOWN_S", "300"))
 DEFAULT_LANG = os.getenv("DEFAULT_TARGET_LANG", "vi")
+# Preview-translate the live "đang nghe" interim line, not just committed
+# segments. Debounced so it only fires once the interim line has been stable
+# for this long — while someone's actively talking, interim updates every
+# ~350ms (see soniox-bridge's STREAM_INTERIM_MS) and would keep re-triggering
+# and cancelling this timer, so in practice this only fires on natural pauses
+# (clause/sentence boundaries), keeping call volume in the same ballpark as
+# confirmed-segment translation rather than firing on every keystroke-like tick.
+INTERIM_XLATE_DEBOUNCE_S = float(os.getenv("INTERIM_XLATE_DEBOUNCE_S", "0.9"))
+# Don't bother translating a fragment this short — too little signal, and it's
+# about to be superseded by more words anyway.
+INTERIM_XLATE_MIN_CHARS = int(os.getenv("INTERIM_XLATE_MIN_CHARS", "8"))
 
 _translator = build_translator()
 
@@ -143,6 +154,9 @@ class Room:
         self.bfull = False
         self._bfull_idx: dict[str, int] = {}   # seg_id -> stable idx
         self._bfull_next = 1_000_000           # idx space disjoint from Vexa's
+        # Live preview translation of the current interim line (see ingest_interim).
+        self._interim_text = ""
+        self._interim_debounce_task: Optional[asyncio.Task] = None
 
     # -- viewer lifecycle --------------------------------------------------- #
 
@@ -317,6 +331,33 @@ class Room:
 
     def ingest_interim(self, text: str, speaker: Optional[str]) -> None:
         self._broadcast({"type": "interim", "text": text, "speaker": speaker or ""})
+        self._interim_text = text
+        if self._interim_debounce_task is not None and not self._interim_debounce_task.done():
+            self._interim_debounce_task.cancel()
+        if len(text.strip()) >= INTERIM_XLATE_MIN_CHARS:
+            self._interim_debounce_task = asyncio.create_task(self._debounced_interim_translate(text))
+
+    async def _debounced_interim_translate(self, text: str) -> None:
+        try:
+            await asyncio.sleep(INTERIM_XLATE_DEBOUNCE_S)
+        except asyncio.CancelledError:
+            return
+        if self._interim_text != text:
+            return  # a newer interim already superseded this one
+        for lang in self._active_langs():
+            try:
+                translated = await _translator.translate([text], lang)
+            except Exception as e:  # noqa: BLE001 - a failed preview is not fatal
+                logger.debug("room %s: interim preview translate failed: %s", self.key, e)
+                continue
+            # Re-check after the (slow) translate call: the interim line may have
+            # moved on, or already been committed as a real segment, while we waited.
+            if self._interim_text != text:
+                return
+            self._broadcast(
+                {"type": "interim_translation", "lang": lang, "text": translated[0], "for_text": text},
+                only_lang=lang,
+            )
 
     def ingest_final(
         self, seg_id: str, speaker: str, language: str, text: str,
@@ -325,6 +366,12 @@ class Room:
         """A finalized line from the bot's continuous stream. Treat it as a room
         segment (translate + broadcast), bypassing Vexa's confirm layer entirely."""
         self.bfull = True  # from now on the poller won't emit its own segments
+        # This text just got committed as a real segment (which gets its own,
+        # authoritative translation below) — drop any in-flight interim preview
+        # for it so a late preview doesn't overwrite/duplicate the real one.
+        if self._interim_debounce_task is not None and not self._interim_debounce_task.done():
+            self._interim_debounce_task.cancel()
+        self._interim_text = ""
         idx = self._bfull_idx.get(seg_id)
         if idx is None:
             idx = self._bfull_next

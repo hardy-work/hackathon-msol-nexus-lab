@@ -43,9 +43,19 @@ export default function MeetRoom() {
   const [copied, setCopied] = useState(false);
   // Fast "live" line pushed by soniox-bridge (B1), ahead of Vexa's confirmed text.
   const [interim, setInterim] = useState("");
+  // Preview translation of `interim`, once it's stable long enough to translate.
+  // Cleared whenever a new interim line arrives so a stale translation never
+  // shows next to newer original text.
+  const [interimTranslated, setInterimTranslated] = useState(null);
 
   const scrollRef = useRef(null);
   const stickToBottom = useRef(true);
+  // Mirrors `interim` for the SSE handler below, which is set up once per
+  // connection and would otherwise see a stale closed-over `interim` value.
+  const interimRef = useRef("");
+  useEffect(() => {
+    interimRef.current = interim;
+  }, [interim]);
 
   // (Re)connect the SSE stream whenever the room or target language changes.
   useEffect(() => {
@@ -85,9 +95,16 @@ export default function MeetRoom() {
         });
       } else if (msg.type === "interim") {
         setInterim(msg.text || "");
+        setInterimTranslated(null); // new original -> old preview no longer applies
+      } else if (msg.type === "interim_translation") {
+        setInterimTranslated((prev) => {
+          // Only keep it if it's still translating the original currently on screen.
+          return msg.for_text === interimRef.current ? msg.text : prev;
+        });
       } else if (msg.type === "end") {
         setStatus("ended");
         setInterim("");
+        setInterimTranslated(null);
       }
     };
 
@@ -176,7 +193,12 @@ export default function MeetRoom() {
       {interim && status !== "ended" && (
         <div className="interim-bar" title="Bản nghe nhanh (chưa xác nhận)">
           <span className="interim-badge">🎤 đang nghe</span>
-          <span className="interim-text">{interim}</span>
+          <div className="interim-cols">
+            <span className="interim-text">{interim}</span>
+            <span className={`interim-text interim-translated ${interimTranslated == null ? "pending" : ""}`}>
+              {interimTranslated == null ? "…" : interimTranslated}
+            </span>
+          </div>
         </div>
       )}
     </div>
