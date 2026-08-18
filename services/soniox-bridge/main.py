@@ -498,6 +498,14 @@ class _ChannelStream:
         self._interim_tail = ""       # non-final ORIGINAL tokens (live, changing)
         self._open_translated: list[dict] = []   # final TRANSLATION tokens, paired 1:1 with _open's segment
         self._interim_tail_translated = ""       # non-final TRANSLATION tokens (live, changing)
+        # A trailing "." right after a digit is ambiguous — could be a real
+        # sentence end, or a decimal/thousands separator ("4.000" in Vietnamese
+        # number formatting) that's about to continue with more digits. Defer
+        # the punct-close decision one token: resolved in the next append once
+        # we can see whether that next token starts a new word (real sentence
+        # end) or continues the number (false alarm, don't close).
+        self._pending_dot_close = False
+        self._pending_dot_close_translated = False
         self._seq = 0
         self._seq_translated = 0
         self._last_token_at = time.monotonic()
@@ -658,19 +666,33 @@ class _ChannelStream:
         # segment COUNTS aligned so the FIFO pairing in live-translate stays
         # correct — the idle-timeout ticker flush is disabled too, for the
         # same reason (see _ticker).
+        # Only split at a WORD boundary — Soniox prefixes a new word with a
+        # leading space, so a token without one continues the current word;
+        # splitting there would cut a word in half ("re" | "ad").
+        at_word_boundary = (tok.get("text") or "").startswith((" ", "\n"))
+        # Resolve a punct-close deferred by the PREVIOUS token (see below):
+        # if this token doesn't start a new word, it's a continuation (e.g.
+        # "4." was a thousands separator and this token is "000"), so the
+        # earlier "." wasn't a real sentence end — skip the close.
+        if self._pending_dot_close:
+            self._pending_dot_close = False
+            if at_word_boundary:
+                await self._flush(reason="punct")
         if self._open and not self.target_lang:
             gap = (tok.get("start_ms") or 0) - (self._open[-1].get("end_ms") or 0)
-            # Only split at a WORD boundary — Soniox prefixes a new word with a
-            # leading space, so a token without one continues the current word;
-            # splitting there would cut a word in half ("re" | "ad").
-            at_word_boundary = (tok.get("text") or "").startswith((" ", "\n"))
             if gap > STREAM_SEG_GAP_MS and at_word_boundary and len(self._open_text()) >= STREAM_SEG_MIN_CHARS:
                 await self._flush(reason=f"gap{gap}")
         self._open.append(tok)
         text = self._open_text()
         # Close on sentence punctuation (once long enough) or when it grows too long.
         if text and text[-1] in ".?!。！？" and len(text) >= STREAM_SEG_MIN_CHARS:
-            await self._flush(reason="punct")
+            if text[-1] == "." and len(text) >= 2 and text[-2].isdigit():
+                # Ambiguous: "4." could be a decimal/thousands separator about
+                # to continue ("4.000") rather than a real sentence end.
+                # Defer — resolved by the next token above.
+                self._pending_dot_close = True
+            else:
+                await self._flush(reason="punct")
         elif not self.target_lang and len(text) > STREAM_SEG_MAX_CHARS:
             # Same reasoning as the gap/idle skip above: maxlen is a raw
             # character-count threshold, and translated text is a different
@@ -822,10 +844,20 @@ class _ChannelStream:
         # from). maxlen is ALSO skipped here when translation is on — see the
         # comment in _append_final for why an independent char-count
         # threshold desyncs the two streams' segment counts.
+        # Same digit-period ambiguity as _append_final (e.g. Vietnamese
+        # "4.000") — defer the close decision to the next token.
+        at_word_boundary = (tok.get("text") or "").startswith((" ", "\n"))
+        if self._pending_dot_close_translated:
+            self._pending_dot_close_translated = False
+            if at_word_boundary:
+                await self._flush_translated(reason="punct")
         self._open_translated.append(tok)
         text = self._open_translated_text()
         if text and text[-1] in ".?!。！？" and len(text) >= STREAM_SEG_MIN_CHARS:
-            await self._flush_translated(reason="punct")
+            if text[-1] == "." and len(text) >= 2 and text[-2].isdigit():
+                self._pending_dot_close_translated = True
+            else:
+                await self._flush_translated(reason="punct")
         elif not self.target_lang and len(text) > STREAM_SEG_MAX_CHARS:
             await self._flush_translated(reason="maxlen")
 
