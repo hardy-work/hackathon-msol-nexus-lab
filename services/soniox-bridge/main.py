@@ -671,7 +671,17 @@ class _ChannelStream:
         # Close on sentence punctuation (once long enough) or when it grows too long.
         if text and text[-1] in ".?!。！？" and len(text) >= STREAM_SEG_MIN_CHARS:
             await self._flush(reason="punct")
-        elif len(text) > STREAM_SEG_MAX_CHARS:
+        elif not self.target_lang and len(text) > STREAM_SEG_MAX_CHARS:
+            # Same reasoning as the gap/idle skip above: maxlen is a raw
+            # character-count threshold, and translated text is a different
+            # length than the original (different language) — the two
+            # streams hit it at different points, producing an extra
+            # unpaired segment on one side. Live-tested: an English segment
+            # closed at maxlen while its Vietnamese translation was still
+            # short of maxlen, then closed AGAIN moments later on its own
+            # punctuation — 1 original vs 2 translated for the same speech,
+            # desyncing the FIFO pairing from there on. With translation on,
+            # punctuation/channel-close are the only closers on both sides.
             await self._flush(reason="maxlen")
 
     def _open_text(self) -> str:
@@ -807,14 +817,16 @@ class _ChannelStream:
         })
 
     async def _append_translated_final(self, tok: dict) -> None:
-        # Mirrors _append_final's punctuation/maxlen closing, minus the
-        # gap-based split (translated tokens have no start_ms/end_ms to
-        # compute a gap from).
+        # Mirrors _append_final's punctuation closing, minus the gap-based
+        # split (translated tokens have no start_ms/end_ms to compute a gap
+        # from). maxlen is ALSO skipped here when translation is on — see the
+        # comment in _append_final for why an independent char-count
+        # threshold desyncs the two streams' segment counts.
         self._open_translated.append(tok)
         text = self._open_translated_text()
         if text and text[-1] in ".?!。！？" and len(text) >= STREAM_SEG_MIN_CHARS:
             await self._flush_translated(reason="punct")
-        elif len(text) > STREAM_SEG_MAX_CHARS:
+        elif not self.target_lang and len(text) > STREAM_SEG_MAX_CHARS:
             await self._flush_translated(reason="maxlen")
 
     async def close(self) -> None:
