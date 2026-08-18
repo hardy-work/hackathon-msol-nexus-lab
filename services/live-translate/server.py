@@ -335,30 +335,42 @@ class Room:
     def ingest_interim(self, text: str, speaker: Optional[str]) -> None:
         self._broadcast({"type": "interim", "text": text, "speaker": speaker or ""})
         self._interim_text = text
-        if self._interim_xlate_inflight or len(text.strip()) < INTERIM_XLATE_MIN_CHARS:
-            return
         loop = asyncio.get_event_loop()
         now = loop.time()
-        if now - self._interim_last_xlate_at < INTERIM_XLATE_MIN_INTERVAL_S:
+        gap = now - self._interim_last_xlate_at
+        logger.debug(
+            "room %s: ingest_interim len=%d inflight=%s gap=%.2f active_langs=%s",
+            self.key, len(text.strip()), self._interim_xlate_inflight, gap, self._active_langs(),
+        )
+        if self._interim_xlate_inflight or len(text.strip()) < INTERIM_XLATE_MIN_CHARS:
+            return
+        if gap < INTERIM_XLATE_MIN_INTERVAL_S:
             return
         self._interim_last_xlate_at = now
         self._interim_xlate_inflight = True
         asyncio.create_task(self._interim_translate(text))
 
     async def _interim_translate(self, text: str) -> None:
+        logger.info("room %s: interim preview dispatched (%d chars): %r", self.key, len(text), text[-40:])
         try:
             for lang in self._active_langs():
                 try:
                     translated = await _translator.translate([text], lang)
                 except Exception as e:  # noqa: BLE001 - a failed preview is not fatal
-                    logger.debug("room %s: interim preview translate failed: %s", self.key, e)
+                    logger.info("room %s: interim preview translate failed: %s", self.key, e)
                     continue
-                # The (slow) translate call may have been overtaken: newer speech
-                # arrived, or this text already got committed as a real segment
-                # (ingest_final clears _interim_text). Drop a stale result instead
-                # of showing a translation next to text that's no longer on screen.
-                if self._interim_text != text:
+                # The translate call is slow enough (an LLM round-trip) that the
+                # interim line has usually grown further by the time it returns —
+                # requiring an EXACT match here meant almost every preview got
+                # dropped as "stale" even though the sentence just kept extending
+                # in the same direction. Accept it as long as the current interim
+                # still starts with the text we translated (still the same,
+                # still-growing sentence); only drop if it's genuinely gone
+                # (finalized, cleared, or the sentence actually changed).
+                if not self._interim_text.startswith(text):
+                    logger.info("room %s: interim preview stale, dropping (lang=%s)", self.key, lang)
                     continue
+                logger.info("room %s: interim preview broadcast (lang=%s): %r", self.key, lang, translated[0][-40:])
                 self._broadcast(
                     {"type": "interim_translation", "lang": lang, "text": translated[0], "for_text": text},
                     only_lang=lang,

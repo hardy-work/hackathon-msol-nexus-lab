@@ -43,10 +43,15 @@ export default function MeetRoom() {
   const [copied, setCopied] = useState(false);
   // Fast "live" line pushed by soniox-bridge (B1), ahead of Vexa's confirmed text.
   const [interim, setInterim] = useState("");
-  // Preview translation of `interim`, once it's stable long enough to translate.
-  // Cleared whenever a new interim line arrives so a stale translation never
-  // shows next to newer original text.
+  // Preview translation of `interim`. Translation is slow enough (an LLM
+  // round-trip) that it usually finishes after the sentence has grown further,
+  // so this intentionally keeps showing a slightly-behind translation (of an
+  // earlier, shorter prefix of the current interim) rather than clearing on
+  // every keystroke-like interim tick — otherwise it would show "…" almost
+  // permanently. `interimTranslatedFor` is the original text it belongs to, so
+  // we can tell whether it's still a valid prefix of the current interim.
   const [interimTranslated, setInterimTranslated] = useState(null);
+  const [interimTranslatedFor, setInterimTranslatedFor] = useState(null);
 
   const scrollRef = useRef(null);
   const stickToBottom = useRef(true);
@@ -94,17 +99,29 @@ export default function MeetRoom() {
           return next;
         });
       } else if (msg.type === "interim") {
-        setInterim(msg.text || "");
-        setInterimTranslated(null); // new original -> old preview no longer applies
-      } else if (msg.type === "interim_translation") {
-        setInterimTranslated((prev) => {
-          // Only keep it if it's still translating the original currently on screen.
-          return msg.for_text === interimRef.current ? msg.text : prev;
+        const text = msg.text || "";
+        setInterim(text);
+        // Only drop the current preview if the sentence actually changed
+        // direction (no longer starts with what we translated) — otherwise
+        // keep showing it; it's still accurate as far as it goes.
+        setInterimTranslatedFor((prevFor) => {
+          if (prevFor && !text.startsWith(prevFor)) {
+            setInterimTranslated(null);
+            return null;
+          }
+          return prevFor;
         });
+      } else if (msg.type === "interim_translation") {
+        // Only accept it if it's still a prefix of what's currently on screen.
+        if (interimRef.current.startsWith(msg.for_text)) {
+          setInterimTranslated(msg.text);
+          setInterimTranslatedFor(msg.for_text);
+        }
       } else if (msg.type === "end") {
         setStatus("ended");
         setInterim("");
         setInterimTranslated(null);
+        setInterimTranslatedFor(null);
       }
     };
 
