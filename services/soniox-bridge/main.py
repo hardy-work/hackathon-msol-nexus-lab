@@ -644,7 +644,21 @@ class _ChannelStream:
         # open one FIRST (before appending) so the gap becomes the seam — but only
         # if it's already a worthwhile length, else let this token extend it (avoids
         # tiny mid-word fragments when Soniox reports a spurious gap).
-        if self._open:
+        #
+        # SKIPPED when translation is on: the translated stream has no
+        # start_ms/end_ms to split on (Soniox doesn't timestamp translation
+        # tokens), so it only ever closes on punctuation/maxlen. If the
+        # original ALSO split on gaps, it produced systematically MORE, finer
+        # segments than translation did — live-tested and confirmed wrong:
+        # a lone "artificial intelligence." original segment (split off by a
+        # gap900) ended up paired via FIFO with the translation of a
+        # DIFFERENT, unrelated sentence three segments later, because the
+        # translated stream had merged everything between two periods into
+        # one chunk. Restricting both sides to punctuation/maxlen keeps their
+        # segment COUNTS aligned so the FIFO pairing in live-translate stays
+        # correct — the idle-timeout ticker flush is disabled too, for the
+        # same reason (see _ticker).
+        if self._open and not self.target_lang:
             gap = (tok.get("start_ms") or 0) - (self._open[-1].get("end_ms") or 0)
             # Only split at a WORD boundary — Soniox prefixes a new word with a
             # leading space, so a token without one continues the current word;
@@ -669,6 +683,15 @@ class _ChannelStream:
     async def _ticker(self) -> None:
         # Close the open segment once speech pauses (so the last sentence before a
         # silence is committed instead of lingering as interim).
+        #
+        # SKIPPED when translation is on, same reasoning as the gap-based split
+        # in _append_final: an idle-triggered cut on the original with no
+        # matching cut on the translated stream (which only closes on
+        # punctuation) would reintroduce the same segment-count mismatch that
+        # broke FIFO pairing. With translation on, original closes ONLY on
+        # punctuation/maxlen/channel-close — interim still shows a mid-pause
+        # sentence live in the meantime, just the CONFIRMED list catches up a
+        # bit slower than without translation.
         try:
             while not self._closed:
                 await asyncio.sleep(0.3)
@@ -676,6 +699,7 @@ class _ChannelStream:
                 # — that's Soniox mid-word, and flushing there would cut it ("re"|"ad").
                 if (
                     self._open
+                    and not self.target_lang
                     and not self._interim_tail.strip()
                     and (time.monotonic() - self._last_token_at) * 1000 > STREAM_IDLE_FLUSH_MS
                 ):
