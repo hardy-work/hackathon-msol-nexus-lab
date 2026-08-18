@@ -43,6 +43,11 @@ from translator import build_translator, lang_name
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("live-translate")
+# Dedicated loggers so `grep` can isolate each half of the interim-preview
+# pipeline: what came in (raw interim text as it grows) vs. what happened to
+# translating it (dispatched/broadcast/stale/failed).
+logger_interim = logging.getLogger("live-translate.interim")
+logger_interim_xlate = logging.getLogger("live-translate.interim.translate")
 
 VEXA_BASE_URL = os.getenv("VEXA_BASE_URL", "http://localhost:18056")
 VEXA_API_KEY = os.getenv("VEXA_API_KEY", "")
@@ -65,6 +70,14 @@ INTERIM_XLATE_MIN_INTERVAL_S = float(os.getenv("INTERIM_XLATE_MIN_INTERVAL_S", "
 INTERIM_XLATE_MIN_CHARS = int(os.getenv("INTERIM_XLATE_MIN_CHARS", "8"))
 
 _translator = build_translator()
+# Separate instance/session for interim previews. Confirmed-segment translation
+# (via _translator) and interim previews used to share one persistent Claude
+# session, which serializes ALL queries on one lock — under continuous speech,
+# every interim preview queued up behind final-segment translations and was
+# almost always stale by the time its turn came (observed 20+ second waits
+# live). A dedicated session removes that contention: the two translate
+# independently, so an interim preview isn't waiting on unrelated segment work.
+_interim_translator = build_translator()
 
 _vexa = httpx.AsyncClient(
     base_url=VEXA_BASE_URL,
@@ -338,10 +351,7 @@ class Room:
         loop = asyncio.get_event_loop()
         now = loop.time()
         gap = now - self._interim_last_xlate_at
-        logger.debug(
-            "room %s: ingest_interim len=%d inflight=%s gap=%.2f active_langs=%s",
-            self.key, len(text.strip()), self._interim_xlate_inflight, gap, self._active_langs(),
-        )
+        logger_interim.info("room %s: %r (speaker=%s)", self.key, text, speaker or "")
         if self._interim_xlate_inflight or len(text.strip()) < INTERIM_XLATE_MIN_CHARS:
             return
         if gap < INTERIM_XLATE_MIN_INTERVAL_S:
@@ -351,13 +361,13 @@ class Room:
         asyncio.create_task(self._interim_translate(text))
 
     async def _interim_translate(self, text: str) -> None:
-        logger.info("room %s: interim preview dispatched (%d chars): %r", self.key, len(text), text[-40:])
+        logger_interim_xlate.info("room %s: dispatched (%d chars): %r", self.key, len(text), text)
         try:
             for lang in self._active_langs():
                 try:
-                    translated = await _translator.translate([text], lang)
+                    translated = await _interim_translator.translate([text], lang)
                 except Exception as e:  # noqa: BLE001 - a failed preview is not fatal
-                    logger.info("room %s: interim preview translate failed: %s", self.key, e)
+                    logger_interim_xlate.info("room %s: translate failed: %s", self.key, e)
                     continue
                 # The translate call is slow enough (an LLM round-trip) that the
                 # interim line has usually grown further by the time it returns —
@@ -368,9 +378,14 @@ class Room:
                 # still-growing sentence); only drop if it's genuinely gone
                 # (finalized, cleared, or the sentence actually changed).
                 if not self._interim_text.startswith(text):
-                    logger.info("room %s: interim preview stale, dropping (lang=%s)", self.key, lang)
+                    logger_interim_xlate.info(
+                        "room %s: stale, dropping (lang=%s) — translated %r but current interim is now %r",
+                        self.key, lang, text, self._interim_text,
+                    )
                     continue
-                logger.info("room %s: interim preview broadcast (lang=%s): %r", self.key, lang, translated[0][-40:])
+                logger_interim_xlate.info(
+                    "room %s: broadcast (lang=%s) %r -> %r", self.key, lang, text, translated[0],
+                )
                 self._broadcast(
                     {"type": "interim_translation", "lang": lang, "text": translated[0], "for_text": text},
                     only_lang=lang,
@@ -455,6 +470,7 @@ async def _lifespan(app: FastAPI):
     # Pay the persistent-session connect cost now, in the background, so the
     # first real translation of a meeting isn't stalled waiting for it.
     asyncio.create_task(_translator.warm())
+    asyncio.create_task(_interim_translator.warm())
     yield
 
 
