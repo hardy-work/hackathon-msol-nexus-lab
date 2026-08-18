@@ -200,6 +200,18 @@ class Room:
         # seed a segment's translation cell instantly instead of a blank "…"
         # while the authoritative translation (below) is still in flight.
         self._last_interim_xlate: dict[str, tuple[str, str]] = {}
+        # channel (from seg_id's "N:" prefix) -> FIFO queue of idx awaiting a
+        # Soniox-native translation (kind="final_translation"). Soniox streams
+        # the translated stream as its OWN independently-segmented sequence —
+        # NOT 1:1 timing-paired with the original's flush — so pairing must be
+        # done here by arrival ORDER per channel, not by content-matching. See
+        # ingest_final / ingest_final_translation.
+        self._pending_translation_idx: dict[str, list[int]] = {}
+        # Langs confirmed (by at least one arrived final_translation or native
+        # interim translation) to have a live Soniox-native pipeline for this
+        # room. _schedule_missing skips dispatching Claude for these — no
+        # point paying for/waiting on a redundant translation.
+        self._soniox_native_langs: set[str] = set()
 
     # -- viewer lifecycle --------------------------------------------------- #
 
@@ -339,6 +351,15 @@ class Room:
         Idempotent and cheap when nothing is missing, so it's safe to call every
         poll. This is what backfills late viewers and newly requested languages."""
         for lang in (langs or self._active_langs()):
+            if lang in self._soniox_native_langs:
+                # Soniox's own realtime translation is already covering this
+                # lang (ingest_final_translation) — no need to also pay for a
+                # redundant Claude call. If the FIFO pairing ever drops a
+                # segment (logged as "nothing pending, dropping"), it stays
+                # untranslated for this lang rather than silently falling
+                # back — acceptable given this hasn't been observed live yet;
+                # revisit if it turns out to happen.
+                continue
             cache = self._translations.setdefault(lang, {})
             pending = self._pending.setdefault(lang, set())
             todo = [
@@ -372,13 +393,27 @@ class Room:
 
     # -- B-full ingest (bot's continuous stream = authoritative source) ----- #
 
-    def ingest_interim(self, text: str, speaker: Optional[str]) -> None:
+    def ingest_interim(
+        self, text: str, speaker: Optional[str],
+        translated_text: Optional[str] = None, translated_lang: Optional[str] = None,
+    ) -> None:
         self._broadcast({"type": "interim", "text": text, "speaker": speaker or ""})
         self._interim_text = text
+        logger_interim.info("room %s: %r (speaker=%s)", self.key, text, speaker or "")
+        if translated_text and translated_lang:
+            # Soniox streams a translation of the interim line alongside the
+            # original (same realtime connection) — use it directly, no need
+            # to dispatch anything to the Claude interim-preview pool at all.
+            self._broadcast(
+                {"type": "interim_translation", "lang": translated_lang, "text": translated_text, "for_text": text},
+                only_lang=translated_lang,
+            )
+            self._last_interim_xlate[translated_lang] = (text, translated_text)
+            self._soniox_native_langs.add(translated_lang)
+            return
         loop = asyncio.get_event_loop()
         now = loop.time()
         gap = now - self._interim_last_xlate_at
-        logger_interim.info("room %s: %r (speaker=%s)", self.key, text, speaker or "")
         if len(text.strip()) < INTERIM_XLATE_MIN_CHARS:
             return
         if gap < INTERIM_XLATE_MIN_INTERVAL_S:
@@ -469,7 +504,42 @@ class Room:
                 )
                 self._broadcast(self._translation_event(idx, lang, translated_text), only_lang=lang)
         self._last_interim_xlate.clear()
+        # Register this segment as awaiting a Soniox-native translation, IF one
+        # ever arrives for this channel — see ingest_final_translation for the
+        # FIFO pairing. If Soniox translation isn't configured for this room,
+        # this queue just accumulates unused entries; harmless for a single
+        # meeting's lifetime, and _schedule_missing below covers translation
+        # via Claude as the fallback regardless.
+        channel = seg_id.split(":", 1)[0] if ":" in seg_id else seg_id
+        self._pending_translation_idx.setdefault(channel, []).append(idx)
         self._schedule_missing()
+
+    def ingest_final_translation(self, seg_id: str, text: str, lang: str) -> None:
+        """A finalized line from Soniox's native translation stream for this
+        channel — see soniox-bridge's _flush_translated for why this arrives
+        as its own independently-segmented sequence rather than paired inline
+        with the original. Pair it to the OLDEST not-yet-translated segment on
+        the SAME channel (FIFO); safe because both streams preserve speaking
+        order within a channel."""
+        if not text or not lang:
+            return
+        channel = seg_id.split(":", 1)[0] if ":" in seg_id else seg_id
+        queue = self._pending_translation_idx.get(channel)
+        if not queue:
+            logger_interim_xlate.info(
+                "room %s: final_translation for ch%s arrived with nothing pending, dropping: %r",
+                self.key, channel, text,
+            )
+            return
+        idx = queue.pop(0)
+        cache = self._translations.setdefault(lang, {})
+        cache[idx] = text
+        self._soniox_native_langs.add(lang)
+        logger_interim_xlate.info(
+            "room %s: Soniox-native translation for segment idx=%s (lang=%s, ch%s): %r",
+            self.key, idx, lang, channel, text,
+        )
+        self._broadcast(self._translation_event(idx, lang, text), only_lang=lang)
 
     async def _bot_gone(self) -> bool:
         try:
@@ -614,9 +684,23 @@ async def ingest(payload: dict, request: Request) -> dict:
                 start=payload.get("start"),
                 end=payload.get("end"),
             )
+        elif kind == "final_translation":
+            # Soniox's native-translation stream, independently segmented from
+            # the original — see Room.ingest_final_translation for the FIFO
+            # pairing this requires (soniox-bridge's _flush_translated).
+            if text:
+                room.ingest_final_translation(
+                    seg_id=str(payload.get("seg_id") or ""),
+                    text=text,
+                    lang=str(payload.get("lang") or ""),
+                )
         else:  # interim
             if text:
-                room.ingest_interim(text, payload.get("speaker"))
+                room.ingest_interim(
+                    text, payload.get("speaker"),
+                    translated_text=payload.get("translated_text"),
+                    translated_lang=payload.get("translated_lang"),
+                )
         return {"ok": True, "room": room.key}
 
     # Legacy B1 path: bare interim text -> single active meeting.

@@ -89,6 +89,14 @@ STREAM_SEG_MIN_CHARS = int(os.getenv("STREAM_SEG_MIN_CHARS", "14"))
 # doesn't spin the channel forever.
 STREAM_RECONNECT_BACKOFF_S = float(os.getenv("STREAM_RECONNECT_BACKOFF_S", "1.0"))
 STREAM_MAX_RECONNECTS = int(os.getenv("STREAM_MAX_RECONNECTS", "20"))
+# Soniox's real-time API can translate alongside transcription in the same
+# stream at no extra cost (a "translation" block in the connect config) —
+# tokens come back tagged translation_status="original"/"translation", already
+# interleaved, typically tens of ms behind each other (measured locally: an
+# LLM-based translate() round-trip was 8-17s; this is ~0.03s). Empty/unset ->
+# translation off entirely (unchanged behavior, live-translate's Claude-based
+# translation is the sole path — this is the default until confirmed live).
+TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "").strip()
 # Our own inbound auth, same dual scheme Vexa's reference service supports.
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
 # B1 low-latency interim push (opt-in). When set, each transcript is forwarded to
@@ -472,22 +480,31 @@ async def _post_ingest(payload: dict) -> None:
 class _ChannelStream:
     """One persistent Soniox realtime stream for a single speaker channel."""
 
-    def __init__(self, platform: str, native_id: str, channel: int, language: Optional[str]):
+    def __init__(self, platform: str, native_id: str, channel: int, language: Optional[str], target_lang: Optional[str] = None):
         self.platform = platform
         self.native_id = native_id
         self.channel = channel
         self.language = language or None
+        # If set, Soniox translates alongside transcription in the SAME realtime
+        # stream (a "translation" block in the connect config) — the response
+        # then interleaves tokens tagged translation_status="original" (the usual
+        # transcript) and "translation" (the translated text), no separate call.
+        self.target_lang = target_lang or None
         self.speaker = "Speaker"
         self._pcm_q: "asyncio.Queue[Optional[bytes]]" = asyncio.Queue(maxsize=2000)
         self._ws = None
         self._tasks: list[asyncio.Task] = []
-        self._open: list[dict] = []   # final tokens of the currently-open segment
-        self._interim_tail = ""       # non-final tokens (live, changing)
+        self._open: list[dict] = []   # final ORIGINAL tokens of the currently-open segment
+        self._interim_tail = ""       # non-final ORIGINAL tokens (live, changing)
+        self._open_translated: list[dict] = []   # final TRANSLATION tokens, paired 1:1 with _open's segment
+        self._interim_tail_translated = ""       # non-final TRANSLATION tokens (live, changing)
         self._seq = 0
+        self._seq_translated = 0
         self._last_token_at = time.monotonic()
         self._last_interim_push = 0.0
         self._closed = False
         self._flush_lock = asyncio.Lock()
+        self._flush_translated_lock = asyncio.Lock()
         self._run_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
@@ -514,6 +531,8 @@ class _ChannelStream:
             cfg["language_hints"] = [self.language]
         else:
             cfg["enable_language_identification"] = True
+        if self.target_lang:
+            cfg["translation"] = {"type": "one_way", "target_language": self.target_lang}
         await self._ws.send(json.dumps(cfg))
 
     def feed(self, pcm: bytes) -> None:
@@ -558,13 +577,24 @@ class _ChannelStream:
                 return
             changed = False
             tail = ""
+            tail_translated = ""
             for tok in msg.get("tokens", []):
-                if tok.get("is_final"):
+                # Untagged (translation not configured) counts as "original".
+                # Translation tokens close their own segments independently
+                # (_append_translated_final) — see _flush_translated for why
+                # this can't just piggyback on the original's flush timing.
+                if tok.get("translation_status") == "translation":
+                    if tok.get("is_final"):
+                        await self._append_translated_final(tok)
+                    else:
+                        tail_translated += tok.get("text", "")
+                elif tok.get("is_final"):
                     await self._append_final(tok)
                     changed = True
                 else:
                     tail += tok.get("text", "")
             self._interim_tail = tail
+            self._interim_tail_translated = tail_translated
             self._last_token_at = time.monotonic()
             await self._maybe_push_interim(force=changed)
             if msg.get("finished"):
@@ -586,7 +616,9 @@ class _ChannelStream:
             # (not a final end) unless we're actually shutting down, so a
             # mid-sentence cut here reads as "connection seam", matching the
             # gap/idle flush reasons already used elsewhere in this file.
-            await self._flush(reason="end" if self._closed else "reconnect")
+            flush_reason = "end" if self._closed else "reconnect"
+            await self._flush(reason=flush_reason)
+            await self._flush_translated(reason=flush_reason)
             if self._closed:
                 return
             reconnects += 1
@@ -631,6 +663,9 @@ class _ChannelStream:
     def _open_text(self) -> str:
         return "".join(t.get("text", "") for t in self._open).strip()
 
+    def _open_translated_text(self) -> str:
+        return "".join(t.get("text", "") for t in self._open_translated).strip()
+
     async def _ticker(self) -> None:
         # Close the open segment once speech pauses (so the last sentence before a
         # silence is committed instead of lingering as interim).
@@ -654,11 +689,18 @@ class _ChannelStream:
             return
         self._last_interim_push = now
         line = (self._open_text() + " " + self._interim_tail).strip()
-        if line:
-            await _post_ingest({
-                "platform": self.platform, "native_meeting_id": self.native_id,
-                "kind": "interim", "text": line, "speaker": self.speaker,
-            })
+        if not line:
+            return
+        payload = {
+            "platform": self.platform, "native_meeting_id": self.native_id,
+            "kind": "interim", "text": line, "speaker": self.speaker,
+        }
+        if self.target_lang:
+            translated_line = (self._open_translated_text() + " " + self._interim_tail_translated).strip()
+            if translated_line:
+                payload["translated_text"] = translated_line
+                payload["translated_lang"] = self.target_lang
+        await _post_ingest(payload)
 
     async def _flush(self, final: bool = False, reason: str = "end") -> None:
         # On an abnormal cutoff (reason "reconnect" — a mid-stream Soniox
@@ -702,6 +744,55 @@ class _ChannelStream:
             "lang": lang, "start": start, "end": end,
         })
 
+    async def _flush_translated(self, reason: str = "end") -> None:
+        """Independent segmentation for the TRANSLATED stream — deliberately
+        NOT paired inline with the original's own flush. Measured live: at the
+        instant an original segment hits its punctuation boundary, its
+        translation is usually still arriving (translation tokens stream
+        "chunk by chunk" behind the original per Soniox's docs) — draining
+        _open_translated synchronously there attached segment N's translation
+        to segment N+1 instead. Let translation close on ITS OWN punctuation
+        (no gap-based splitting: translated tokens carry no start_ms/end_ms
+        per Soniox's docs) and ship it as its own kind="final_translation"
+        event; live-translate pairs these back to original segments in
+        arrival ORDER per channel (a FIFO queue), which is safe because
+        Soniox streams both in speaking order."""
+        recovered_tail = ""
+        if reason in ("reconnect", "end"):
+            recovered_tail = self._interim_tail_translated.strip()
+            self._interim_tail_translated = ""
+        async with self._flush_translated_lock:
+            if not self._open_translated and not recovered_tail:
+                return
+            toks, self._open_translated = self._open_translated, []
+        text = "".join(t.get("text", "") for t in toks).strip()
+        if recovered_tail:
+            text = f"{text} {recovered_tail}".strip()
+        if not text:
+            return
+        seg_id = f"{self.channel}:t{self._seq_translated}"
+        self._seq_translated += 1
+        logger.info(
+            "stream ch%d FLUSH_TRANSLATED seg=%s reason=%s len=%d: ...%s",
+            self.channel, seg_id, reason, len(text), text[-24:],
+        )
+        await _post_ingest({
+            "platform": self.platform, "native_meeting_id": self.native_id,
+            "kind": "final_translation", "seg_id": seg_id, "text": text,
+            "speaker": self.speaker, "lang": self.target_lang,
+        })
+
+    async def _append_translated_final(self, tok: dict) -> None:
+        # Mirrors _append_final's punctuation/maxlen closing, minus the
+        # gap-based split (translated tokens have no start_ms/end_ms to
+        # compute a gap from).
+        self._open_translated.append(tok)
+        text = self._open_translated_text()
+        if text and text[-1] in ".?!。！？" and len(text) >= STREAM_SEG_MIN_CHARS:
+            await self._flush_translated(reason="punct")
+        elif len(text) > STREAM_SEG_MAX_CHARS:
+            await self._flush_translated(reason="maxlen")
+
     async def close(self) -> None:
         self._closed = True
         try:
@@ -728,7 +819,7 @@ class _ChannelStream:
 
 @app.websocket("/v1/stream")
 async def stream_relay(ws: WebSocket) -> None:
-    """Bot -> bridge PCM relay. Query: platform, meeting, lang, token.
+    """Bot -> bridge PCM relay. Query: platform, meeting, lang, target_lang, token.
     Binary frames = [1-byte channel][s16le PCM]. Text frames = JSON control
     ({"type":"speaker","channel":N,"name":"..."})."""
     if API_TOKEN and ws.query_params.get("token") != API_TOKEN:
@@ -740,15 +831,24 @@ async def stream_relay(ws: WebSocket) -> None:
     platform = ws.query_params.get("platform", "google_meet")
     native_id = ws.query_params.get("meeting", "")
     language = (ws.query_params.get("lang") or "").strip() or None
+    # target_lang enables Soniox's native real-time translation (a "translation"
+    # block added to each channel's connect config) — the bot doesn't send this
+    # today, so it falls back to TRANSLATE_TARGET_LANG; explicit query param
+    # wins if a caller ever does pass one. Empty/unset -> translation off,
+    # unchanged behavior (live-translate's own Claude-based path still runs).
+    target_lang = (ws.query_params.get("target_lang") or TRANSLATE_TARGET_LANG or "").strip() or None
     await ws.accept()
-    logger.info("stream relay open: %s/%s (lang=%s)", platform, native_id, language or "auto")
+    logger.info(
+        "stream relay open: %s/%s (lang=%s, target_lang=%s)",
+        platform, native_id, language or "auto", target_lang or "none",
+    )
     channels: dict[int, _ChannelStream] = {}
     pending_speaker: dict[int, str] = {}  # speaker set before the channel's first audio
 
     async def get_channel(ch: int) -> _ChannelStream:
         cs = channels.get(ch)
         if cs is None:
-            cs = _ChannelStream(platform, native_id, ch, language)
+            cs = _ChannelStream(platform, native_id, ch, language, target_lang)
             if ch in pending_speaker:
                 cs.speaker = pending_speaker[ch]
             channels[ch] = cs

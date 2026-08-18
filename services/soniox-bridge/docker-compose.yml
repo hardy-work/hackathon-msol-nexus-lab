@@ -24,4 +24,10 @@ services:
       # B1 low-latency interim push (opt-in). Empty -> disabled (reverts).
       - LIVE_INGEST_URL=${LIVE_INGEST_URL:-}
       - LIVE_INGEST_TOKEN=${LIVE_INGEST_TOKEN:-}
+      # Soniox-native realtime translation (opt-in, no extra cost — included in
+      # STT pricing). Empty -> off, live-translate's Claude-based translation
+      # stays the sole path (unchanged behavior). Set e.g. "vi" to translate
+      # every channel into Vietnamese directly in the Soniox stream — this is
+      # what actually fixed the multi-second translation lag, not a tuning knob.
+      - TRANSLATE_TARGET_LANG=${TRANSLATE_TARGET_LANG:-}
     restart: unless-stopped
