@@ -51,13 +51,15 @@ POLL_INTERVAL_S = float(os.getenv("POLL_INTERVAL_S", "1.5"))
 IDLE_SHUTDOWN_S = float(os.getenv("IDLE_SHUTDOWN_S", "300"))
 DEFAULT_LANG = os.getenv("DEFAULT_TARGET_LANG", "vi")
 # Preview-translate the live "đang nghe" interim line, not just committed
-# segments. Debounced so it only fires once the interim line has been stable
-# for this long — while someone's actively talking, interim updates every
-# ~350ms (see soniox-bridge's STREAM_INTERIM_MS) and would keep re-triggering
-# and cancelling this timer, so in practice this only fires on natural pauses
-# (clause/sentence boundaries), keeping call volume in the same ballpark as
-# confirmed-segment translation rather than firing on every keystroke-like tick.
-INTERIM_XLATE_DEBOUNCE_S = float(os.getenv("INTERIM_XLATE_DEBOUNCE_S", "0.9"))
+# segments. NOT debounced-until-stable — a completed sentence gets flushed to
+# a real segment the instant soniox-bridge sees its closing punctuation (zero
+# delay), so a stable-and-not-yet-final window essentially never exists during
+# continuous speech; waiting for "stable" meant this almost never fired. Instead,
+# translate whatever partial text is on screen at a fixed cadence (throttled by
+# this interval, and only one in flight at a time) — same idea as live caption
+# translation: the preview keeps catching up to a growing sentence rather than
+# waiting for it to finish.
+INTERIM_XLATE_MIN_INTERVAL_S = float(os.getenv("INTERIM_XLATE_MIN_INTERVAL_S", "1.2"))
 # Don't bother translating a fragment this short — too little signal, and it's
 # about to be superseded by more words anyway.
 INTERIM_XLATE_MIN_CHARS = int(os.getenv("INTERIM_XLATE_MIN_CHARS", "8"))
@@ -156,7 +158,8 @@ class Room:
         self._bfull_next = 1_000_000           # idx space disjoint from Vexa's
         # Live preview translation of the current interim line (see ingest_interim).
         self._interim_text = ""
-        self._interim_debounce_task: Optional[asyncio.Task] = None
+        self._interim_last_xlate_at = 0.0
+        self._interim_xlate_inflight = False
 
     # -- viewer lifecycle --------------------------------------------------- #
 
@@ -332,32 +335,36 @@ class Room:
     def ingest_interim(self, text: str, speaker: Optional[str]) -> None:
         self._broadcast({"type": "interim", "text": text, "speaker": speaker or ""})
         self._interim_text = text
-        if self._interim_debounce_task is not None and not self._interim_debounce_task.done():
-            self._interim_debounce_task.cancel()
-        if len(text.strip()) >= INTERIM_XLATE_MIN_CHARS:
-            self._interim_debounce_task = asyncio.create_task(self._debounced_interim_translate(text))
-
-    async def _debounced_interim_translate(self, text: str) -> None:
-        try:
-            await asyncio.sleep(INTERIM_XLATE_DEBOUNCE_S)
-        except asyncio.CancelledError:
+        if self._interim_xlate_inflight or len(text.strip()) < INTERIM_XLATE_MIN_CHARS:
             return
-        if self._interim_text != text:
-            return  # a newer interim already superseded this one
-        for lang in self._active_langs():
-            try:
-                translated = await _translator.translate([text], lang)
-            except Exception as e:  # noqa: BLE001 - a failed preview is not fatal
-                logger.debug("room %s: interim preview translate failed: %s", self.key, e)
-                continue
-            # Re-check after the (slow) translate call: the interim line may have
-            # moved on, or already been committed as a real segment, while we waited.
-            if self._interim_text != text:
-                return
-            self._broadcast(
-                {"type": "interim_translation", "lang": lang, "text": translated[0], "for_text": text},
-                only_lang=lang,
-            )
+        loop = asyncio.get_event_loop()
+        now = loop.time()
+        if now - self._interim_last_xlate_at < INTERIM_XLATE_MIN_INTERVAL_S:
+            return
+        self._interim_last_xlate_at = now
+        self._interim_xlate_inflight = True
+        asyncio.create_task(self._interim_translate(text))
+
+    async def _interim_translate(self, text: str) -> None:
+        try:
+            for lang in self._active_langs():
+                try:
+                    translated = await _translator.translate([text], lang)
+                except Exception as e:  # noqa: BLE001 - a failed preview is not fatal
+                    logger.debug("room %s: interim preview translate failed: %s", self.key, e)
+                    continue
+                # The (slow) translate call may have been overtaken: newer speech
+                # arrived, or this text already got committed as a real segment
+                # (ingest_final clears _interim_text). Drop a stale result instead
+                # of showing a translation next to text that's no longer on screen.
+                if self._interim_text != text:
+                    continue
+                self._broadcast(
+                    {"type": "interim_translation", "lang": lang, "text": translated[0], "for_text": text},
+                    only_lang=lang,
+                )
+        finally:
+            self._interim_xlate_inflight = False
 
     def ingest_final(
         self, seg_id: str, speaker: str, language: str, text: str,
@@ -367,10 +374,9 @@ class Room:
         segment (translate + broadcast), bypassing Vexa's confirm layer entirely."""
         self.bfull = True  # from now on the poller won't emit its own segments
         # This text just got committed as a real segment (which gets its own,
-        # authoritative translation below) — drop any in-flight interim preview
-        # for it so a late preview doesn't overwrite/duplicate the real one.
-        if self._interim_debounce_task is not None and not self._interim_debounce_task.done():
-            self._interim_debounce_task.cancel()
+        # authoritative translation below). Clear it so an in-flight interim
+        # preview's staleness check (in _interim_translate) drops its result
+        # instead of showing next to text no longer on screen.
         self._interim_text = ""
         idx = self._bfull_idx.get(seg_id)
         if idx is None:
