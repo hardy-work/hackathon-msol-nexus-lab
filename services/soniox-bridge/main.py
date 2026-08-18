@@ -661,18 +661,39 @@ class _ChannelStream:
             })
 
     async def _flush(self, final: bool = False, reason: str = "end") -> None:
+        # On an abnormal cutoff (reason "reconnect" — a mid-stream Soniox
+        # error — or "end" — the channel is closing), Soniox may not have
+        # had time to mark trailing tokens is_final before the connection
+        # died, so they never made it into self._open. We already showed
+        # that text live as the interim "đang nghe" line, though — recover
+        # it here as best-effort rather than silently losing text the viewer
+        # already saw (this is exactly how "Can you give me some examples?"
+        # was getting flushed as just "Can y": the rest was still sitting in
+        # _interim_tail when the reconnect-triggered flush fired). Not done
+        # for normal punct/gap/idle/maxlen flushes — there the tail is
+        # usually just a word still being formed, and grabbing it early would
+        # duplicate/cut it instead of letting it finalize properly next.
+        recovered_tail = ""
+        if reason in ("reconnect", "end"):
+            recovered_tail = self._interim_tail.strip()
+            self._interim_tail = ""
         async with self._flush_lock:
-            if not self._open:
+            if not self._open and not recovered_tail:
                 return
             toks, self._open = self._open, []
         text = "".join(t.get("text", "") for t in toks).strip()
+        if recovered_tail:
+            text = f"{text} {recovered_tail}".strip()
         if not text:
             return
         seg_id = f"{self.channel}:{self._seq}"
         self._seq += 1
         logger.info("stream ch%d FLUSH seg=%s reason=%s len=%d: ...%s", self.channel, seg_id, reason, len(text), text[-24:])
-        start = (toks[0].get("start_ms") or 0) / 1000.0
-        end = (toks[-1].get("end_ms") or 0) / 1000.0
+        # toks can be empty here (recovered_tail-only flush: nothing was ever
+        # finalized before the cutoff) — fall back to 0 rather than indexing
+        # into an empty list.
+        start = (toks[0].get("start_ms") or 0) / 1000.0 if toks else 0.0
+        end = (toks[-1].get("end_ms") or 0) / 1000.0 if toks else start
         langs = [t.get("language") for t in toks if t.get("language")]
         lang = max(set(langs), key=langs.count) if langs else (self.language or "")
         await _post_ingest({

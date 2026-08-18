@@ -70,14 +70,37 @@ INTERIM_XLATE_MIN_INTERVAL_S = float(os.getenv("INTERIM_XLATE_MIN_INTERVAL_S", "
 INTERIM_XLATE_MIN_CHARS = int(os.getenv("INTERIM_XLATE_MIN_CHARS", "8"))
 
 _translator = build_translator()
-# Separate instance/session for interim previews. Confirmed-segment translation
-# (via _translator) and interim previews used to share one persistent Claude
-# session, which serializes ALL queries on one lock — under continuous speech,
-# every interim preview queued up behind final-segment translations and was
-# almost always stale by the time its turn came (observed 20+ second waits
-# live). A dedicated session removes that contention: the two translate
-# independently, so an interim preview isn't waiting on unrelated segment work.
-_interim_translator = build_translator()
+# Pool of separate instances/sessions for interim previews. Confirmed-segment
+# translation (via _translator) and interim previews used to share one
+# persistent Claude session, which serializes ALL queries on one lock — under
+# continuous speech, every interim preview queued up behind final-segment
+# translations and was almost always stale by the time its turn came (observed
+# 20+ second waits live). A single dedicated session removed contention with
+# segment translation, but each translate() call is itself a multi-second LLM
+# round-trip (observed 8-17s live even on a warm session), so ONE session can
+# still only process one interim preview at a time — a slow call blocks every
+# window behind it. A POOL lets several previews translate concurrently
+# instead of queueing (each PersistentClaudeTranslator instance serializes
+# internally on its own lock, so pooling — not just raising concurrency
+# against one instance — is what actually parallelizes this).
+INTERIM_TRANSLATOR_POOL_SIZE = int(os.getenv("INTERIM_TRANSLATOR_POOL_SIZE", "3"))
+_interim_translator_pool: list = []          # filled in _lifespan (needs a running loop for warm())
+_interim_pool_lock = asyncio.Lock()
+
+
+async def _acquire_interim_translator():
+    """Non-blocking: returns None immediately if every pool slot is busy,
+    rather than waiting — a queued-up wait would defeat the point (better to
+    skip this preview round and catch a fresher one next tick)."""
+    async with _interim_pool_lock:
+        if _interim_translator_pool:
+            return _interim_translator_pool.pop()
+    return None
+
+
+async def _release_interim_translator(t) -> None:
+    async with _interim_pool_lock:
+        _interim_translator_pool.append(t)
 
 _vexa = httpx.AsyncClient(
     base_url=VEXA_BASE_URL,
@@ -172,7 +195,6 @@ class Room:
         # Live preview translation of the current interim line (see ingest_interim).
         self._interim_text = ""
         self._interim_last_xlate_at = 0.0
-        self._interim_xlate_inflight = False
         # lang -> (text it was translated for, translation). The most recent
         # successful interim preview per language — reused in ingest_final to
         # seed a segment's translation cell instantly instead of a blank "…"
@@ -357,20 +379,26 @@ class Room:
         now = loop.time()
         gap = now - self._interim_last_xlate_at
         logger_interim.info("room %s: %r (speaker=%s)", self.key, text, speaker or "")
-        if self._interim_xlate_inflight or len(text.strip()) < INTERIM_XLATE_MIN_CHARS:
+        if len(text.strip()) < INTERIM_XLATE_MIN_CHARS:
             return
         if gap < INTERIM_XLATE_MIN_INTERVAL_S:
             return
         self._interim_last_xlate_at = now
-        self._interim_xlate_inflight = True
         asyncio.create_task(self._interim_translate(text))
 
     async def _interim_translate(self, text: str) -> None:
+        translator = await _acquire_interim_translator()
+        if translator is None:
+            logger_interim_xlate.info(
+                "room %s: pool busy (all %d slots in use), skipping (%d chars): %r",
+                self.key, INTERIM_TRANSLATOR_POOL_SIZE, len(text), text,
+            )
+            return
         logger_interim_xlate.info("room %s: dispatched (%d chars): %r", self.key, len(text), text)
         try:
             for lang in self._active_langs():
                 try:
-                    translated = await _interim_translator.translate([text], lang)
+                    translated = await translator.translate([text], lang)
                 except Exception as e:  # noqa: BLE001 - a failed preview is not fatal
                     logger_interim_xlate.info("room %s: translate failed: %s", self.key, e)
                     continue
@@ -397,7 +425,7 @@ class Room:
                 )
                 self._last_interim_xlate[lang] = (text, translated[0])
         finally:
-            self._interim_xlate_inflight = False
+            await _release_interim_translator(translator)
 
     def ingest_final(
         self, seg_id: str, speaker: str, language: str, text: str,
@@ -435,6 +463,10 @@ class Room:
         # to interim text that's now gone.
         for lang, (for_text, translated_text) in self._last_interim_xlate.items():
             if text.startswith(for_text):
+                logger_interim_xlate.info(
+                    "room %s: seeded segment idx=%s (lang=%s) from interim preview %r -> %r",
+                    self.key, idx, lang, for_text, translated_text,
+                )
                 self._broadcast(self._translation_event(idx, lang, translated_text), only_lang=lang)
         self._last_interim_xlate.clear()
         self._schedule_missing()
@@ -484,12 +516,20 @@ def get_room(platform: str, native_id: str) -> Room:
 # HTTP app                                                                     #
 # --------------------------------------------------------------------------- #
 
+async def _build_and_warm_interim_translator() -> None:
+    t = build_translator()
+    await t.warm()
+    async with _interim_pool_lock:
+        _interim_translator_pool.append(t)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     # Pay the persistent-session connect cost now, in the background, so the
     # first real translation of a meeting isn't stalled waiting for it.
     asyncio.create_task(_translator.warm())
-    asyncio.create_task(_interim_translator.warm())
+    for _ in range(INTERIM_TRANSLATOR_POOL_SIZE):
+        asyncio.create_task(_build_and_warm_interim_translator())
     yield
 
 
