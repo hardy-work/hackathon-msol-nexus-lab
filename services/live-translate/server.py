@@ -173,6 +173,11 @@ class Room:
         self._interim_text = ""
         self._interim_last_xlate_at = 0.0
         self._interim_xlate_inflight = False
+        # lang -> (text it was translated for, translation). The most recent
+        # successful interim preview per language — reused in ingest_final to
+        # seed a segment's translation cell instantly instead of a blank "…"
+        # while the authoritative translation (below) is still in flight.
+        self._last_interim_xlate: dict[str, tuple[str, str]] = {}
 
     # -- viewer lifecycle --------------------------------------------------- #
 
@@ -390,6 +395,7 @@ class Room:
                     {"type": "interim_translation", "lang": lang, "text": translated[0], "for_text": text},
                     only_lang=lang,
                 )
+                self._last_interim_xlate[lang] = (text, translated[0])
         finally:
             self._interim_xlate_inflight = False
 
@@ -418,6 +424,19 @@ class Room:
         # New/updated text -> drop stale translations so it re-translates.
         for cache in self._translations.values():
             cache.pop(idx, None)
+        # Seed the segment's translation cell with the most recent interim
+        # preview, if it covers this segment's text (same sentence, interim
+        # just hadn't caught up to the very end of it yet) — the viewer sees a
+        # translation immediately instead of "…". This is NOT written into
+        # self._translations (that cache is what _schedule_missing checks to
+        # decide what still needs translating), so the authoritative call
+        # below still runs and its broadcast corrects/replaces this seed once
+        # ready. Not reused across segments: whether used or not, it belonged
+        # to interim text that's now gone.
+        for lang, (for_text, translated_text) in self._last_interim_xlate.items():
+            if text.startswith(for_text):
+                self._broadcast(self._translation_event(idx, lang, translated_text), only_lang=lang)
+        self._last_interim_xlate.clear()
         self._schedule_missing()
 
     async def _bot_gone(self) -> bool:
